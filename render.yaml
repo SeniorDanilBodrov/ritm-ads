@@ -33,6 +33,8 @@ services:
         sync: false
       - key: YANDEX_CLIENT_SECRET
         sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
       - key: LIVE_ADS_ENABLED
         value: "false"
       - key: AUTOPILOT_ENABLED
@@ -51,7 +53,5 @@ services:
         value: "true"
       - key: REQUIRE_POSTGRES
         value: "true"
-      # The new PostgreSQL route stays off until its limited pilot is enabled
-      # deliberately in Render after a deployment smoke test.
       - key: POSTGRES_ASYNC_PILOT
-        value: "false"
+        value: "true"

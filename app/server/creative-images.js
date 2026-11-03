@@ -294,36 +294,48 @@ export class OpenAIImageClient {
   }) {
     if (typeof apiKey !== "string" || apiKey.trim().length < 16)
       throw new Error("Ключ OpenAI не настроен.");
-    if (!/^(gpt-image-2\.5-(?:flare|sunburst)|chatgpt-image-latest)$/.test(model))
+    if (
+      !/^(gpt-image-2\.5-(?:flare|sunburst)|chatgpt-image-latest)$/.test(model)
+    )
       throw new Error("Неподдерживаемая модель OpenAI для изображений.");
     if (!new Set(["low", "medium", "high", "xhigh", "max"]).has(quality))
       throw new Error("Неподдерживаемое качество изображения OpenAI.");
     Object.assign(this, { apiKey: apiKey.trim(), model, quality, fetcher });
   }
 
-  async generate({ prompt, width = 1024, height = 768, safetyIdentifier = "" }) {
+  async generate({
+    prompt,
+    width = 1024,
+    height = 768,
+    safetyIdentifier = "",
+  }) {
     let response;
     try {
-      response = await this.fetcher("https://api.openai.com/v1/images/generations", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
+      response = await this.fetcher(
+        "https://api.openai.com/v1/images/generations",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: this.model,
+            prompt,
+            n: 1,
+            size: `${width}x${height}`,
+            quality: this.quality,
+            background: "opaque",
+            moderation: "auto",
+            output_format: "jpeg",
+            output_compression: 90,
+            ...(safetyIdentifier
+              ? { safety_identifier: safetyIdentifier }
+              : {}),
+          }),
+          signal: AbortSignal.timeout(3 * 60_000),
         },
-        body: JSON.stringify({
-          model: this.model,
-          prompt,
-          n: 1,
-          size: `${width}x${height}`,
-          quality: this.quality,
-          background: "opaque",
-          moderation: "auto",
-          output_format: "jpeg",
-          output_compression: 90,
-          ...(safetyIdentifier ? { safety_identifier: safetyIdentifier } : {}),
-        }),
-        signal: AbortSignal.timeout(3 * 60_000),
-      });
+      );
     } catch {
       throw new CreativeProviderError(
         "OpenAI не ответил вовремя. Попробуйте ещё раз.",
@@ -438,7 +450,7 @@ export class LocalCreativePromptEnhancer {
   }
 }
 
-function fullPrompt(input, business) {
+export function creativeImagePrompt(input, business) {
   const format = advertisingFormats[input.format];
   return [
     "Photorealistic local ad photo",
@@ -453,7 +465,7 @@ function fullPrompt(input, business) {
     .join(", ");
 }
 
-function brandName(value) {
+export function creativeBrandName(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim()
@@ -470,7 +482,7 @@ function xml(value) {
 }
 
 function brandLines(value) {
-  const name = brandName(value);
+  const name = creativeBrandName(value);
   if (name.length <= 28) return [name];
   const center = Math.floor(name.length / 2);
   let split = -1;
@@ -490,7 +502,7 @@ function brandLines(value) {
 }
 
 function brandOverlay(width, height, companyName, placement) {
-  if (placement === "none" || !brandName(companyName)) return null;
+  if (placement === "none" || !creativeBrandName(companyName)) return null;
   const lines = brandLines(companyName),
     margin = Math.round(Math.min(width, height) * 0.04),
     paddingX = Math.round(width * 0.027),
@@ -569,7 +581,7 @@ export async function prepareAdvertisingAsset(
       height: info.height,
       format: formatName,
       ratio: format.label,
-      companyName: overlay ? brandName(companyName) : "",
+      companyName: overlay ? creativeBrandName(companyName) : "",
       brandPlacement: overlay ? brandPlacement : "none",
     };
   } catch (error) {
@@ -580,7 +592,7 @@ export async function prepareAdvertisingAsset(
   }
 }
 
-function view(row) {
+export function creativeImageView(row) {
   let metadata = {};
   try {
     metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {};
@@ -627,7 +639,7 @@ export function creativeImages(db, businessId) {
        WHERE a.business_id=? ORDER BY a.created_at DESC LIMIT 30`,
     )
     .all(businessId)
-    .map(view);
+    .map(creativeImageView);
 }
 
 export function enqueueCreativeImage(
@@ -647,7 +659,9 @@ export function enqueueCreativeImage(
   return transaction(db, () => {
     const business = requireBusiness(db, userId, businessId);
     const companyName =
-      input.brandPlacement === "none" ? "" : brandName(business.state.name);
+      input.brandPlacement === "none"
+        ? ""
+        : creativeBrandName(business.state.name);
     const existing = db
       .prepare(
         `SELECT a.*,j.status,j.attempts,j.error
@@ -657,7 +671,7 @@ export function enqueueCreativeImage(
       .get(business.id, idempotencyKey);
     if (existing) {
       const same =
-        existing.prompt === fullPrompt(input, business) &&
+        existing.prompt === creativeImagePrompt(input, business) &&
         existing.style === input.style &&
         existing.goal === input.goal &&
         existing.hook === input.hook &&
@@ -672,7 +686,7 @@ export function enqueueCreativeImage(
           "Ключ уже использован для другого изображения.",
           "idempotency_conflict",
         );
-      return view(existing);
+      return creativeImageView(existing);
     }
     const since = new Date(now - 86_400_000).toISOString(),
       used = db
@@ -689,7 +703,7 @@ export function enqueueCreativeImage(
     const id = randomUUID(),
       at = new Date(now).toISOString(),
       seed = input.seed ?? Math.floor(Math.random() * 2_147_483_648),
-      prompt = fullPrompt(input, business);
+      prompt = creativeImagePrompt(input, business);
     db.prepare(
       "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload) VALUES(?,?,'creative_generation','pending',?,0,?)",
     ).run(id, business.id, now, JSON.stringify({ model, provider }));
@@ -729,7 +743,7 @@ export function enqueueCreativeImage(
           : "creative/local-sd15-openvino@1",
       jobId: id,
     });
-    return view({
+    return creativeImageView({
       id,
       business_id: business.id,
       status: "pending",

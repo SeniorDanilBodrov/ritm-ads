@@ -47,6 +47,13 @@ import {
   remoteAiEnabled,
   remotePlanJob,
 } from "./remote-ai.js";
+import {
+  approvePostgresCreativeImage,
+  enqueuePostgresCreativeImage,
+  postgresCreativeImageFile,
+  postgresCreativeImages,
+  removePostgresCreativeImage,
+} from "./postgres-creatives.js";
 
 const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -282,7 +289,12 @@ export function createPostgresApp({
   };
   app.get("/api/health", async (_req, res) => {
     await db.prepare("SELECT 1").get();
-    res.json({ ok: true, mode: "postgres-pilot", liveLaunch: false });
+    res.json({
+      ok: true,
+      mode: "postgres-pilot",
+      liveLaunch: false,
+      creativeImages: Boolean(config.encryptionConfigured),
+    });
   });
   app.get("/api/ready", async (_req, res) => {
     const version = await db
@@ -1174,6 +1186,9 @@ export function createPostgresApp({
       provider: row.provider,
       ...JSON.parse(row.metadata),
     }));
+    const openAiImages = connections.some(
+      (connection) => connection.provider === "openai-image",
+    );
     res.json({
       id: business.id,
       version: business.version,
@@ -1191,7 +1206,7 @@ export function createPostgresApp({
       adLifecycles: [],
       optimizerActions: [],
       audienceExperiments: [],
-      creativeImages: [],
+      creativeImages: await postgresCreativeImages(db, business.id),
       connections,
       adLifecycle: {
         status: "not_started",
@@ -1212,12 +1227,154 @@ export function createPostgresApp({
         directAbDecisionPilot: false,
         abPlanning: false,
         analyst: remoteAiEnabled(config),
-        creativeImages: false,
-        creativeImageSetup: false,
-        creativeImageProvider: null,
+        creativeImages: true,
+        creativeImageSetup: Boolean(config.encryptionConfigured),
+        creativeImageProvider: openAiImages ? "openai" : null,
       },
     });
   });
+  app.put(
+    "/api/businesses/:id/image-provider/openai",
+    authenticated,
+    async (req, res) => {
+      if (!config.encryptionConfigured)
+        throw new AppError(
+          409,
+          "Для ключа OpenAI нужен постоянный ключ шифрования сервера.",
+          "encryption_not_configured",
+        );
+      const apiKey = z
+        .object({ apiKey: z.string().trim().min(16).max(512) })
+        .strict()
+        .parse(req.body).apiKey;
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connectedAt = new Date().toISOString();
+      await db.transaction(async (tx) => {
+        await tx
+          .prepare(
+            `INSERT INTO connections(business_id,provider,encrypted,metadata)
+             VALUES(?,?,?,?)
+             ON CONFLICT(business_id,provider) DO UPDATE SET encrypted=excluded.encrypted,metadata=excluded.metadata`,
+          )
+          .run(
+            business.id,
+            "openai-image",
+            encrypt({ apiKey }, key, `${business.id}:openai-image`),
+            JSON.stringify({
+              connectedAt,
+              sandbox: false,
+              clients: [],
+              model: config.openAiImageModel,
+              purpose: "image_generation",
+            }),
+          );
+        await event(tx, business.id, {
+          kind: "creative_provider_connected",
+          title: "Подключена генерация изображений",
+          reason:
+            "Ключ сохранён на сервере. Каждый новый вариант создаётся только после вашего действия.",
+          rule: "creative/openai-gpt-image-2.5@1",
+        });
+      });
+      res.json({ connected: true, model: config.openAiImageModel });
+    },
+  );
+  app.delete(
+    "/api/businesses/:id/image-provider/openai",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      await db.transaction(async (tx) => {
+        const result = await tx
+          .prepare(
+            "DELETE FROM connections WHERE business_id=? AND provider='openai-image'",
+          )
+          .run(business.id);
+        if (!result.changes)
+          throw new AppError(404, "Генерация OpenAI не подключена.");
+        await event(tx, business.id, {
+          kind: "creative_provider_disconnected",
+          title: "Генерация изображений отключена",
+          reason:
+            "Новые изображения больше не создаются. Уже сохранённые варианты останутся на проверке.",
+          rule: "creative/openai-gpt-image-2.5@1",
+        });
+      });
+      res.json({ connected: false });
+    },
+  );
+  app.post(
+    "/api/businesses/:id/creative-images",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const openAi = await db
+        .prepare(
+          "SELECT 1 FROM connections WHERE business_id=? AND provider='openai-image'",
+        )
+        .get(business.id);
+      if (!openAi)
+        throw new AppError(
+          409,
+          "Сначала подключите генерацию изображений.",
+          "creative_images_disabled",
+        );
+      res.status(202).json(
+        await enqueuePostgresCreativeImage(
+          db,
+          req.user.id,
+          business.id,
+          idempotencyKey(req),
+          req.body,
+          {
+            model: config.openAiImageModel,
+            dailyLimit: config.creativeDailyLimit,
+          },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/creative-images/:assetId/approve",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await approvePostgresCreativeImage(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.assetId,
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/creative-images/:assetId/file",
+    authenticated,
+    async (req, res) => {
+      const asset = await postgresCreativeImageFile(
+        db,
+        req.user.id,
+        req.params.id,
+        req.params.assetId,
+      );
+      res.type(asset.mimeType).send(asset.buffer);
+    },
+  );
+  app.delete(
+    "/api/businesses/:id/creative-images/:assetId",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await removePostgresCreativeImage(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.assetId,
+        ),
+      );
+    },
+  );
   app.post("/api/assistant/onboarding", authenticated, async (req, res) => {
     const message = z.string().trim().min(2).max(2000).parse(req.body.message);
     const profile = z

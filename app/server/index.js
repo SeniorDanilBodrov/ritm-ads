@@ -3,6 +3,7 @@ import { decrypt, encryptionKey, isPilotOrigin } from "./security.js";
 import { createApp } from "./app.js";
 import { createPostgresApp } from "./app-postgres.js";
 import { startPostgresReportWorker } from "./postgres-reports.js";
+import { startPostgresCreativeWorker } from "./postgres-creatives.js";
 import { startShadowWorker } from "./worker.js";
 import { startReportWorker } from "./reports.js";
 import { startDirectWorker } from "./direct.js";
@@ -56,8 +57,7 @@ const config = {
     process.env.LOCAL_IMAGE_MODEL || "OpenVINO/stable-diffusion-v1-5-int8-ov",
   // GPT Image 2.5 Flare is the default for a single ad-photo workflow: fast,
   // high quality and deliberately never called until the owner asks for one.
-  openAiImageModel:
-    process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",
+  openAiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",
   openAiImageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium",
   creativeDailyLimit: Math.max(
     1,
@@ -142,7 +142,9 @@ config.openAiImageCredential = (businessId) => {
     .get(businessId);
   if (!row) return null;
   try {
-    return decrypt(row.encrypted, key, businessId + ":openai-image").apiKey || null;
+    return (
+      decrypt(row.encrypted, key, businessId + ":openai-image").apiKey || null
+    );
   } catch {
     return null;
   }
@@ -158,13 +160,23 @@ if (!postgresPilot) {
   markInterruptedAbDecisionActions(db);
   recoverOptimizerDispatches(db);
 }
-const app = postgresPilot ? createPostgresApp({ db, config, key }) : createApp({ db, config, key });
+const app = postgresPilot
+  ? createPostgresApp({ db, config, key })
+  : createApp({ db, config, key });
 const stopWorker = postgresPilot ? async () => {} : startShadowWorker(db);
-const stopReports = postgresPilot ? startPostgresReportWorker(db, { key }) : startReportWorker(db, key, config);
+const stopReports = postgresPilot
+  ? startPostgresReportWorker(db, { key })
+  : startReportWorker(db, key, config);
 const stopDirect = postgresPilot ? async () => {} : startDirectWorker(db);
-const stopCreatives = postgresPilot ? async () => {} : startCreativeWorker(db, config);
-const stopCreativeRetention = postgresPilot ? async () => {} : startCreativeRetentionWorker(db, config);
-const stopLiveData = postgresPilot ? async () => {} : startLiveDataWorker(db, key, config);
+const stopCreatives = postgresPilot
+  ? startPostgresCreativeWorker(db, { key, config })
+  : startCreativeWorker(db, config);
+const stopCreativeRetention = postgresPilot
+  ? async () => {}
+  : startCreativeRetentionWorker(db, config);
+const stopLiveData = postgresPilot
+  ? async () => {}
+  : startLiveDataWorker(db, key, config);
 const stopOperationsMonitor = postgresPilot
   ? async () => {}
   : startOperationsMonitor(db, {
@@ -178,11 +190,13 @@ const server = app.listen(config.port, process.env.HOST || "127.0.0.1", () =>
   ),
 );
 // Shadow analysis never advances simulated time or changes advertising objects.
-const cleanup = postgresPilot ? null : setInterval(() => {
-  const now = Date.now();
-  db.prepare("DELETE FROM sessions WHERE expires_at<?").run(now);
-  db.prepare("DELETE FROM oauth_states WHERE expires_at<?").run(now);
-}, 3600000);
+const cleanup = postgresPilot
+  ? null
+  : setInterval(() => {
+      const now = Date.now();
+      db.prepare("DELETE FROM sessions WHERE expires_at<?").run(now);
+      db.prepare("DELETE FROM oauth_states WHERE expires_at<?").run(now);
+    }, 3600000);
 cleanup?.unref();
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () =>

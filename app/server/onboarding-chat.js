@@ -109,31 +109,56 @@ function nextQuestion(profile) {
 function fallbackProfile(message, profile) {
   const source = message.trim();
   const parsed = {};
-  const budget = source.match(
-    /бюджет(?:\s+на\s+месяц)?\s*(\d[\d\s]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
-  )?.[1];
+  const budget =
+    source.match(
+      /бюджет(?:\s+на\s+месяц)?\s*(?::|—|-)?\s*(\d[\d\s]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
+    )?.[1] ||
+    source.match(
+      /(?:готов(?:а|ы)?\s+)?выдел(?:ять|ить)\s+(\d[\d\s]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
+    )?.[1];
   if (budget) {
     const value = Number(budget.replace(/\s/g, ""));
     if (Number.isSafeInteger(value) && value >= 1_000 && value <= 1_000_000)
       parsed.budget = value;
   }
-  const city = source.match(/(?:^|\s)в\s+([А-ЯЁ][а-яё-]{2,})/u)?.[1];
-  if (city) parsed.city = city;
-  const name = source
-    .match(/^(.{2,120}?)\s+в\s+[А-ЯЁ]/u)?.[1]
-    ?.replace(/^(?:у\s+меня|мы|это)\s+/iu, "")
-    .trim();
+  const city = source.match(/(?:^|\s)в\s+([А-ЯЁ][А-ЯЁа-яё-]{2,})/u)?.[1];
+  const normalizedCities = {
+    москве: "Москва",
+    петербурге: "Санкт-Петербург",
+    "санкт-петербурге": "Санкт-Петербург",
+    екатеринбурге: "Екатеринбург",
+    казани: "Казань",
+    новосибирске: "Новосибирск",
+    перми: "Пермь",
+    самаре: "Самара",
+    сочи: "Сочи",
+    уфе: "Уфа",
+  };
+  if (city) parsed.city = normalizedCities[city.toLocaleLowerCase("ru-RU")] || city;
+  const quotedName = source.match(/[«"]([^»"]{2,120})[»"]/u)?.[1]?.trim();
+  const name =
+    quotedName ||
+    source
+      .match(/^(.{2,120}?)\s+в\s+[А-ЯЁ]/u)?.[1]
+      ?.replace(/^(?:у\s+меня|мы|это)\s+/iu, "")
+      .trim();
   if (name) parsed.name = name;
   const category = source.match(
     /(студия\s+маникюра|йога-студия|кофейня|пекарня|автосервис|фотостудия|языковая\s+школа|цветочная\s+мастерская)/iu,
   )?.[1];
   if (category) parsed.category = category;
-  const service = source.match(/(?:продвигаем|рекламируем)\s+([^.!?]{2,240})/iu)?.[1]?.trim();
+  const service = source
+    .match(
+      /(?:хочу\s+)?(?:продвигать|рекламировать|продвигаем|рекламируем)\s+([^.!?]{2,240})/iu,
+    )?.[1]
+    ?.trim();
   if (service) parsed.service = service;
   const benefit = source
-    .match(/(?:нас\s+)?выбирают\s+за\s+([^.!?]{2,240})/iu)?.[1]
+    .match(/(?:клиенты\s+)?выбирают\s+(?:нас\s+)?за\s+([^.!?]{2,240})/iu)?.[1]
     ?.trim();
   if (benefit) parsed.benefit = benefit;
+  const website = source.match(/https?:\/\/[^\s,;]+/iu)?.[0]?.replace(/[.!?]+$/u, "");
+  if (website) parsed.website = website;
   return { ...profile, ...parsed };
 }
 
@@ -142,8 +167,7 @@ function fallbackReply(message, profile) {
   const question = nextQuestion(merged);
   return {
     reply:
-      (question ? `Рита уточнит: ${question}` : null) ||
-      "Спасибо, я, Рита, поняла ваш бизнес и готова собрать рекламный план.",
+      question || "Спасибо, я поняла ваш бизнес и могу собрать рекламный план.",
     profile: merged,
     complete: !question,
     provider: "fallback",

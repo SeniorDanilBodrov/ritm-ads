@@ -112,7 +112,7 @@ test("unavailable local assistant asks a safe non-technical follow-up", async ()
     fetcher: async () => new Response("offline", { status: 503 }),
   });
   assert.equal(result.provider, "fallback");
-  assert.match(result.reply, /Рита/u);
+  assert.equal(result.reply, "Как называется ваш бизнес?");
   assert.doesNotMatch(result.reply, /ставк|ключев/iu);
 });
 
@@ -126,4 +126,21 @@ test("fallback completes a clearly stated first profile when the local model is 
   assert.equal(result.complete, true);
   assert.equal(result.profile.budget, 30_000);
   assert.equal(result.profile.service, "маникюр с покрытием");
+});
+
+test("fallback understands a natural first message without repeating answered questions", async () => {
+  const result = await onboardingAssistant({
+    message:
+      "У меня студия маникюра «Форма» в Екатеринбурге. Хочу рекламировать маникюр с покрытием. Клиенты выбирают нас за бережный уход и удобную онлайн-запись. Сайта пока нет. На рекламу готов выделять 30 000 рублей в месяц.",
+    config: { aiProvider: "remote-ollama" },
+  });
+  assert.equal(result.provider, "fallback");
+  assert.equal(result.complete, true);
+  assert.equal(result.profile.name, "Форма");
+  assert.equal(result.profile.category.toLocaleLowerCase("ru-RU"), "студия маникюра");
+  assert.equal(result.profile.city, "Екатеринбург");
+  assert.equal(result.profile.service, "маникюр с покрытием");
+  assert.equal(result.profile.benefit, "бережный уход и удобную онлайн-запись");
+  assert.equal(result.profile.budget, 30_000);
+  assert.doesNotMatch(result.reply, /уточнит|какую услугу/iu);
 });

@@ -132,6 +132,202 @@ function periodBudget(remote) {
   };
 }
 
+export async function postgresControlReviews(db, userId, businessId) {
+  await ownedBusiness(db, userId, businessId);
+  const rows = await db
+    .prepare(
+      `SELECT result_json FROM direct_control_reviews
+       WHERE business_id=? ORDER BY checked_at DESC,id DESC LIMIT 20`,
+    )
+    .all(businessId);
+  return rows.map((row) => JSON.parse(row.result_json));
+}
+
+export async function inspectPostgresDirectControl(
+  db,
+  userId,
+  businessId,
+  changeId,
+  requestKey,
+  client,
+  currentConnectionId,
+  now = Date.now(),
+) {
+  if (!/^[0-9a-f-]{36}$/i.test(requestKey))
+    throw new AppError(400, "Некорректный ключ запроса.");
+  const previous = await db
+    .prepare(
+      `SELECT change_id,result_json FROM direct_control_reviews
+       WHERE business_id=? AND request_key=?`,
+    )
+    .get(businessId, requestKey);
+  if (previous) {
+    if (previous.change_id !== changeId)
+      throw new AppError(409, "Ключ уже использован для другой кампании.");
+    return JSON.parse(previous.result_json);
+  }
+  const bundle = await campaignBundle(
+    db,
+    userId,
+    businessId,
+    changeId,
+    currentConnectionId,
+  );
+  const [campaignResult, groupsResult, adsResult, keywordsResult] =
+    await Promise.all([
+      client.campaignBudgetById(bundle.campaignId),
+      client.adGroupsByIds(bundle.groupIds),
+      client.adsByIds(bundle.adIds),
+      client.keywordsByIds(bundle.keywordIds),
+    ]);
+  const campaigns = campaignResult?.Campaigns;
+  const groups = groupsResult?.AdGroups;
+  const ads = adsResult?.Ads;
+  const keywords = keywordsResult?.Keywords;
+  if (!sameIds([bundle.campaignId], campaigns))
+    throw new AppError(502, "Директ не вернул созданную кампанию.");
+  if (
+    !sameIds(bundle.groupIds, groups) ||
+    !sameIds(bundle.adIds, ads) ||
+    !sameIds(bundle.keywordIds, keywords)
+  )
+    throw new AppError(502, "Директ не вернул полный состав кампании.");
+  const remote = campaigns[0];
+  const budget = periodBudget(remote);
+  const blockers = [];
+  const date = moscowDate(now);
+  if (date < bundle.plan.periodStart) blockers.push("period_not_started");
+  if (date > bundle.plan.periodEnd) blockers.push("period_ended");
+  try {
+    if (
+      !bundle.business.state.website ||
+      new URL(bundle.business.state.website).hostname !==
+        new URL(bundle.plan.website).hostname
+    )
+      blockers.push("website_changed");
+  } catch {
+    blockers.push("website_changed");
+  }
+  if (
+    budget.strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
+    budget.strategy?.Network?.BiddingStrategyType !== "SERVING_OFF" ||
+    budget.limitKopecks !== bundle.plan.budget ||
+    budget.period?.StartDate !== bundle.plan.periodStart ||
+    budget.period?.EndDate !== bundle.plan.periodEnd ||
+    budget.period?.AutoContinue !== "NO"
+  )
+    blockers.push("budget_drift");
+  if (!["OFF", "SUSPENDED"].includes(remote.State))
+    blockers.push("campaign_not_suspended");
+  if (remote.Status !== "ACCEPTED") blockers.push("campaign_not_accepted");
+  if (remote.StatusPayment !== "ALLOWED")
+    blockers.push("payment_not_confirmed");
+  if (
+    groups.some(
+      (group) => String(group.CampaignId) !== String(bundle.campaignId),
+    )
+  )
+    blockers.push("group_mismatch");
+  if (
+    ads.some(
+      (ad) =>
+        String(ad.CampaignId) !== String(bundle.campaignId) ||
+        !bundle.groupIds.some(
+          (groupId) => String(groupId) === String(ad.AdGroupId),
+        ) ||
+        ad.Status !== "ACCEPTED" ||
+        ad.State !== "ON",
+    )
+  )
+    blockers.push("ads_not_ready");
+  if (
+    keywords.some(
+      (keyword) =>
+        String(keyword.CampaignId) !== String(bundle.campaignId) ||
+        !bundle.groupIds.some(
+          (groupId) => String(groupId) === String(keyword.AdGroupId),
+        ) ||
+        keyword.Status !== "ACCEPTED" ||
+        !["ON", "SUSPENDED"].includes(keyword.State),
+    )
+  )
+    blockers.push("keywords_not_ready");
+  blockers.push("spend_not_verified");
+  const result = {
+    id: randomUUID(),
+    changeId,
+    campaignId: bundle.campaignId,
+    checkedAt: new Date(now).toISOString(),
+    status: blockers.length ? "blocked" : "technical_ready",
+    blockers: [...new Set(blockers)],
+    budget: {
+      limitKopecks: budget.limitKopecks,
+      spentKopecks: null,
+      reportReceivedAt: null,
+      reportDateTo: null,
+    },
+    remote: {
+      state: remote.State,
+      status: remote.Status,
+      statusPayment: remote.StatusPayment,
+      groups: groups.length,
+      ads: ads.length,
+      keywords: keywords.length,
+    },
+    manualChecks: [
+      "Подтвердить данные реального рекламодателя и содержимое страницы.",
+      "Проверить маркировку рекламы и решение модерации.",
+      "Отдельно согласовать запуск показов и предел расходов.",
+    ],
+    safeToResume: false,
+    externalWrites: 0,
+  };
+  return db.transaction(async (tx) => {
+    const currentConnection = await connectedId(tx, businessId);
+    if (currentConnection !== currentConnectionId)
+      throw new AppError(
+        409,
+        "Кабинет изменился во время проверки. Повторите чтение.",
+      );
+    const inserted = await tx
+      .prepare(
+        `INSERT INTO direct_control_reviews
+         (id,business_id,change_id,connection_id,request_key,checked_at,result_json)
+         VALUES(?,?,?,?,?,?,?) ON CONFLICT (business_id,request_key) DO NOTHING`,
+      )
+      .run(
+        result.id,
+        businessId,
+        changeId,
+        currentConnectionId,
+        requestKey,
+        result.checkedAt,
+        JSON.stringify(result),
+      );
+    if (!inserted.changes) {
+      const prior = await tx
+        .prepare(
+          `SELECT change_id,result_json FROM direct_control_reviews
+           WHERE business_id=? AND request_key=?`,
+        )
+        .get(businessId, requestKey);
+      if (prior?.change_id === changeId) return JSON.parse(prior.result_json);
+      throw new AppError(409, "Ключ уже использован для другой кампании.");
+    }
+    await addEvent(tx, businessId, {
+      kind: "direct_control_review",
+      title: "Ритм проверил решение Яндекса",
+      reason: result.blockers.includes("campaign_not_accepted")
+        ? "Яндекс ещё не принял кампанию после модерации."
+        : result.blockers.includes("ads_not_ready")
+          ? "Одно или несколько объявлений ещё не готовы к показам."
+          : "Статусы кампании и объявлений прочитаны без изменений рекламы.",
+      source: "Ритм",
+    });
+    return result;
+  });
+}
+
 async function hasOtherAction(db, businessId, campaignId) {
   for (const table of [
     "direct_lifecycle_actions",

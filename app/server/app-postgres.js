@@ -65,8 +65,10 @@ import {
   preparePostgresDirectPlan,
 } from "./postgres-direct.js";
 import {
+  inspectPostgresDirectControl,
   inspectPostgresModerationAction,
   inspectPostgresModerationReadiness,
+  postgresControlReviews,
   postgresModerationActions,
   submitPostgresModeration,
 } from "./postgres-direct-moderation.js";
@@ -1215,6 +1217,11 @@ export function createPostgresApp({
       req.user.id,
       business.id,
     );
+    const controlReviews = await postgresControlReviews(
+      db,
+      req.user.id,
+      business.id,
+    );
     const lifecycleRow = await db
       .prepare(
         "SELECT status,change_id,reason,updated_at FROM campaign_ad_lifecycle WHERE business_id=? ORDER BY updated_at DESC LIMIT 1",
@@ -1235,7 +1242,7 @@ export function createPostgresApp({
       jobs: [],
       directChanges,
       abPlans: [],
-      controlReviews: [],
+      controlReviews,
       shadowReviews: [],
       shadowReviewJobs: [],
       adLifecycles: [],
@@ -1528,6 +1535,36 @@ export function createPostgresApp({
             login: change.plan.login,
             sandbox: false,
           }),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/control-review",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await inspectPostgresDirectControl(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          requestKey,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
         ),
       );
     },

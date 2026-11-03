@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { openDatabase } from "../server/db.js";
 import {
+  inspectPostgresDirectControl,
   inspectPostgresModerationReadiness,
+  postgresControlReviews,
   postgresModerationActions,
   submitPostgresModeration,
 } from "../server/postgres-direct-moderation.js";
@@ -280,5 +282,103 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
     ).length,
     1,
   );
+  data.sqlite.close();
+});
+
+test("PostgreSQL control review persists the read-only Yandex decision", async () => {
+  const data = fixture();
+  let reads = 0;
+  const client = {
+    campaignBudgetById: async () => {
+      reads++;
+      return {
+        Campaigns: [
+          {
+            Id: 77,
+            State: "OFF",
+            Status: "MODERATION",
+            StatusPayment: "ALLOWED",
+            Type: "TEXT_CAMPAIGN",
+            Currency: "RUB",
+            TextCampaign: {
+              BiddingStrategy: {
+                Search: {
+                  BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                  WbMaximumClicks: {
+                    CustomPeriodBudget: {
+                      SpendLimit: data.plan.budget * 10_000,
+                      StartDate: data.plan.periodStart,
+                      EndDate: data.plan.periodEnd,
+                      AutoContinue: "NO",
+                    },
+                  },
+                },
+                Network: { BiddingStrategyType: "SERVING_OFF" },
+              },
+            },
+          },
+        ],
+      };
+    },
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77 }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "MODERATION",
+          State: "OFF",
+        },
+      ],
+    }),
+    keywordsByIds: async () => ({
+      Keywords: [
+        {
+          Id: 111,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "SUSPENDED",
+        },
+      ],
+    }),
+  };
+  const requestKey = randomUUID();
+  const result = await inspectPostgresDirectControl(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    requestKey,
+    client,
+    data.connectionId,
+    Date.parse("2026-11-05T09:00:00.000Z"),
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.externalWrites, 0);
+  assert.ok(result.blockers.includes("campaign_not_accepted"));
+  assert.ok(result.blockers.includes("ads_not_ready"));
+  assert.ok(result.blockers.includes("spend_not_verified"));
+  assert.equal(
+    (await postgresControlReviews(data.db, data.userId, data.businessId))
+      .length,
+    1,
+  );
+
+  const replay = await inspectPostgresDirectControl(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    requestKey,
+    client,
+    data.connectionId,
+    Date.parse("2026-11-05T10:00:00.000Z"),
+  );
+  assert.equal(replay.id, result.id);
+  assert.equal(reads, 1);
   data.sqlite.close();
 });

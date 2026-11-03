@@ -1578,7 +1578,7 @@ function App() {
                     })
                   }
                   inspectControl={(id) =>
-                    perform(async () => {
+                    performWithResult(async () => {
                       try {
                         const result = await api(
                           `/businesses/${ws.id}/direct/${id}/control-review`,
@@ -3713,7 +3713,7 @@ function HostedPlanReview({
     budget: number,
   ) => void;
   inspectExecution: (id: string) => void;
-  inspectControl: (id: string) => void;
+  inspectControl: (id: string) => Promise<boolean> | boolean | void;
   refresh: () => Promise<void>;
 }) {
   const plan = ws.state.aiPlan;
@@ -4219,6 +4219,16 @@ function HostedPlanReview({
                       />
                     )}
 
+                    {directChange.execution?.status === "succeeded" && (
+                      <DirectControlCard
+                        review={ws.controlReviews?.find(
+                          (item) => item.changeId === directChange.id,
+                        )}
+                        busy={busy}
+                        onInspect={() => inspectControl(directChange.id)}
+                      />
+                    )}
+
                     {directChange.execution?.status ===
                       "needs_reconciliation" && (
                       <div className="inline-error" role="alert">
@@ -4324,7 +4334,7 @@ function Campaigns({
   suspendCampaign: (id: string, name: string, campaignId: number) => void;
   inspectLifecycle: (id: string, actionId: string) => void;
   checkBudget: (id: string) => void;
-  inspectControl: (id: string) => void;
+  inspectControl: (id: string) => Promise<boolean> | boolean | void;
   reviewShadow: (id: string) => void;
   refresh: () => Promise<void>;
 }) {
@@ -4578,7 +4588,7 @@ function DirectControlCard({
 }: {
   review?: DirectControlReview;
   busy: boolean;
-  onInspect: () => void;
+  onInspect: () => Promise<boolean> | boolean | void;
 }) {
   return (
     <div
@@ -5052,13 +5062,14 @@ function ModerationCard({
   enabled: boolean;
   clock: number;
   busy: boolean;
-  onCheckDecision: () => void;
+  onCheckDecision: () => Promise<boolean> | boolean | void;
 }) {
   const [readiness, setReadiness] = useState<ModerationReadiness | null>(null);
   const [action, setAction] = useState<ModerationAction | null>(null);
   const [advertiserConfirmed, setAdvertiserConfirmed] = useState(false);
   const [siteConfirmed, setSiteConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
+  const [decisionPending, setDecisionPending] = useState(false);
   const [error, setError] = useState("");
   const keyName = `ritm:moderate:${businessId}:${changeId}`;
   useEffect(() => {
@@ -5130,6 +5141,19 @@ function ModerationCard({
       );
     } finally {
       setPending(false);
+    }
+  }
+  async function checkDecision() {
+    setDecisionPending(true);
+    setError("");
+    try {
+      const checked = await onCheckDecision();
+      if (checked === false)
+        setError(
+          "Не удалось получить решение Яндекса. Повторите проверку через несколько минут.",
+        );
+    } finally {
+      setDecisionPending(false);
     }
   }
   const fresh =
@@ -5262,10 +5286,13 @@ function ModerationCard({
             <button
               type="button"
               className="secondary"
-              disabled={pending || busy}
-              onClick={onCheckDecision}
+              aria-busy={decisionPending}
+              disabled={pending || decisionPending || busy}
+              onClick={checkDecision}
             >
-              Проверить решение Яндекса
+              {decisionPending || busy
+                ? "Проверяем решение…"
+                : "Проверить решение Яндекса"}
             </button>
           )}
           {action.status === "needs_reconciliation" && (
@@ -5725,7 +5752,7 @@ function DirectPlanBuilder({
   suspendCampaign: (id: string, name: string, campaignId: number) => void;
   inspectLifecycle: (id: string, actionId: string) => void;
   checkBudget: (id: string) => void;
-  inspectControl: (id: string) => void;
+  inspectControl: (id: string) => Promise<boolean> | boolean | void;
   reviewShadow: (id: string) => void;
   refresh: () => Promise<void>;
 }) {

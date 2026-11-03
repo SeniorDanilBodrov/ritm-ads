@@ -182,23 +182,13 @@ export async function inspectPostgresModerationReadiness(
     changeId,
     currentConnectionId,
   );
-  const [
-    campaignResult,
-    adsResult,
-    keywordsResult,
-    markingResponse,
-    lifecycle,
-  ] = await Promise.all([
-    client.campaignBudgetById(bundle.campaignId),
-    client.adsByIds(bundle.adIds),
-    client.keywordsByIds(bundle.keywordIds),
-    client.advertiserMarkingDetails(),
-    db
-      .prepare(
-        "SELECT status FROM campaign_ad_lifecycle WHERE business_id=? AND change_id=?",
-      )
-      .get(bundle.business.id, changeId),
-  ]);
+  const [campaignResult, adsResult, keywordsResult, markingResponse] =
+    await Promise.all([
+      client.campaignBudgetById(bundle.campaignId),
+      client.adsByIds(bundle.adIds),
+      client.keywordsByIds(bundle.keywordIds),
+      client.advertiserMarkingDetails(),
+    ]);
   const campaigns = campaignResult?.Campaigns;
   const ads = adsResult?.Ads;
   const keywords = keywordsResult?.Keywords;
@@ -213,7 +203,6 @@ export async function inspectPostgresModerationReadiness(
   const budget = periodBudget(remote);
   const marking = summarizeDirectMarking(markingResponse, now);
   const blockers = [];
-  if (lifecycle?.status !== "paused") blockers.push("lifecycle_not_paused");
   if (!(
     remote.State === "SUSPENDED" ||
     (remote.State === "OFF" && remote.Status === "DRAFT")

@@ -4076,21 +4076,23 @@ function HostedPlanReview({
                       </div>
                     </div>
 
-                    {(!directChange.preflight || !directPreflightFresh) && (
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => preflight(directChange.id)}
-                      >
-                        <ShieldCheck size={16} />
-                        {directChange.preflight
-                          ? "Проверить кабинет снова"
-                          : "Проверить кабинет и лимит"}
-                      </button>
-                    )}
+                    {!directChange.execution &&
+                      (!directChange.preflight || !directPreflightFresh) && (
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={busy}
+                          onClick={() => preflight(directChange.id)}
+                        >
+                          <ShieldCheck size={16} />
+                          {directChange.preflight
+                            ? "Проверить кабинет снова"
+                            : "Проверить кабинет и лимит"}
+                        </button>
+                      )}
 
-                    {directChange.preflight &&
+                    {!directChange.execution &&
+                      directChange.preflight &&
                       directPreflightFresh &&
                       !directChange.preflight.ready && (
                         <div className="inline-error" role="alert">
@@ -4202,6 +4204,15 @@ function HostedPlanReview({
                           </p>
                         </div>
                       </div>
+                    )}
+
+                    {directChange.execution?.status === "succeeded" && (
+                      <ModerationCard
+                        businessId={ws.id}
+                        changeId={directChange.id}
+                        enabled={ws.capabilities.directModerationPilot}
+                        clock={Date.now()}
+                      />
                     )}
 
                     {directChange.execution?.status ===
@@ -5005,8 +5016,6 @@ type ModerationAction = {
   updatedAt: string;
 };
 const moderationBlockerText: Record<string, string> = {
-  lifecycle_not_paused:
-    "Ритм ещё не подтвердил выключенное состояние кампании.",
   budget_drift: "Бюджет или период в Директе отличается от плана.",
   campaign_not_held: "Кампания не удерживается в выключенном состоянии.",
   period_ended: "Бюджетный период уже закончился.",

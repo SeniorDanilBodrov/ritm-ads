@@ -7,6 +7,7 @@ import {
   postgresModerationActions,
   submitPostgresModeration,
 } from "../server/postgres-direct-moderation.js";
+import { preflightPostgresDirectPlan } from "../server/postgres-direct.js";
 
 class AsyncSqlite {
   constructor(database) {
@@ -188,6 +189,29 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
     },
   };
   const checkedAt = Date.parse("2026-11-04T10:00:00.000Z");
+  let campaignReads = 0;
+  await assert.rejects(
+    () =>
+      preflightPostgresDirectPlan(
+        data.db,
+        data.userId,
+        data.businessId,
+        data.changeId,
+        randomUUID(),
+        {
+          clientForLogin: {
+            campaigns: async () => {
+              campaignReads++;
+              return { Campaigns: [] };
+            },
+          },
+          clients: [],
+          connectionId: data.connectionId,
+        },
+      ),
+    (error) => error?.code === "direct_execution_exists",
+  );
+  assert.equal(campaignReads, 0);
   const readiness = await inspectPostgresModerationReadiness(
     data.db,
     data.userId,

@@ -305,6 +305,12 @@ export async function preflightPostgresDirectPlan(
     businessId,
     changeId,
   );
+  if (change.execution)
+    throw new AppError(
+      409,
+      "Кампания уже создана. Перейдите к модерации объявлений.",
+      "direct_execution_exists",
+    );
   const previous = await db
     .prepare(
       "SELECT change_id,report_json FROM direct_preflights WHERE business_id=? AND idempotency_key=?",

@@ -1223,9 +1223,7 @@ export function createPostgresApp({
     const directWriteEnabled =
       canWritePaidAdvertising(config) && config.directWritePilot === true;
     const directModerationEnabled =
-      directWriteEnabled &&
-      config.directModerationPilot === true &&
-      lifecycleRow?.status === "paused";
+      directWriteEnabled && config.directModerationPilot === true;
     res.json({
       id: business.id,
       version: business.version,

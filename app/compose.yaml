@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4310:4310"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/data/ritm.sqlite
+      PYTHON_EXECUTABLE: /usr/bin/python3
+    volumes:
+      - ritm-data:/app/data
+    stop_grace_period: 20s
+volumes:
+  ritm-data:

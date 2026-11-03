@@ -1,0 +1,50 @@
+{
+  "name": "ritm-ads",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server/index.js",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "db:backup": "node --env-file-if-exists=.env scripts/backup-db.js",
+    "db:verify": "node scripts/verify-backup.js",
+    "db:restore": "node scripts/restore-db.js",
+    "ops:check": "node --env-file-if-exists=.env scripts/check-operations.js",
+    "ops:load": "node scripts/load-smoke.js",
+    "local-image:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local-image-api.ps1",
+    "local-image:verify": "node --env-file-if-exists=.env scripts/verify-local-image.js",
+    "production:preflight": "node --env-file-if-exists=.env scripts/production-preflight.js",
+    "production:preflight:strict": "node --env-file-if-exists=.env scripts/production-preflight.js --strict",
+    "production:preflight:live": "node --env-file-if-exists=.env scripts/production-preflight.js --strict --live",
+    "submission:prepare": "node scripts/prepare-submission.js",
+    "submission:verify": "node scripts/verify-submission.js",
+    "acceptance": "node --env-file-if-exists=.env scripts/acceptance.js",
+    "acceptance:docker": "node --env-file-if-exists=.env scripts/acceptance.js --docker",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "check": "npm test && npm run build"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "jose": "^6.1.0",
+    "lucide-react": "^0.468.0",
+    "pg": "^8.23.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sharp": "^0.35.5",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}

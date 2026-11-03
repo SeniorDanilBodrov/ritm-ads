@@ -1,0 +1,13 @@
+node_modules
+dist
+data
+output
+tmp
+.env
+.env.*
+.git
+*.log
+docs/qa
+__pycache__
+*.pyc
+docs/screenshots

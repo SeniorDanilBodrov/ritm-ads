@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+data/
+output/
+tmp/
+coverage/
+.impeccable/
+premium-*.json
+*.log
+__pycache__/
+*.pyc

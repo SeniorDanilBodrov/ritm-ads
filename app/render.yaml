@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: ritm-ads
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DEMO_MODE
+        value: "false"
+      - key: LIVE_ADS_ENABLED
+        value: "false"
+      - key: AUTOPILOT_ENABLED
+        value: "false"
+      - key: DIRECT_WRITE_PILOT_ENABLED
+        value: "false"
+      - key: DIRECT_ARCHIVE_PILOT_ENABLED
+        value: "false"
+      - key: DIRECT_AB_VARIANT_PILOT_ENABLED
+        value: "false"
+      - key: DIRECT_AB_DECISION_PILOT_ENABLED
+        value: "false"
+      - key: CREATIVE_IMAGES_ENABLED
+        value: "false"
+      - key: POSTGRES_SSL
+        value: "true"

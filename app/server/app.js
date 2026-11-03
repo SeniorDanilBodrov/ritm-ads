@@ -50,7 +50,11 @@ import { buildMetricaSetup } from "./metrica-setup.js";
 import { analyzeSnapshot } from "./advisor.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
-import { adLifecycle, adLifecycles, transitionAdLifecycle } from "./ad-lifecycle.js";
+import {
+  adLifecycle,
+  adLifecycles,
+  transitionAdLifecycle,
+} from "./ad-lifecycle.js";
 import { optimizerActions } from "./optimizer-outbox.js";
 import { rollbackOptimizerAction } from "./optimizer-executor.js";
 import {
@@ -181,13 +185,23 @@ async function exportReportXlsx(report) {
     { key: "spent", width: 16 },
     { key: "clicks", width: 13 },
     { key: "impressions", width: 14 },
+    { key: "conversions", width: 16 },
   ];
-  sheet.mergeCells("A1:G1");
+  sheet.mergeCells("A1:H1");
   const title = sheet.getCell("A1");
   title.value = "Отчёт по рекламе";
-  title.font = { name: "Aptos Display", size: 18, bold: true, color: { argb: "FFFFFFFF" } };
+  title.font = {
+    name: "Aptos Display",
+    size: 18,
+    bold: true,
+    color: { argb: "FFFFFFFF" },
+  };
   title.alignment = { vertical: "middle" };
-  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0D5D49" } };
+  title.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF0D5D49" },
+  };
   sheet.getRow(1).height = 30;
 
   const receivedAt = new Date(report.received_at);
@@ -215,12 +229,17 @@ async function exportReportXlsx(report) {
     "Расход, ₽",
     "Клики",
     "Показы",
+    "Обращения",
   ];
   header.height = 24;
   header.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.alignment = { vertical: "middle" };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF176A55" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF176A55" },
+    };
   });
 
   rows.forEach((row) => {
@@ -232,11 +251,13 @@ async function exportReportXlsx(report) {
       spent: row.spent / 100,
       clicks: row.clicks,
       impressions: row.impressions,
+      conversions: row.conversions,
     });
     target.getCell("date").numFmt = "yyyy-mm-dd";
     target.getCell("spent").numFmt = '#,##0.00 "₽"';
     target.getCell("clicks").numFmt = "#,##0";
     target.getCell("impressions").numFmt = "#,##0";
+    target.getCell("conversions").numFmt = "#,##0";
   });
 
   const totalsRow = headerRow + rows.length + 1;
@@ -244,17 +265,23 @@ async function exportReportXlsx(report) {
   sheet.getCell(totalsRow, 5).value = totals.spent / 100;
   sheet.getCell(totalsRow, 6).value = totals.clicks;
   sheet.getCell(totalsRow, 7).value = totals.impressions;
+  sheet.getCell(totalsRow, 8).value = totals.conversions;
   sheet.getRow(totalsRow).eachCell((cell) => {
     cell.font = { bold: true, color: { argb: "FF17231F" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5F264" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE5F264" },
+    };
   });
   sheet.getCell(totalsRow, 5).numFmt = '#,##0.00 "₽"';
   sheet.getCell(totalsRow, 6).numFmt = "#,##0";
   sheet.getCell(totalsRow, 7).numFmt = "#,##0";
+  sheet.getCell(totalsRow, 8).numFmt = "#,##0";
   if (rows.length) {
     sheet.autoFilter = {
       from: { row: headerRow, column: 1 },
-      to: { row: headerRow + rows.length, column: 7 },
+      to: { row: headerRow + rows.length, column: 8 },
     };
   }
   return workbook.xlsx.writeBuffer();
@@ -277,6 +304,10 @@ export const businessSchema = z
           return false;
         }
       }, "Укажите адрес http(s) или оставьте поле пустым"),
+    landingMode: z
+      .enum(["external", "yandex_landing"])
+      .optional()
+      .default("external"),
     service: text,
     benefit: text,
     price: z.number().int().min(0).max(10000000),
@@ -305,7 +336,10 @@ export function withStartingTargetCpa(input) {
   // confirmed conversion data arrives. The value is stored in kopecks.
   return {
     ...input,
-    targetCpa: Math.max(20_000, Math.min(500_000, Math.round(input.budget * 0.05))),
+    targetCpa: Math.max(
+      20_000,
+      Math.min(500_000, Math.round(input.budget * 0.05)),
+    ),
   };
 }
 
@@ -511,9 +545,14 @@ export function createApp({
     const message = z.string().trim().min(2).max(2000).parse(req.body.message);
     const profile = z
       .object({
-        name: z.string().max(160).optional(), category: z.string().max(160).optional(), city: z.string().max(160).optional(),
-        website: z.string().max(2048).optional(), service: z.string().max(160).optional(), benefit: z.string().max(160).optional(),
-        price: z.number().int().min(0).max(10_000_000).optional(), budget: z.number().int().min(1_000).max(1_000_000).optional(),
+        name: z.string().max(160).optional(),
+        category: z.string().max(160).optional(),
+        city: z.string().max(160).optional(),
+        website: z.string().max(2048).optional(),
+        service: z.string().max(160).optional(),
+        benefit: z.string().max(160).optional(),
+        price: z.number().int().min(0).max(10_000_000).optional(),
+        budget: z.number().int().min(1_000).max(1_000_000).optional(),
       })
       .strict()
       .parse(req.body.profile || {});
@@ -579,21 +618,27 @@ export function createApp({
       req.get("Idempotency-Key"),
       hash(JSON.stringify({ action: "ai-plan" })),
       (business) => {
-        if (generated.inputHash !== hash(JSON.stringify({
+        if (
+          generated.inputHash !==
+          hash(
+            JSON.stringify({
           name: business.state.name,
           category: business.state.category,
           city: business.state.city,
           service: business.state.service,
           benefit: business.state.benefit,
           price:
-            Number.isInteger(business.state.price) && business.state.price > 0
+                Number.isInteger(business.state.price) &&
+                business.state.price > 0
               ? business.state.price
               : null,
           website: business.state.website || null,
           budgetRubles: Math.round(business.state.budget / 100),
           periodStart: business.state.periodStart,
           periodEnd: business.state.periodEnd,
-        })))
+            }),
+          )
+        )
           throw new AppError(
             409,
             "Данные бизнеса изменились во время подготовки плана. Обновите план ещё раз.",
@@ -712,7 +757,9 @@ export function createApp({
         analyst: !!process.env.PYTHON_EXECUTABLE,
         creativeImages: !!(
           (config.creativeImagesEnabled && config.localImageApiUrl) ||
-          connections.some((connection) => connection.provider === "openai-image")
+          connections.some(
+            (connection) => connection.provider === "openai-image",
+          )
         ),
         creativeImageSetup: !!config.encryptionConfigured,
         creativeImageProvider: connections.some(
@@ -743,8 +790,14 @@ export function createApp({
     "/api/businesses/:id/optimizer-actions/:actionId/rollback",
     authenticated,
     async (req, res) => {
-      const requestKey = z.string().uuid().parse(req.headers["idempotency-key"]),
-        input = z.object({ spendConfirmed: z.literal(true) }).strict().parse(req.body);
+      const requestKey = z
+          .string()
+          .uuid()
+          .parse(req.headers["idempotency-key"]),
+        input = z
+          .object({ spendConfirmed: z.literal(true) })
+          .strict()
+          .parse(req.body);
       requireBusiness(db, req.user.id, req.params.id);
       const action = optimizerActions(db, req.params.id).find(
         (item) => item.id === req.params.actionId,
@@ -785,7 +838,9 @@ export function createApp({
         .string()
         .uuid()
         .parse(req.headers["idempotency-key"]);
-      res.status(201).json(
+      res
+        .status(201)
+        .json(
         createAudienceExperiment(
           db,
           req.user.id,
@@ -1122,12 +1177,17 @@ export function createApp({
           requestKey,
           report,
         );
-      transitionAdLifecycle(db, business.id, saved.ready ? "ready" : "blocked", {
+      transitionAdLifecycle(
+        db,
+        business.id,
+        saved.ready ? "ready" : "blocked",
+        {
         changeId: change.id,
         reason: saved.ready
           ? "План и подключение проверены. Можно создать выключенный черновик."
           : "Проверка нашла условия, которые нужно исправить до создания черновика.",
-      });
+        },
+      );
       res.json(saved);
     },
   );
@@ -1236,7 +1296,8 @@ export function createApp({
       ) {
         lifecycle = transitionAdLifecycle(db, business.id, "ready", {
           changeId: change.id,
-          reason: "Ранее подтверждённый план перенесён в штатную машину состояний.",
+          reason:
+            "Ранее подтверждённый план перенесён в штатную машину состояний.",
         });
       }
       if (lifecycle.status !== "ready" || lifecycle.changeId !== change.id)
@@ -1247,7 +1308,8 @@ export function createApp({
         );
       transitionAdLifecycle(db, business.id, "creating", {
         changeId: change.id,
-        reason: "Создаём только выключенный черновик и проверяем его чтением API.",
+        reason:
+          "Создаём только выключенный черновик и проверяем его чтением API.",
       });
       const { credentials, metadata } = await refreshYandexConnection({
         db,
@@ -1275,7 +1337,9 @@ export function createApp({
         transitionAdLifecycle(
           db,
           business.id,
-          result.status === "needs_reconciliation" ? "needs_reconciliation" : "paused",
+          result.status === "needs_reconciliation"
+            ? "needs_reconciliation"
+            : "paused",
           {
             changeId: change.id,
             reason:
@@ -1288,7 +1352,8 @@ export function createApp({
       } catch (error) {
         transitionAdLifecycle(db, business.id, "blocked", {
           changeId: change.id,
-          reason: "Создание черновика остановлено. Проверьте подключение и повторите preflight.",
+          reason:
+            "Создание черновика остановлено. Проверьте подключение и повторите preflight.",
         });
         throw error;
       }
@@ -2274,9 +2339,7 @@ export function createApp({
         "creative_images_disabled",
       );
     const requestKey = z.string().uuid().parse(req.headers["idempotency-key"]);
-    res
-      .status(202)
-      .json(
+    res.status(202).json(
         enqueueCreativeImage(
           db,
           req.user.id,
@@ -2734,7 +2797,8 @@ export function createApp({
           }
           case "budget": {
             const budget = money.parse(p.budget),
-              target = p.targetCpa === undefined
+              target =
+                p.targetCpa === undefined
                 ? withStartingTargetCpa({ budget }).targetCpa
                 : money.parse(p.targetCpa);
             const before = { budget: s.budget, targetCpa: s.targetCpa };

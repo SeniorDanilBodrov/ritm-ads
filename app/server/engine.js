@@ -89,6 +89,7 @@ export function seedDemo(name = "Студия «Форма»") {
     category: "Студия маникюра",
     city: "Екатеринбург",
     website: "https://example.com",
+    landingMode: "external",
     service: "Маникюр с покрытием",
     benefit: "Бережный уход и удобная онлайн-запись",
     price: 1900,

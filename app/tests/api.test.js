@@ -101,10 +101,9 @@ test("onboarding needs a business description and a budget, not a target CPA", a
     },
   });
   assert.equal(created.status, 201);
-  const workspace = await send(
-    `/api/workspace?businessId=${created.body.id}`,
-    { cookie },
-  );
+  const workspace = await send(`/api/workspace?businessId=${created.body.id}`, {
+    cookie,
+  });
   assert.equal(workspace.body.state.targetCpa, 150_000);
 });
 
@@ -128,9 +127,17 @@ test("assistant onboarding creates the business and validated plan atomically", 
   });
   assert.equal(created.status, 201);
   assert.equal(created.body.plan.provider, "fallback");
-  const workspace = await send(`/api/workspace?businessId=${created.body.id}`, { cookie });
-  assert.equal(workspace.body.state.aiPlan.inputHash, created.body.plan.inputHash);
-  assert.equal(workspace.body.state.creatives.length, created.body.plan.plan.ads.length);
+  const workspace = await send(`/api/workspace?businessId=${created.body.id}`, {
+    cookie,
+  });
+  assert.equal(
+    workspace.body.state.aiPlan.inputHash,
+    created.body.plan.inputHash,
+  );
+  assert.equal(
+    workspace.body.state.creatives.length,
+    created.body.plan.plan.ads.length,
+  );
   assert.deepEqual(
     workspace.body.events.slice(0, 2).map((item) => item.kind),
     ["ai_plan", "created"],
@@ -359,6 +366,7 @@ test("live workspace can update its local profile without enabling ad writes", a
         category: state.category,
         city: state.city,
         website,
+        landingMode: "yandex_landing",
         service: state.service,
         benefit: state.benefit,
         price: state.price,
@@ -373,6 +381,7 @@ test("live workspace can update its local profile without enabling ad writes", a
   assert.equal(saved.status, 200);
   const current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
   assert.equal(current.body.state.website, website);
+  assert.equal(current.body.state.landingMode, "yandex_landing");
   assert.equal(
     (
       await send(`/api/businesses/${ws.id}/command`, {
@@ -672,7 +681,10 @@ test("Google callback is one-time, browser-bound and isolates two subjects", asy
       expiredTokenResponse.headers.get("location"),
       "/?authError=google-token-expired",
     );
-    assert.match(expiredTokenResponse.headers.get("set-cookie"), /ritm_oauth=;/);
+    assert.match(
+      expiredTokenResponse.headers.get("set-cookie"),
+      /ritm_oauth=;/,
+    );
   } finally {
     await new Promise((resolve) => oauthServer.close(resolve));
     oauthDb.close();
@@ -1196,7 +1208,9 @@ test("OpenAI image key is encrypted, never returned and enables prompt-free vari
       .get(ws.id);
     assert.doesNotMatch(stored.encrypted, /sk-test-not-a-real-key/);
     assert.doesNotMatch(stored.metadata, /sk-test-not-a-real-key/);
-    const current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
+    const current = await send(`/api/workspace?businessId=${ws.id}`, {
+      cookie,
+    });
     assert.equal(current.body.capabilities.creativeImages, true);
     assert.equal(current.body.capabilities.creativeImageProvider, "openai");
     const connection = current.body.connections.find(

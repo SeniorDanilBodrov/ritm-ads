@@ -102,7 +102,9 @@ export function describeDirectValidationFailure(error) {
     };
   return {
     validation: "reauth_required",
-    validationCode: providerCode ? `direct_${providerCode}` : "direct_access_failed",
+    validationCode: providerCode
+      ? `direct_${providerCode}`
+      : "direct_access_failed",
     validationMessage:
       "Код принят, но Яндекс не разрешил доступ к Директу. Проверьте, что выбран нужный аккаунт, и подключите кабинет заново.",
   };
@@ -460,6 +462,7 @@ export class DirectClient {
               "AdId",
               "Impressions",
               "Clicks",
+              "Conversions",
               "Cost",
             ]
           : [
@@ -468,6 +471,7 @@ export class DirectClient {
               "CampaignName",
               "Impressions",
               "Clicks",
+              "Conversions",
               "Cost",
             ],
       ReportName: `ritm-${reportType}-${dateFrom}-${dateTo}`,
@@ -590,6 +594,7 @@ export function parseReport(text) {
       spent: Number(amount),
       clicks: metric(row.Clicks),
       impressions: metric(row.Impressions),
+      conversions: metric(row.Conversions),
     };
   });
 }

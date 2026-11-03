@@ -46,6 +46,23 @@ test("report conversion retains kopecks and rejects unknown values", () => {
     parseReport("Date\tCampaignId\tCost\n2026-10-01\t123\t--"),
   );
 });
+test("campaign report requests and parses Direct conversions", async () => {
+  const parsed = parseReport(
+    "Date\tCampaignId\tImpressions\tClicks\tConversions\tCost\n" +
+      "2026-10-01\t123\t100\t7\t3\t12.34\n",
+  );
+  assert.equal(parsed[0].conversions, 3);
+  let body;
+  const client = new DirectClient({
+    accessToken: "test",
+    fetcher: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response("", { status: 202, headers: { retryIn: "5" } });
+    },
+  });
+  await client.report("2026-10-01", "2026-10-02");
+  assert.ok(body.params.FieldNames.includes("Conversions"));
+});
 test("ad report keeps two ads on the same day and requests only their IDs", async () => {
   const rows = parseReport(
     "Date\tCampaignId\tAdGroupId\tAdId\tImpressions\tClicks\tCost\n" +

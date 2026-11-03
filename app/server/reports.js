@@ -22,6 +22,7 @@ export const reportTotals = (rows) => ({
   spent: sum(rows, "spent"),
   clicks: sum(rows, "clicks"),
   impressions: sum(rows, "impressions"),
+  conversions: sum(rows, "conversions"),
   rowCount: rows.length,
 });
 
@@ -30,9 +31,15 @@ function metricaSummary(raw, state, dateFrom, dateTo) {
   if (
     !Array.isArray(totals) ||
     totals.length < 2 ||
-    totals.slice(0, 2).some((value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0)
+    totals
+      .slice(0, 2)
+      .some(
+        (value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0,
   )
-    throw new ProviderError("Метрика вернула некорректные итоговые показатели.");
+  )
+    throw new ProviderError(
+      "Метрика вернула некорректные итоговые показатели.",
+    );
   return {
     status: "ready",
     counterId: String(state.counterId),
@@ -70,7 +77,8 @@ export function compareReports(previous, current) {
     else if (
       a.spent !== b.spent ||
       a.clicks !== b.clicks ||
-      a.impressions !== b.impressions
+      a.impressions !== b.impressions ||
+      a.conversions !== b.conversions
     )
       changedRows++;
     conservativeSpent += Math.max(a?.spent || 0, b?.spent || 0);
@@ -379,7 +387,9 @@ export async function runReportCycle(
           : { pending: false, rawTsv: p.rawTsv, includeVat: true };
     else {
       const state = JSON.parse(
-        db.prepare("SELECT state FROM businesses WHERE id=?").get(job.business_id).state,
+        db
+          .prepare("SELECT state FROM businesses WHERE id=?")
+          .get(job.business_id).state,
       );
       const readReport = async ({ credentials, metadata }) => {
         const direct = await clientFactory({
@@ -392,7 +402,10 @@ export async function runReportCycle(
         });
         if (direct.pending || (p.reportType || "campaign") !== "campaign")
           return direct;
-        if (!/^\d+$/.test(String(state.counterId)) || !/^\d+$/.test(String(state.goalId)))
+        if (
+          !/^\d+$/.test(String(state.counterId)) ||
+          !/^\d+$/.test(String(state.goalId))
+        )
           return { ...direct, metrica: null };
         try {
           const raw = await metricaFactory(credentials.access_token).statistics(
@@ -561,8 +574,7 @@ export async function runReportCycle(
               : rows.length
                 ? "Отчет Директа сохранен"
                 : "Отчет Директа получен — данных пока нет",
-          reason:
-            !rows.length
+          reason: !rows.length
               ? "Яндекс вернул готовый отчет без строк: за выбранный период не было показов и расходов. Это не ошибка получения отчета."
               : comparison.status === "changed"
               ? "Показатели отличаются от предыдущего снимка. Посмотрите сверку. Расходы из двух версий не складываются."

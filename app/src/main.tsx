@@ -190,9 +190,9 @@ const pageDetails: Record<
     icon: List,
   },
   connections: {
-    title: "Сайт и Директ",
+    title: "Страница и Директ",
     description:
-      "Подключите рекламу и выберите действие на сайте, которое считать обращением.",
+      "Подключите рекламу и укажите, куда привести будущего клиента.",
     eyebrow: "Второй шаг",
     icon: Plug,
   },
@@ -923,7 +923,7 @@ function App() {
               onClick={() => select("connections")}
             >
               <Plug size={19} />
-              Сайт и Директ
+              Страница и Директ
             </button>
             {nav
               .filter((item) => item.id === "campaigns")
@@ -1028,7 +1028,7 @@ function App() {
                 (
                   {
                     creatives: "Изображения",
-                    connections: "Подключить сайт и Директ",
+                    connections: "Подключить страницу и Директ",
                     settings: "О бизнесе",
                   } as Record<string, string>
                 )[page]}
@@ -1989,7 +1989,7 @@ function App() {
           onClick={() => select("connections")}
         >
           <Plug size={20} />
-          <span>Сайт и Директ</span>
+          <span>Страница и Директ</span>
         </button>
         <button
           className={page === "campaigns" ? "selected" : ""}
@@ -2122,8 +2122,8 @@ function App() {
               setPage("connections");
               setToast(
                 r.plan.provider === "ollama"
-                  ? "Рита подготовила план. Теперь подключите сайт и Директ."
-                  : "Профиль собран. Теперь подключите сайт и Директ.",
+                  ? "Рита подготовила план. Теперь выберите страницу и подключите Директ."
+                  : "Профиль собран. Теперь выберите страницу и подключите Директ.",
               );
             })
           }
@@ -2174,10 +2174,10 @@ function App() {
             </p>
             <h3>Что будет после подключения</h3>
             <p>
-              Для реального режима нужны подключение Яндекса, настроенное
-              обращение на сайте и проверка на тестовом кабинете. Пока режим
-              записи выключен, Ритм только проверяет план и ничего не меняет в
-              рекламе.
+              Для реального режима нужны подключение Яндекса и страница, куда
+              перейдёт клиент. Если собственного сайта нет, Яндекс может создать
+              такую страницу. Пока режим записи выключен, Ритм только проверяет
+              план и ничего не меняет в рекламе.
             </p>
             <div className="info-box">
               <ShieldCheck size={20} />
@@ -2278,9 +2278,9 @@ function Reports({
         <Badge tone="neutral">Только чтение · Не меняет рекламу</Badge>
         <h2>Отдельный журнал источников</h2>
         <p>
-          Ритм показывает расходы и клики из рекламы отдельно от визитов и
-          обращений на сайте. Он не складывает эти цифры автоматически, чтобы не
-          выдать обычный визит за результат рекламы.
+          Ритм показывает расходы и клики из рекламы отдельно от обращений на
+          сайте или странице Яндекса. Источники не смешиваются, чтобы обычный
+          визит не выдавался за обращение.
         </p>
         {ws.state.mode === "demo" ? (
           <p className="muted">
@@ -2399,7 +2399,7 @@ function Reports({
               НДС включён · {report.totals.rowCount} строк ·{" "}
               {count(report.totals.clicks)} кликов
             </p>
-            {report.metrica && (
+            {(report.metrica || ws.state.landingMode === "yandex_landing") && (
               <div className="report-source-grid">
                 <div>
                   <span>Яндекс Директ</span>
@@ -2412,12 +2412,22 @@ function Reports({
                   </small>
                 </div>
                 <div>
-                  <span>Яндекс Метрика</span>
-                  {report.metrica.status === "ready" ? (
+                  <span>
+                    {ws.state.landingMode === "yandex_landing"
+                      ? "Страница Яндекса"
+                      : "Яндекс Метрика"}
+                  </span>
+                  {ws.state.landingMode === "yandex_landing" ? (
                     <>
-                      <b>{count(report.metrica.visits ?? 0)} визитов</b>
+                      <b>{count(report.totals.conversions ?? 0)} обращений</b>
+                      <small>Конверсии из отчёта Директа</small>
+                    </>
+                  ) : report.metrica?.status === "ready" ? (
+                    <>
+                      <b>{count(report.metrica?.visits ?? 0)} визитов</b>
                       <small>
-                        {count(report.metrica.goalReaches ?? 0)} достижений цели
+                        {count(report.metrica?.goalReaches ?? 0)} достижений
+                        цели
                       </small>
                     </>
                   ) : (
@@ -2765,7 +2775,11 @@ function LiveOverview({
   );
   const accountReady =
     yandex?.validation === "verified" && !!yandex.clients.length;
-  const analyticsReady = !!ws.state.counterId && !!ws.state.goalId;
+  const hasDestination = Boolean(ws.state.website);
+  const usesYandexLanding = ws.state.landingMode === "yandex_landing";
+  const analyticsReady = usesYandexLanding
+    ? hasDestination
+    : !!ws.state.counterId && !!ws.state.goalId;
   const created = ws.directChanges.filter(
     (change) => change.execution?.status === "succeeded",
   );
@@ -2775,9 +2789,11 @@ function LiveOverview({
   const nextPage =
     !accountReady || !analyticsReady ? "connections" : "campaigns";
   const nextLabel = !accountReady
-    ? "Подключить сайт и Директ"
+    ? "Подключить страницу и Директ"
     : !analyticsReady
+      ? hasDestination
       ? "Выбрать, что считать обращением"
+        : "Выбрать, куда вести клиентов"
       : "Проверить и подготовить запуск";
   const growthStages = [
     {
@@ -2787,9 +2803,9 @@ function LiveOverview({
       page: "settings",
     },
     {
-      label: "Сайт и Директ",
+      label: "Страница и Директ",
       description: "Подключаем место, где найдут вас",
-      done: accountReady && Boolean(ws.state.website),
+      done: accountReady && hasDestination,
       page: "connections",
     },
     {
@@ -2822,9 +2838,8 @@ function LiveOverview({
           <span className="eyebrow">ВАШ МАРШРУТ</span>
           <h2>От рассказа о бизнесе — к понятным итогам рекламы.</h2>
           <p>
-            Расскажите о бизнесе, подключите сайт и Директ, проверьте план — и
-            Ритм покажет, что реклама принесла. До отдельного подтверждения
-            показы не начнутся.
+            Расскажите о бизнесе, выберите страницу для клиентов и подключите
+            Директ. До отдельного подтверждения показы не начнутся.
           </p>
           <button
             type="button"
@@ -2852,9 +2867,11 @@ function LiveOverview({
       </section>
       <section className="live-overview-steps" aria-label="Подготовка рекламы">
         <article className="card live-step">
-          <span className="live-step-index">01 / САЙТ И ДИРЕКТ</span>
+          <span className="live-step-index">01 / СТРАНИЦА И ДИРЕКТ</span>
           <h3>
-            {accountReady
+            {!hasDestination
+              ? "Выберите страницу для клиентов"
+              : accountReady
               ? "Директ подключён"
               : yandex?.validation === "reauth_required"
                 ? "Подключите Директ повторно"
@@ -2862,10 +2879,14 @@ function LiveOverview({
                   ? "Кабинет не найден"
                   : yandex
                     ? "Проверяем подключение"
-                    : "Подключите Директ"}
+                      : hasDestination
+                        ? "Подключите Директ"
+                        : "Выберите страницу для клиентов"}
           </h3>
           <p>
-            {accountReady
+            {!hasDestination
+              ? "Собственного сайта не требуется. Яндекс может бесплатно создать страницу с вашими контактами."
+              : accountReady
               ? `${yandex?.clients.length || 0} доступных кабинетов. Выберите нужный при подготовке кампании.`
               : yandex?.validation === "reauth_required"
                 ? "Доступ к Яндексу истёк. Подключите аккаунт снова, чтобы продолжить."
@@ -2873,7 +2894,7 @@ function LiveOverview({
                   ? "Подключение есть, но доступных рекламных кабинетов пока нет."
                   : yandex
                     ? "Подключение сохранено. Дождитесь проверки доступа к кабинетам."
-                    : "Подключите сайт и рекламный кабинет — Ритм сможет подготовить запуск."}
+                      : "Подключите рекламный кабинет, чтобы Ритм проверил будущий запуск."}
           </p>
           <button
             type="button"
@@ -2887,10 +2908,20 @@ function LiveOverview({
         <article className="card live-step">
           <span className="live-step-index">02 / ОБРАЩЕНИЯ</span>
           <h3>
-            {analyticsReady ? "Обращение выбрано" : "Что считать обращением?"}
+            {usesYandexLanding && analyticsReady
+              ? "Страница Яндекса сохранена"
+              : !hasDestination
+                ? "Сначала выберите страницу"
+                : analyticsReady
+                  ? "Обращение выбрано"
+                  : "Что считать обращением?"}
           </h3>
           <p>
-            {analyticsReady
+            {usesYandexLanding && analyticsReady
+              ? "Код ставить не нужно. Контактные действия на этой странице считает Яндекс."
+              : !hasDestination
+                ? "После выбора страницы Ритм покажет следующий шаг без лишних настроек."
+                : analyticsReady
               ? "Ритм будет считать выбранное действие на сайте: так вы увидите, сколько людей действительно обращается."
               : "Выберите действие на сайте: отправка формы, звонок или запись. Ритм подскажет, как его проверить."}
           </p>
@@ -2899,7 +2930,7 @@ function LiveOverview({
             className="text-button"
             onClick={() => select("connections")}
           >
-            {analyticsReady ? "Посмотреть обращение" : "Выбрать обращение"}{" "}
+            {analyticsReady ? "Проверить настройку" : "Выбрать обращение"}{" "}
             <ArrowRight size={15} />
           </button>
         </article>
@@ -2917,7 +2948,7 @@ function LiveOverview({
               ? "Проверьте понятный итог: расход, обращения и цену обращения."
               : lastPlan
                 ? "Ритм нашёл план. Проверьте препятствия и подготовьте запуск одним действием."
-                : "Ритм проверит сайт, обращение, рекламодателя и бюджет перед запуском."}
+                : "Ритм проверит страницу, обращение, рекламодателя и бюджет перед запуском."}
           </p>
           <button
             type="button"
@@ -5490,8 +5521,8 @@ function DirectPlanBuilder({
           )}
           {!website.trim() && (
             <p className="info-note">
-              Добавьте сайт или страницу, куда придёт человек после объявления.
-              Это нужно, чтобы Ритм проверил план.
+              Выберите страницу, куда придёт человек после объявления. Если
+              своего сайта нет, создайте бесплатную страницу в Яндексе.
             </p>
           )}
         </form>
@@ -7889,7 +7920,15 @@ function Connections({
     [counterId, setCounterId] = useState(ws.state.counterId || ""),
     [goalId, setGoalId] = useState(ws.state.goalId || ""),
     [metricaSetup, setMetricaSetup] = useState<MetricaSetup | null>(null),
-    [copied, setCopied] = useState<"counter" | "goal" | null>(null);
+    [sitePath, setSitePath] = useState<"website" | "yandex">(
+      ws.state.landingMode === "yandex_landing" || !ws.state.website
+        ? "yandex"
+        : "website",
+    ),
+    [destinationUrl, setDestinationUrl] = useState(ws.state.website || ""),
+    [copied, setCopied] = useState<"counter" | "goal" | "description" | null>(
+      null,
+    );
   const linked = ws.connections.find((c) => c.provider === "yandex"),
     directVerified = linked?.validation === "verified",
     directBlocked = linked?.validation === "blocked",
@@ -7913,6 +7952,69 @@ function Connections({
               label: "Открыть настройки API",
             }
           : null;
+  const businessDescription = `${ws.state.name} — ${ws.state.service} в городе ${ws.state.city}. ${ws.state.benefit}.`;
+
+  useEffect(() => {
+    setDestinationUrl(ws.state.website || "");
+    setSitePath(
+      ws.state.landingMode === "yandex_landing" || !ws.state.website
+        ? "yandex"
+        : "website",
+    );
+  }, [ws.id, ws.state.website, ws.state.landingMode]);
+
+  async function saveDestination(mode: "external" | "yandex_landing") {
+    let normalized: string;
+    try {
+      const parsed = new URL(destinationUrl.trim());
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+      normalized = parsed.toString();
+    } catch {
+      setError("Вставьте полный адрес страницы, начиная с https://");
+      return;
+    }
+    setReading(true);
+    setError("");
+    try {
+      await api(`/businesses/${ws.id}/command`, {
+        action: "settings",
+        payload: {
+          name: ws.state.name,
+          category: ws.state.category,
+          city: ws.state.city,
+          website: normalized,
+          landingMode: mode,
+          service: ws.state.service,
+          benefit: ws.state.benefit,
+          price: ws.state.price,
+          budget: ws.state.budget,
+          targetCpa: ws.state.targetCpa,
+          timezone: ws.state.timezone,
+          periodStart: ws.state.periodStart,
+          periodEnd: ws.state.periodEnd,
+        },
+      });
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setReading(false);
+    }
+  }
+  function chooseSitePath(next: "website" | "yandex") {
+    setSitePath(next);
+    setDestinationUrl(
+      next === "yandex"
+        ? ws.state.landingMode === "yandex_landing"
+          ? ws.state.website || ""
+          : ""
+        : ws.state.landingMode !== "yandex_landing"
+          ? ws.state.website || ""
+          : "",
+    );
+    setError("");
+    setMetricaSetup(null);
+  }
   async function read(kind: string) {
     setReading(true);
     setError("");
@@ -7982,7 +8084,10 @@ function Connections({
       setReading(false);
     }
   }
-  async function copyMetrica(value: string, kind: "counter" | "goal") {
+  async function copyText(
+    value: string,
+    kind: "counter" | "goal" | "description",
+  ) {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(kind);
@@ -8230,23 +8335,29 @@ function Connections({
             )}
           </div>
         </section>
-        <section className="card connection">
+        <section className="card connection destination-connection">
           <div className="provider-icon metrica">
-            <BarChart3 size={25} />
+            <PanelsTopLeft size={24} />
           </div>
           <div>
-            <h2>Как считать обращения</h2>
-            <p>Выберите действие, которое означает реальный интерес клиента</p>
+            <h2>Куда вести клиентов</h2>
+            <p>Выберите обычный сайт или страницу Яндекса</p>
           </div>
-          <Badge tone={ws.state.counterId ? "green" : "gray"}>
-            {ws.state.counterId ? "Обращение выбрано" : "Нужно настроить"}
+          <Badge
+            tone={
+              ws.state.website &&
+              (ws.state.landingMode === "yandex_landing" || ws.state.counterId)
+                ? "green"
+                : "gray"
+            }
+          >
+            {ws.state.landingMode === "yandex_landing" && ws.state.website
+              ? "Страница сохранена"
+              : ws.state.counterId
+                ? "Обращение выбрано"
+                : "Нужно настроить"}
           </Badge>
           <div className="connection-body">
-            <p>
-              Это может быть отправка формы, звонок или запись. Ритм покажет,
-              какой код поставить на сайт и как убедиться, что обращение
-              засчитывается.
-            </p>
             {ws.state.mode === "demo" ? (
               ws.state.counterId ? (
                 <div className="connected-line">
@@ -8264,19 +8375,210 @@ function Connections({
                 </button>
               )
             ) : (
+              <>
+                <fieldset className="site-path-selector">
+                  <legend>У вас есть сайт?</legend>
+                  <label className={sitePath === "website" ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="site-path"
+                      value="website"
+                      checked={sitePath === "website"}
+                      onChange={() => chooseSitePath("website")}
+                    />
+                    <span>
+                      <b>Есть сайт</b>
+                      <small>Подключим Метрику и выберем обращение</small>
+                    </span>
+                  </label>
+                  <label className={sitePath === "yandex" ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="site-path"
+                      value="yandex"
+                      checked={sitePath === "yandex"}
+                      onChange={() => chooseSitePath("yandex")}
+                    />
+                    <span>
+                      <b>Сайта нет</b>
+                      <small>Создадите страницу в Директе без сайта</small>
+                    </span>
+                  </label>
+                </fieldset>
+
+                {sitePath === "yandex" ? (
+                  <section
+                    className="no-site-setup"
+                    aria-labelledby="no-site-title"
+                  >
+                    <header>
+                      <span aria-hidden="true">
+                        <PanelsTopLeft size={20} />
+                      </span>
+                      <div>
+                        <h3 id="no-site-title">Создайте страницу в Яндексе</h3>
+                        <p>
+                          Скопируйте готовое описание, добавьте телефон,
+                          Telegram или WhatsApp и опубликуйте страницу.
+                        </p>
+                      </div>
+                    </header>
+                    <ol className="no-site-steps">
+                      <li>
+                        <span>1</span>В Директе выберите «Продвижение бизнеса
+                        без сайта».
+                      </li>
+                      <li>
+                        <span>2</span>
+                        Вставьте описание и добавьте способ связи.
+                      </li>
+                      <li>
+                        <span>3</span>
+                        Опубликуйте страницу и вернитесь сюда со ссылкой.
+                      </li>
+                    </ol>
+                    <div className="business-description-copy">
+                      <div>
+                        <small>Описание для страницы</small>
+                        <p>{businessDescription}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() =>
+                          copyText(businessDescription, "description")
+                        }
+                      >
+                        {copied === "description" ? (
+                          <Check size={15} />
+                        ) : (
+                          <Copy size={15} />
+                        )}
+                        {copied === "description"
+                          ? "Скопировано"
+                          : "Скопировать"}
+                      </button>
+                    </div>
+                    <a
+                      className="button primary no-site-yandex-link"
+                      href="https://direct.yandex.ru/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Открыть Яндекс Директ <ArrowUpRight size={16} />
+                    </a>
+                    <form
+                      className="destination-url-form"
+                      noValidate
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveDestination("yandex_landing");
+                      }}
+                    >
+                      <label htmlFor="yandex-landing-url">
+                        Ссылка на опубликованную страницу
+                        <input
+                          id="yandex-landing-url"
+                          type="url"
+                          inputMode="url"
+                          value={destinationUrl}
+                          onChange={(event) =>
+                            setDestinationUrl(event.target.value)
+                          }
+                          placeholder="https://…"
+                          aria-describedby="yandex-landing-help"
+                        />
+                      </label>
+                      <button
+                        className="secondary"
+                        disabled={reading || !destinationUrl.trim()}
+                      >
+                        {reading ? "Сохраняем…" : "Сохранить ссылку"}
+                      </button>
+                      <small id="yandex-landing-help">
+                        Код устанавливать не нужно. После запуска Ритм возьмёт
+                        обращения из отчёта Директа.
+                      </small>
+                    </form>
+                    {ws.state.landingMode === "yandex_landing" &&
+                      ws.state.website && (
+                        <div className="destination-saved" role="status">
+                          <CheckCircle2 size={17} />
+                          <span>
+                            <b>Страница сохранена</b>
+                            <a
+                              href={ws.state.website}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Открыть и проверить <ArrowUpRight size={14} />
+                            </a>
+                          </span>
+                        </div>
+                      )}
+                    <p className="no-site-limit">
+                      Страницу нужно опубликовать в Яндексе — Ритм не может
+                      сделать это вместо вас. После публикации ссылка появится
+                      в рекламном плане.
+                    </p>
+                  </section>
+            ) : (
               <div className="metrica-picker">
+                    {(!ws.state.website ||
+                      ws.state.landingMode === "yandex_landing") && (
+                      <form
+                        className="destination-url-form"
+                        noValidate
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveDestination("external");
+                        }}
+                      >
+                        <label htmlFor="business-website-url">
+                          Адрес вашего сайта
+                          <input
+                            id="business-website-url"
+                            type="url"
+                            inputMode="url"
+                            value={destinationUrl}
+                            onChange={(event) =>
+                              setDestinationUrl(event.target.value)
+                            }
+                            placeholder="https://example.ru"
+                          />
+                        </label>
+                        <button
+                          className="primary"
+                          disabled={reading || !destinationUrl.trim()}
+                        >
+                          {reading ? "Сохраняем…" : "Сохранить сайт"}
+                        </button>
+                      </form>
+                    )}
+                    {ws.state.website &&
+                      ws.state.landingMode !== "yandex_landing" && (
+                        <>
+                          <p>
+                            Выберите в Метрике действие, которое означает
+                            обращение: отправку формы, звонок или запись.
+                          </p>
                 <button
                   className="secondary"
                   disabled={!linked || reading || needsReconnect}
-                  aria-describedby={linked ? undefined : "metrica-needs-direct"}
+                            aria-describedby={
+                              linked ? undefined : "metrica-needs-direct"
+                            }
                   onClick={loadCounters}
                 >
-                  Найти мой сайт
+                            Найти сайт в Метрике
                 </button>
                 {!linked && (
-                  <p id="metrica-needs-direct" className="connection-step-hint">
-                    Сначала подключите Директ. Так Ритм сможет связать расходы
-                    на рекламу с обращениями на сайте.
+                            <p
+                              id="metrica-needs-direct"
+                              className="connection-step-hint"
+                            >
+                              Сначала подключите Директ. Так Ритм свяжет расходы
+                              с обращениями на сайте.
                   </p>
                 )}
                 {!!counters.length && (
@@ -8302,9 +8604,7 @@ function Connections({
                       value={goalId}
                       onChange={(e) => setGoalId(e.target.value)}
                     >
-                      <option key={""} value="">
-                        Выберите действие
-                      </option>
+                                <option value="">Выберите действие</option>
                       {goals.map((goal) => (
                         <option key={goal.id} value={goal.id}>
                           {goal.name}
@@ -8319,7 +8619,7 @@ function Connections({
                     disabled={reading || needsReconnect}
                     onClick={bindMetrica}
                   >
-                    2. Сохранить действие
+                              Сохранить обращение
                   </button>
                 )}
                 {ws.state.counterId && ws.state.goalId && (
@@ -8329,25 +8629,30 @@ function Connections({
                       disabled={reading || needsReconnect}
                       onClick={loadMetricaSetup}
                     >
-                      3. Получить код для сайта
+                                Получить код для сайта
                     </button>
                     <button
                       className="secondary"
                       disabled={reading || needsReconnect}
                       onClick={() => read("metrica-stats")}
                     >
-                      4. Проверить обращение
+                                Проверить обращение
                     </button>
                   </div>
                 )}
                 {metricaSetup && (
-                  <section className="metrica-setup" aria-live="polite">
+                            <section
+                              className="metrica-setup"
+                              aria-live="polite"
+                            >
                     <div className="metrica-setup-heading">
                       <div>
                         <small>Что сделать на сайте</small>
                         <b>{metricaSetup.counter.name}</b>
                       </div>
-                      <Badge tone={metricaSetup.ready ? "green" : "amber"}>
+                                <Badge
+                                  tone={metricaSetup.ready ? "green" : "amber"}
+                                >
                         {metricaSetup.ready
                           ? "Готово к установке"
                           : "Нужна проверка"}
@@ -8372,7 +8677,7 @@ function Connections({
                           type="button"
                           className="text-button"
                           onClick={() =>
-                            copyMetrica(
+                                      copyText(
                               metricaSetup.installation.counterCode,
                               "counter",
                             )
@@ -8383,20 +8688,27 @@ function Connections({
                           ) : (
                             <Copy size={14} />
                           )}
-                          {copied === "counter" ? "Скопировано" : "Копировать"}
+                                    {copied === "counter"
+                                      ? "Скопировано"
+                                      : "Копировать"}
                         </button>
                       </div>
-                      <pre>{metricaSetup.installation.counterCode}</pre>
+                                <pre>
+                                  {metricaSetup.installation.counterCode}
+                                </pre>
                     </div>
                     {metricaSetup.installation.goalCall && (
                       <div className="metrica-code-block compact">
                         <div>
-                          <b>Добавьте этот код после успешного обращения</b>
+                                    <b>
+                                      Добавьте этот код после успешного
+                                      обращения
+                                    </b>
                           <button
                             type="button"
                             className="text-button"
                             onClick={() =>
-                              copyMetrica(
+                                        copyText(
                                 metricaSetup.installation.goalCall!,
                                 "goal",
                               )
@@ -8407,16 +8719,24 @@ function Connections({
                             ) : (
                               <Copy size={14} />
                             )}
-                            {copied === "goal" ? "Скопировано" : "Копировать"}
+                                      {copied === "goal"
+                                        ? "Скопировано"
+                                        : "Копировать"}
                           </button>
                         </div>
-                        <pre>{metricaSetup.installation.goalCall}</pre>
+                                  <pre>
+                                    {metricaSetup.installation.goalCall}
+                                  </pre>
                       </div>
                     )}
                     <p>{metricaSetup.installation.placement}</p>
                   </section>
                 )}
+                        </>
+                      )}
               </div>
+            )}
+              </>
             )}
           </div>
         </section>
@@ -8443,6 +8763,7 @@ type FormData = {
   category: string;
   city: string;
   website: string;
+  landingMode: "external" | "yandex_landing";
   service: string;
   benefit: string;
   price: number;
@@ -8460,6 +8781,7 @@ function formFrom(s: Business): FormData {
     category: s.category,
     city: s.city,
     website: s.website,
+    landingMode: s.landingMode || "external",
     service: s.service,
     benefit: s.benefit,
     price: s.price,
@@ -8677,6 +8999,7 @@ function BusinessModal({
             category: "",
             city: "",
             website: "",
+            landingMode: "external",
             service: "",
             benefit: "",
             price: 0,
@@ -8772,7 +9095,11 @@ function BusinessModal({
         setFactError("Заполните это поле или отмените изменение.");
         return;
       }
-      set((current) => ({ ...current, [editingFact]: value }));
+      set((current) => ({
+        ...current,
+        [editingFact]: value,
+        ...(editingFact === "website" ? { landingMode: "external" } : {}),
+      }));
     }
     setEditingFact(null);
     setFactError("");
@@ -9016,7 +9343,11 @@ function BusinessModal({
             </span>
           </header>
           <div className="rita-progress" aria-hidden="true">
-            <i style={{ width: `${(knownFacts / facts.length) * 100}%` }} />
+            <i
+              style={{
+                transform: `scaleX(${knownFacts / facts.length})`,
+              }}
+            />
           </div>
           <dl className="rita-facts">
             {facts.map((fact) => (

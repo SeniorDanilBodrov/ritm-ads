@@ -52,6 +52,7 @@ export type Business = {
   category: string;
   city: string;
   website: string;
+  landingMode?: "external" | "yandex_landing";
   service: string;
   benefit: string;
   price: number;
@@ -598,6 +599,7 @@ export type ReportSnapshot = {
     spent: number;
     clicks: number;
     impressions: number;
+    conversions: number;
     rowCount: number;
   };
   comparison: {
@@ -617,6 +619,7 @@ export type ReportSnapshot = {
     spent: number;
     clicks: number;
     impressions: number;
+    conversions: number;
   }[];
 };
 export type Session = {

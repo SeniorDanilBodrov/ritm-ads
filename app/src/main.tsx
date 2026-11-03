@@ -8016,7 +8016,7 @@ function Connections({
         target="_blank"
         rel="noreferrer"
       >
-        1. Получить код в Яндексе <ArrowUpRight size={16} />
+        1. Войти в Яндекс и получить код <ArrowUpRight size={16} />
       </a>
       <form noValidate onSubmit={completeYandex}>
         <label>
@@ -8037,7 +8037,8 @@ function Connections({
         </button>
       </form>
       <small className="muted">
-        Код действует десять минут. Не отправляйте его в чат.
+        В новой вкладке можно выбрать другой аккаунт Яндекса. Код действует
+        десять минут — не отправляйте его в чат.
       </small>
     </div>
   ) : (

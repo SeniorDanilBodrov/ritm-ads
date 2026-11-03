@@ -376,6 +376,7 @@ export function installOAuth(
         createHash("sha256").update(verifier).digest("base64url"),
       );
     } else {
+      params.set("force_confirm", "yes");
       params.set("device_id", verifier);
       params.set("device_name", "Ритм · рекламный кабинет");
     }

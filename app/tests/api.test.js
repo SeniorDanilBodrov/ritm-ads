@@ -718,6 +718,7 @@ test("Yandex OAuth uses the fixed verification-code redirect", async () => {
     const location = new URL(start.headers.get("location"));
     assert.equal(location.origin, "https://oauth.yandex.ru");
     assert.equal(location.searchParams.get("response_type"), "code");
+    assert.equal(location.searchParams.get("force_confirm"), "yes");
     assert.equal(
       location.searchParams.get("redirect_uri"),
       "https://oauth.yandex.ru/verification_code",

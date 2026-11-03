@@ -15,7 +15,11 @@ import { seedDemo, freshBusiness, totals, assertBudget, tickDemo } from "./engin
 import { onboardingAssistant } from "./onboarding-chat.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
 import { token, hash, cookie, encrypt, sessionCookie, sameOrigin, isLoopbackOrigin, secureEquals } from "./security.js";
-import { DirectClient, describeDirectValidationFailure } from "./providers.js";
+import {
+  DirectClient,
+  describeDirectValidationFailure,
+  revokeYandexToken,
+} from "./providers.js";
 import { MetricaClient } from "./providers.js";
 import { decrypt } from "./security.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
@@ -163,7 +167,13 @@ function idempotencyKey(req) {
   return z.string().min(12).max(200).parse(req.get("Idempotency-Key") || randomUUID());
 }
 
-export function createPostgresApp({ db, config, key, advertisingPlanner = createAdvertisingPlan }) {
+export function createPostgresApp({
+  db,
+  config,
+  key,
+  advertisingPlanner = createAdvertisingPlan,
+  revokeToken = revokeYandexToken,
+}) {
   const app = express();
   const attempts = new Map();
   app.disable("x-powered-by");
@@ -350,7 +360,15 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
       await tx.prepare("INSERT INTO oauth_states VALUES(?,?,?,?,?,?,?)").run(hash(state), "yandex", hash(binding), user.id, verifier, Date.now() + 600_000, business.id);
     });
     res.cookie("ritm_oauth", binding, { httpOnly: true, sameSite: "lax", secure: config.production, path: "/", maxAge: 600_000 });
-    const params = new URLSearchParams({ client_id: config.yandexId, response_type: "code", state, device_id: verifier, device_name: "Ритм · рекламный кабинет" });
+    const params = new URLSearchParams({
+      client_id: config.yandexId,
+      response_type: "code",
+      redirect_uri: "https://oauth.yandex.ru/verification_code",
+      force_confirm: "yes",
+      state,
+      device_id: verifier,
+      device_name: "Ритм · рекламный кабинет",
+    });
     res.redirect(`https://oauth.yandex.ru/authorize?${params}`);
   });
   app.post("/api/businesses/:businessId/yandex/oauth/complete", async (req, res) => {
@@ -639,6 +657,53 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
     });
     res.status(201).json({ id, plan });
   });
+  app.post(
+    "/api/businesses/:id/connections/yandex/disconnect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const row = await db
+        .prepare("SELECT * FROM connections WHERE business_id=? AND provider='yandex'")
+        .get(business.id);
+      if (!row) throw new AppError(404, "Подключение Яндекса не найдено.");
+      let revoked = false;
+      let warning = null;
+      try {
+        const credentials = decrypt(row.encrypted, key, `${business.id}:yandex`);
+        const result = await revokeToken(
+          credentials.access_token,
+          config.yandexId,
+          config.yandexSecret,
+        );
+        revoked = result?.status === "ok";
+        if (!revoked)
+          warning =
+            "Подключение удалено, но Яндекс не подтвердил отзыв токена. Отзовите доступ в Яндекс ID.";
+      } catch {
+        warning =
+          "Подключение удалено, но Яндекс не подтвердил отзыв токена. Отзовите доступ в Яндекс ID.";
+      }
+      await db.transaction(async (tx) => {
+        await tx
+          .prepare("DELETE FROM connections WHERE business_id=? AND provider='yandex'")
+          .run(business.id);
+        await tx
+          .prepare(
+            "UPDATE jobs SET status='cancelled',error='Подключение Яндекса отключено пользователем.' WHERE business_id=? AND kind='report_sync' AND status IN ('pending','running')",
+          )
+          .run(business.id);
+        await event(tx, business.id, {
+          kind: "disconnected",
+          title: "Яндекс отключён",
+          reason: revoked
+            ? "Токен отозван и удалён из зашифрованного хранилища."
+            : warning,
+          rule: "user",
+        });
+      });
+      res.json({ ok: true, revoked, warning });
+    },
+  );
   app.post("/api/businesses/:id/command", authenticated, async (req, res) => {
     const input = z.object({ action: z.enum(["tick", "toggle", "schedule"]), payload: z.record(z.string(), z.unknown()).default({}) }).parse(req.body);
     const response = await command(db, req.user.id, req.params.id, idempotencyKey(req), hash(JSON.stringify(input)), async (business, tx) => {

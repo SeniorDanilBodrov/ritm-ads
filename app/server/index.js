@@ -46,6 +46,7 @@ const config = {
   aiProvider: process.env.AI_PROVIDER || "ollama",
   aiOllamaUrl: process.env.OLLAMA_URL || "http://127.0.0.1:11434",
   aiModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
+  remoteAiWorkerToken: process.env.REMOTE_AI_WORKER_TOKEN,
   // Local advertising-photo generation is opt-in so a configured but stopped
   // worker cannot make the interface promise a capability that is unavailable.
   creativeImagesEnabled: process.env.CREATIVE_IMAGES_ENABLED === "true",

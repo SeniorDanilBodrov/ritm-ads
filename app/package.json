@@ -22,6 +22,8 @@
     "ops:load": "node scripts/load-smoke.js",
     "local-image:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local-image-api.ps1",
     "local-image:verify": "node --env-file-if-exists=.env scripts/verify-local-image.js",
+    "ai:worker": "node --env-file-if-exists=.env.worker scripts/ollama-remote-worker.js",
+    "ai:worker:once": "node --env-file-if-exists=.env.worker scripts/ollama-remote-worker.js --once",
     "production:preflight": "node --env-file-if-exists=.env scripts/production-preflight.js",
     "production:preflight:strict": "node --env-file-if-exists=.env scripts/production-preflight.js --strict",
     "production:preflight:live": "node --env-file-if-exists=.env scripts/production-preflight.js --strict --live",

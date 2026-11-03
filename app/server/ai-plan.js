@@ -131,7 +131,7 @@ export function advertisingPlanInputHash(state) {
     .digest("hex");
 }
 
-function validatePlan(raw, state) {
+export function validateAdvertisingPlan(raw, state) {
   const plan = advertisingPlanSchema.parse(raw);
   const channels = new Set(plan.channels);
   const allocations = new Set(plan.budgetAllocation.map((item) => item.channel));
@@ -216,7 +216,7 @@ export function fallbackAdvertisingPlan(state, warning) {
       title: `${service} от ${state.price.toLocaleString("ru-RU")} ₽`.slice(0, 56),
       text: `${state.name} в ${city}. Узнайте условия записи на сайте.`.slice(0, 81),
     });
-  return validatePlan(
+  return validateAdvertisingPlan(
     {
       summary: `Начнём с поиска людей в ${city}, которые уже выбирают ${service.toLocaleLowerCase("ru")}. Проверим разные причины обратиться и не превысим общий бюджет.`,
       audiences: [
@@ -312,7 +312,7 @@ export async function requestOllamaAdvertisingPlan(state, config, fetcher = fetc
         const output = JSON.parse(raw)?.message?.content;
         if (typeof output !== "string" || output.length > 80_000)
           throw new Error("Ollama output missing");
-        return validatePlan(normalizeModelPlan(JSON.parse(output)), state);
+        return validateAdvertisingPlan(normalizeModelPlan(JSON.parse(output)), state);
       } catch (error) {
         lastError = error;
       }

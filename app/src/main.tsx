@@ -597,6 +597,13 @@ function App() {
     return () => window.clearInterval(timer);
   }, [ws?.id, ws?.state.shadowAnalysis]);
   useEffect(() => {
+    if (ws?.state.remoteAiPlan?.status !== "pending") return;
+    const timer = window.setInterval(() => {
+      void load(ws.id).catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [ws?.id, ws?.state.remoteAiPlan?.status]);
+  useEffect(() => {
     if (!notificationsOpen) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (!notificationRef.current?.contains(event.target as Node))

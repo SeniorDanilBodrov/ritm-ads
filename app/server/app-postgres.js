@@ -14,12 +14,19 @@ import { AppError } from "./db.js";
 import { seedDemo, freshBusiness, totals, assertBudget, tickDemo } from "./engine.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
-import { token, hash, cookie, encrypt, sessionCookie, sameOrigin, isLoopbackOrigin } from "./security.js";
+import { token, hash, cookie, encrypt, sessionCookie, sameOrigin, isLoopbackOrigin, secureEquals } from "./security.js";
 import { DirectClient } from "./providers.js";
 import { MetricaClient } from "./providers.js";
 import { decrypt } from "./security.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
+import {
+  claimRemotePlan,
+  completeRemotePlan,
+  failRemotePlan,
+  remoteAiEnabled,
+  remotePlanJob,
+} from "./remote-ai.js";
 
 const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -165,6 +172,14 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
     if (!req.user) throw new AppError(401, "Войдите в свой аккаунт.", "unauthorized");
     next();
   };
+  const remoteWorker = (req) => {
+    const authorization = String(req.get("authorization") || "");
+    const supplied = authorization.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : "";
+    if (!remoteAiEnabled(config) || !secureEquals(supplied, config.remoteAiWorkerToken))
+      throw new AppError(401, "Воркер Риты не авторизован.", "remote_ai_unauthorized");
+  };
   app.get("/api/health", async (_req, res) => {
     await db.prepare("SELECT 1").get();
     res.json({ ok: true, mode: "postgres-pilot", liveLaunch: false });
@@ -182,11 +197,36 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
     res.json({
       user: user ? { id: user.id, name: user.name, demo: user.subject.startsWith("demo:") } : null,
       demoAvailable: config.demo,
-      googleConfigured: false,
-      yandexConfigured: false,
+      googleConfigured: Boolean(config.googleId && config.googleSecret),
+      yandexConfigured: Boolean(config.yandexId && config.yandexSecret),
       liveLaunch: false,
       postgresPilot: true,
     });
+  });
+  app.post("/api/internal/ai-worker/claim", async (req, res) => {
+    remoteWorker(req);
+    const job = await claimRemotePlan(db);
+    if (!job) return res.status(204).end();
+    res.json({
+      ...job,
+      model: config.aiModel || "qwen3.5:4b",
+    });
+  });
+  app.post("/api/internal/ai-worker/:id/complete", async (req, res) => {
+    remoteWorker(req);
+    const body = z
+      .object({ attempt: z.number().int().positive(), result: z.unknown() })
+      .strict()
+      .parse(req.body);
+    res.json(await completeRemotePlan(db, req.params.id, body.attempt, body.result));
+  });
+  app.post("/api/internal/ai-worker/:id/fail", async (req, res) => {
+    remoteWorker(req);
+    const body = z
+      .object({ attempt: z.number().int().positive() })
+      .strict()
+      .parse(req.body);
+    res.json(await failRemotePlan(db, req.params.id, body.attempt));
   });
   app.post("/api/demo", async (req, res) => {
     if (!config.demo) throw new AppError(404, "Демо отключено.");
@@ -454,15 +494,22 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
   });
   app.get("/api/workspace", authenticated, async (req, res) => {
     const business = await requireBusiness(db, req.user.id, req.query.businessId);
+    const connectionRows = await db
+      .prepare("SELECT provider,metadata FROM connections WHERE business_id=?")
+      .all(business.id);
+    const connections = connectionRows.map((row) => ({
+      provider: row.provider,
+      ...JSON.parse(row.metadata),
+    }));
     res.json({
       id: business.id,
       version: business.version,
       state: business.state,
       totals: totals(business.state),
       events: await events(db, business.id),
-      reports: await reportView(db, business.id), reportJobs: [], jobs: [], directChanges: [], abPlans: [], controlReviews: [], shadowReviews: [], shadowReviewJobs: [], adLifecycles: [], optimizerActions: [], audienceExperiments: [], creativeImages: [], connections: [],
-      adLifecycle: { status: "not_started", reason: "Пилот PostgreSQL: подключение рекламных кабинетов переносится следующим этапом." },
-      capabilities: { google: false, yandex: false, liveLaunch: false, directWritePilot: false, directArchivePilot: false, directModerationPilot: false, directResumePilot: false, directBudgetPilot: false, directAbVariantPilot: false, directAbDecisionPilot: false, abPlanning: false, analyst: false, creativeImages: false, creativeImageSetup: false, creativeImageProvider: null },
+      reports: await reportView(db, business.id), reportJobs: [], jobs: [], directChanges: [], abPlans: [], controlReviews: [], shadowReviews: [], shadowReviewJobs: [], adLifecycles: [], optimizerActions: [], audienceExperiments: [], creativeImages: [], connections,
+      adLifecycle: { status: "not_started", reason: "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается." },
+      capabilities: { google: Boolean(config.googleId && config.googleSecret), yandex: Boolean(config.yandexId && config.yandexSecret), liveLaunch: false, directWritePilot: false, directArchivePilot: false, directModerationPilot: false, directResumePilot: false, directBudgetPilot: false, directAbVariantPilot: false, directAbDecisionPilot: false, abPlanning: false, analyst: remoteAiEnabled(config), creativeImages: false, creativeImageSetup: false, creativeImageProvider: null },
     });
   });
   app.post("/api/assistant/onboarding", authenticated, async (req, res) => {
@@ -474,12 +521,34 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
     const input = withStartingTargetCpa(businessSchema.parse(req.body));
     const id = randomUUID();
     const state = freshBusiness(input, req.user.subject.startsWith("demo:"));
-    const generated = await advertisingPlanner(state, config);
+    const generated = await advertisingPlanner(
+      state,
+      remoteAiEnabled(config) ? { ...config, aiProvider: "rules" } : config,
+    );
     const plan = attachAdvertisingPlan(state, generated);
+    const remoteJob = remoteAiEnabled(config) ? remotePlanJob(id, state) : null;
     await db.transaction(async (tx) => {
       await tx.prepare("INSERT INTO businesses VALUES(?,?,?,1)").run(id, req.user.id, JSON.stringify(state));
+      if (remoteJob)
+        await tx.prepare("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?)").run(
+          remoteJob.id,
+          remoteJob.businessId,
+          "remote_ai_plan",
+          "pending",
+          remoteJob.availableAt,
+          0,
+          remoteJob.payload,
+          null,
+        );
       await event(tx, id, { kind: "created", title: "Бизнес добавлен", reason: input.name, rule: "assistant" });
-      await event(tx, id, { kind: "ai_plan", title: "Рекламный план подготовлен", reason: "План собран по данным бизнеса. Перед запуском он пройдёт проверку.", rule: `${generated.provider}/${generated.model}` });
+      await event(tx, id, {
+        kind: "ai_plan",
+        title: remoteJob ? "Рита начала уточнять план" : "Рекламный план подготовлен",
+        reason: remoteJob
+          ? "Базовый безопасный вариант уже доступен. Локальная модель уточнит его в фоне."
+          : "План собран по данным бизнеса. Перед запуском он пройдёт проверку.",
+        rule: remoteJob ? "remote-ollama/queued" : `${generated.provider}/${generated.model}`,
+      });
     });
     res.status(201).json({ id, plan });
   });

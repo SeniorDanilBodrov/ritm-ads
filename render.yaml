@@ -17,6 +17,22 @@ services:
         value: 0.0.0.0
       - key: DEMO_MODE
         value: "false"
+      - key: APP_ORIGIN
+        value: https://ritm-ads.onrender.com
+      - key: AI_PROVIDER
+        value: remote-ollama
+      - key: OLLAMA_MODEL
+        value: qwen3.5:4b
+      - key: REMOTE_AI_WORKER_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: YANDEX_CLIENT_ID
+        sync: false
+      - key: YANDEX_CLIENT_SECRET
+        sync: false
       - key: LIVE_ADS_ENABLED
         value: "false"
       - key: AUTOPILOT_ENABLED

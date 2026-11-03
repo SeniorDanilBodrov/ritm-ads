@@ -90,6 +90,12 @@ export type Business = {
       warnings: string[];
     };
   } | null;
+  remoteAiPlan?: {
+    status: "pending" | "ready" | "failed";
+    jobId: string;
+    queuedAt: string;
+    finishedAt?: string;
+  };
   experiments: Experiment[];
   daily: { label: string; spent: number; leads: number }[];
   sequence: number;

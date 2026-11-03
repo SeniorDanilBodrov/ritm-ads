@@ -82,6 +82,50 @@ try {
   ).json();
   assert.equal(typeof readiness.ready, "boolean");
   assert.equal(Array.isArray(readiness.blockers), true);
+  trace("prepare advertising texts");
+  const generateResponse = await request(
+    `/api/businesses/${businessId}/command`,
+    {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "generate", payload: {} }),
+    },
+  );
+  assert.equal(generateResponse.status, 200);
+  const generatedWorkspace = await (
+    await request(`/api/workspace?businessId=${businessId}`)
+  ).json();
+  const textCreative = generatedWorkspace.state.creatives[0];
+  assert.equal(Boolean(textCreative?.id), true);
+  assert.notEqual(textCreative.status, "approved");
+  trace("approve one advertising text");
+  const approveResponse = await request(
+    `/api/businesses/${businessId}/command`,
+    {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "approve",
+        payload: { id: textCreative.id },
+      }),
+    },
+  );
+  assert.equal(approveResponse.status, 200);
+  const approvedWorkspace = await (
+    await request(`/api/workspace?businessId=${businessId}`)
+  ).json();
+  assert.equal(
+    approvedWorkspace.state.creatives.find(
+      (creative) => creative.id === textCreative.id,
+    )?.status,
+    "approved",
+  );
   trace("queue demo report");
   const reportResponse = await request(
     `/api/businesses/${businessId}/reports`,
@@ -121,7 +165,10 @@ try {
     "PK",
   );
   console.log(
-    JSON.stringify({ ok: true, scenario: "demo-report-xlsx-history" }),
+    JSON.stringify({
+      ok: true,
+      scenario: "demo-text-approval-report-xlsx-history",
+    }),
   );
 } finally {
   trace("cleanup");

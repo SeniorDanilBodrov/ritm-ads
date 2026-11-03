@@ -97,6 +97,9 @@ export type Business = {
     queuedAt: string;
     finishedAt?: string;
   };
+  postgresPilot?: {
+    planConfirmedAt?: string | null;
+  };
   experiments: Experiment[];
   daily: { label: string; spent: number; leads: number }[];
   sequence: number;
@@ -232,6 +235,7 @@ export type Workspace = {
   }[];
   creativeImages: CreativeImage[];
   capabilities: {
+    postgresPilot?: boolean;
     google: boolean;
     yandex: boolean;
     liveLaunch: boolean;

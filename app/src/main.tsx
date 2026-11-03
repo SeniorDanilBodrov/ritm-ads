@@ -727,6 +727,7 @@ function App() {
   }
   const select = (id: string) => {
     setPage(id);
+    setError("");
     setMobile(false);
     setMobileMore(false);
     setGlobalSearch("");
@@ -1364,6 +1365,7 @@ function App() {
                 <Campaigns
                   ws={ws}
                   busy={busy}
+                  navigate={select}
                   budget={() => setModal("budget")}
                   launch={() =>
                     setConfirmation({
@@ -2792,7 +2794,7 @@ function LiveOverview({
     ? "Подключить страницу и Директ"
     : !analyticsReady
       ? hasDestination
-      ? "Выбрать, что считать обращением"
+        ? "Выбрать, что считать обращением"
         : "Выбрать, куда вести клиентов"
       : "Проверить и подготовить запуск";
   const growthStages = [
@@ -2872,13 +2874,13 @@ function LiveOverview({
             {!hasDestination
               ? "Выберите страницу для клиентов"
               : accountReady
-              ? "Директ подключён"
-              : yandex?.validation === "reauth_required"
-                ? "Подключите Директ повторно"
-                : yandex?.validation === "verified"
-                  ? "Кабинет не найден"
-                  : yandex
-                    ? "Проверяем подключение"
+                ? "Директ подключён"
+                : yandex?.validation === "reauth_required"
+                  ? "Подключите Директ повторно"
+                  : yandex?.validation === "verified"
+                    ? "Кабинет не найден"
+                    : yandex
+                      ? "Проверяем подключение"
                       : hasDestination
                         ? "Подключите Директ"
                         : "Выберите страницу для клиентов"}
@@ -2887,13 +2889,13 @@ function LiveOverview({
             {!hasDestination
               ? "Собственного сайта не требуется. Яндекс может бесплатно создать страницу с вашими контактами."
               : accountReady
-              ? `${yandex?.clients.length || 0} доступных кабинетов. Выберите нужный при подготовке кампании.`
-              : yandex?.validation === "reauth_required"
-                ? "Доступ к Яндексу истёк. Подключите аккаунт снова, чтобы продолжить."
-                : yandex?.validation === "verified"
-                  ? "Подключение есть, но доступных рекламных кабинетов пока нет."
-                  : yandex
-                    ? "Подключение сохранено. Дождитесь проверки доступа к кабинетам."
+                ? `${yandex?.clients.length || 0} доступных кабинетов. Выберите нужный при подготовке кампании.`
+                : yandex?.validation === "reauth_required"
+                  ? "Доступ к Яндексу истёк. Подключите аккаунт снова, чтобы продолжить."
+                  : yandex?.validation === "verified"
+                    ? "Подключение есть, но доступных рекламных кабинетов пока нет."
+                    : yandex
+                      ? "Подключение сохранено. Дождитесь проверки доступа к кабинетам."
                       : "Подключите рекламный кабинет, чтобы Ритм проверил будущий запуск."}
           </p>
           <button
@@ -2922,8 +2924,8 @@ function LiveOverview({
               : !hasDestination
                 ? "После выбора страницы Ритм покажет следующий шаг без лишних настроек."
                 : analyticsReady
-              ? "Ритм будет считать выбранное действие на сайте: так вы увидите, сколько людей действительно обращается."
-              : "Выберите действие на сайте: отправка формы, звонок или запись. Ритм подскажет, как его проверить."}
+                  ? "Ритм будет считать выбранное действие на сайте: так вы увидите, сколько людей действительно обращается."
+                  : "Выберите действие на сайте: отправка формы, звонок или запись. Ритм подскажет, как его проверить."}
           </p>
           <button
             type="button"
@@ -3655,9 +3657,291 @@ function Chart({
     </div>
   );
 }
+type LaunchReadiness = {
+  ready: boolean;
+  status: "ready_for_review" | "needs_setup";
+  title: string;
+  detail: string;
+  blockers: { code: string; title: string; detail: string }[];
+};
+
+function HostedPlanReview({
+  ws,
+  busy,
+  navigate,
+  prepareAiPlan,
+  refresh,
+}: {
+  ws: Workspace;
+  busy: boolean;
+  navigate: (page: string) => void;
+  prepareAiPlan: () => void;
+  refresh: () => Promise<void>;
+}) {
+  const plan = ws.state.aiPlan;
+  const [readiness, setReadiness] = useState<LaunchReadiness | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed] = useState(
+    Boolean(ws.state.postgresPilot?.planConfirmedAt),
+  );
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  async function checkReadiness() {
+    setChecking(true);
+    setLocalError("");
+    try {
+      setReadiness(
+        await api(`/businesses/${ws.id}/launch-readiness`, undefined),
+      );
+    } catch (cause) {
+      setLocalError(
+        cause instanceof Error
+          ? cause.message
+          : "Не удалось проверить подготовку. Попробуйте ещё раз.",
+      );
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  useEffect(() => {
+    void checkReadiness();
+  }, [ws.id, plan?.inputHash, ws.state.website, ws.connections.length]);
+
+  useEffect(() => {
+    setConfirmed(Boolean(ws.state.postgresPilot?.planConfirmedAt));
+  }, [ws.state.postgresPilot?.planConfirmedAt]);
+
+  async function confirmPreparedPlan() {
+    setConfirming(true);
+    setLocalError("");
+    try {
+      await api(`/businesses/${ws.id}/launch-readiness/confirm`, {
+        confirmed: true,
+      });
+      setConfirmed(true);
+      await refresh();
+    } catch (cause) {
+      setLocalError(
+        cause instanceof Error
+          ? cause.message
+          : "Не удалось сохранить подтверждение. Попробуйте ещё раз.",
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  function blockerAction(code: string) {
+    if (code === "plan" || code === "plan_outdated")
+      return { label: "Обновить план", action: prepareAiPlan };
+    if (["website", "conversion", "yandex"].includes(code))
+      return {
+        label: "Перейти к подключению",
+        action: () => navigate("connections"),
+      };
+    return {
+      label: "Проверить данные бизнеса",
+      action: () => navigate("settings"),
+    };
+  }
+
+  if (!plan)
+    return (
+      <div className="direct-layout">
+        <section className="card hosted-plan-empty">
+          <div className="ai-plan-mark" aria-hidden="true">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <h2>Ритм подготовит первый план</h2>
+            <p>
+              Рита предложит аудиторию, объявления и распределение бюджета по
+              данным вашего бизнеса.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy}
+            onClick={prepareAiPlan}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <Sparkles size={16} />
+            )}
+            {busy ? "Готовим план…" : "Подготовить план"}
+          </button>
+        </section>
+      </div>
+    );
+
+  return (
+    <div className="direct-layout hosted-plan-layout">
+      <section className="card ai-plan-card hosted-plan-summary">
+        <div className="ai-plan-card-heading">
+          <div className="ai-plan-mark" aria-hidden="true">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <h2>План готов к проверке</h2>
+            <p>{plan.plan.summary}</p>
+          </div>
+          <button
+            type="button"
+            className="secondary ai-plan-button"
+            disabled={busy}
+            onClick={prepareAiPlan}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <RefreshCw size={16} />
+            )}
+            {busy ? "Обновляем…" : "Обновить план"}
+          </button>
+        </div>
+        <div className="ai-plan-summary">
+          <div>
+            <span>Кому покажем</span>
+            <b>{plan.plan.audiences.map((item) => item.name).join(" · ")}</b>
+          </div>
+          <div>
+            <span>Где начнём</span>
+            <b>
+              {plan.plan.channels
+                .map((item) => (item === "search" ? "Поиск" : "Рекламная сеть"))
+                .join(" + ")}
+            </b>
+          </div>
+          <div>
+            <span>Что проверим</span>
+            <b>{plan.plan.abHypotheses[0]?.hypothesis || "Первую гипотезу"}</b>
+          </div>
+          <div>
+            <span>Бюджет на период</span>
+            <b>{money(ws.state.budget)}</b>
+          </div>
+        </div>
+        {plan.plan.warnings.length > 0 && (
+          <p className="ai-plan-warning">{plan.plan.warnings.join(" ")}</p>
+        )}
+      </section>
+
+      <section className="card hosted-launch-review" aria-live="polite">
+        <header>
+          <div>
+            <Badge tone={readiness?.ready ? "green" : "neutral"}>
+              {checking
+                ? "Проверяем"
+                : readiness?.ready
+                  ? "Готово к подтверждению"
+                  : "Нужны действия"}
+            </Badge>
+            <h2>{readiness?.title || "Проверяем подготовку"}</h2>
+            <p>
+              {readiness?.detail ||
+                "Сверяем страницу, обращение, кабинет и бюджет."}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            disabled={checking}
+            onClick={() => void checkReadiness()}
+          >
+            <RefreshCw className={checking ? "spin" : ""} size={16} />
+            {checking ? "Проверяем…" : "Проверить снова"}
+          </button>
+        </header>
+
+        {localError && (
+          <div className="inline-error" role="alert">
+            {localError}
+          </div>
+        )}
+
+        {readiness?.blockers.length ? (
+          <ol className="hosted-launch-blockers">
+            {readiness.blockers.map((blocker, index) => {
+              const action = blockerAction(blocker.code);
+              return (
+                <li key={blocker.code}>
+                  <span>{index + 1}</span>
+                  <div>
+                    <b>{blocker.title}</b>
+                    <p>{blocker.detail}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={action.action}
+                  >
+                    {action.label} <ArrowRight size={15} />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        ) : readiness?.ready ? (
+          confirmed ? (
+            <div className="hosted-plan-confirmed" role="status">
+              <CheckCircle2 size={20} />
+              <div>
+                <b>План проверен и сохранён</b>
+                <p>
+                  Показы не начались. Реальный запуск на этом сервере пока
+                  отключён.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="hosted-plan-confirmation">
+              <div>
+                <h3>Подтвердите подготовленный план</h3>
+                <p>
+                  Подтверждение сохранит результат проверки. Реклама и расходы
+                  не начнутся.
+                </p>
+              </div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                />
+                <span>
+                  Я просмотрел план и понимаю, что показы пока не начнутся
+                </span>
+              </label>
+              <button
+                type="button"
+                className="primary"
+                disabled={!acknowledged || confirming}
+                onClick={() => void confirmPreparedPlan()}
+              >
+                {confirming ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <ShieldCheck size={16} />
+                )}
+                {confirming ? "Сохраняем…" : "Подтвердить план"}
+              </button>
+            </div>
+          )
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function Campaigns({
   ws,
   busy,
+  navigate,
   budget,
   launch,
   toggle,
@@ -3677,6 +3961,7 @@ function Campaigns({
 }: {
   ws: Workspace;
   busy: boolean;
+  navigate: (page: string) => void;
   budget: () => void;
   launch: () => void;
   toggle: (c: Campaign) => void;
@@ -3706,6 +3991,16 @@ function Campaigns({
       (filter === "all" || c.status === filter) &&
       c.name.toLowerCase().includes(search.toLowerCase()),
   );
+  if (ws.capabilities.postgresPilot)
+    return (
+      <HostedPlanReview
+        ws={ws}
+        busy={busy}
+        navigate={navigate}
+        prepareAiPlan={prepareAiPlan}
+        refresh={refresh}
+      />
+    );
   if (ws.state.mode !== "demo" || ws.state.aiPlan)
     return (
       <DirectPlanBuilder
@@ -8171,8 +8466,8 @@ function Connections({
                     : directBlocked
                       ? "amber"
                       : directVerified
-                      ? "green"
-                      : "gray"
+                        ? "green"
+                        : "gray"
             }
           >
             {ws.state.mode === "demo"
@@ -8184,8 +8479,8 @@ function Connections({
                   : directBlocked
                     ? "Ожидает доступа"
                     : directVerified
-                    ? "Подключен"
-                    : "Не подключен"}
+                      ? "Подключен"
+                      : "Не подключен"}
           </Badge>
           <div className="connection-body">
             <p>
@@ -8193,9 +8488,9 @@ function Connections({
                 ? "В демо используется изолированный тестовый кабинет. Реальные токены и деньги не нужны."
                 : linked && !directVerified
                   ? "Код Яндекса сохранён. Пока доступ к API Директа не подтверждён, Ритм не читает и не меняет рекламу."
-                : ws.capabilities.directWritePilot
-                  ? "Кабинет готов к чтению данных и созданию выключенных черновиков после проверки плана и отдельного подтверждения."
-                  : "Кабинет доступен для чтения. Создание выключенных черновиков закрыто серверным допуском; показы и расходы отключены."}
+                  : ws.capabilities.directWritePilot
+                    ? "Кабинет готов к чтению данных и созданию выключенных черновиков после проверки плана и отдельного подтверждения."
+                    : "Кабинет доступен для чтения. Создание выключенных черновиков закрыто серверным допуском; показы и расходы отключены."}
             </p>
             {ws.state.mode === "demo" ? (
               <div className="connected-line">
@@ -8518,12 +8813,12 @@ function Connections({
                       )}
                     <p className="no-site-limit">
                       Страницу нужно опубликовать в Яндексе — Ритм не может
-                      сделать это вместо вас. После публикации ссылка появится
-                      в рекламном плане.
+                      сделать это вместо вас. После публикации ссылка появится в
+                      рекламном плане.
                     </p>
                   </section>
-            ) : (
-              <div className="metrica-picker">
+                ) : (
+                  <div className="metrica-picker">
                     {(!ws.state.website ||
                       ws.state.landingMode === "yandex_landing") && (
                       <form
@@ -8562,180 +8857,180 @@ function Connections({
                             Выберите в Метрике действие, которое означает
                             обращение: отправку формы, звонок или запись.
                           </p>
-                <button
-                  className="secondary"
-                  disabled={!linked || reading || needsReconnect}
+                          <button
+                            className="secondary"
+                            disabled={!linked || reading || needsReconnect}
                             aria-describedby={
                               linked ? undefined : "metrica-needs-direct"
                             }
-                  onClick={loadCounters}
-                >
+                            onClick={loadCounters}
+                          >
                             Найти сайт в Метрике
-                </button>
-                {!linked && (
+                          </button>
+                          {!linked && (
                             <p
                               id="metrica-needs-direct"
                               className="connection-step-hint"
                             >
                               Сначала подключите Директ. Так Ритм свяжет расходы
                               с обращениями на сайте.
-                  </p>
-                )}
-                {!!counters.length && (
-                  <label>
-                    Ваш сайт
-                    <select
-                      value={counterId}
-                      onChange={(e) => loadGoals(e.target.value)}
-                    >
-                      <option value="">Выберите сайт</option>
-                      {counters.map((counter) => (
-                        <option key={counter.id} value={counter.id}>
-                          {counter.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {!!goals.length && (
-                  <label>
-                    Что считать обращением?
-                    <select
-                      value={goalId}
-                      onChange={(e) => setGoalId(e.target.value)}
-                    >
+                            </p>
+                          )}
+                          {!!counters.length && (
+                            <label>
+                              Ваш сайт
+                              <select
+                                value={counterId}
+                                onChange={(e) => loadGoals(e.target.value)}
+                              >
+                                <option value="">Выберите сайт</option>
+                                {counters.map((counter) => (
+                                  <option key={counter.id} value={counter.id}>
+                                    {counter.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {!!goals.length && (
+                            <label>
+                              Что считать обращением?
+                              <select
+                                value={goalId}
+                                onChange={(e) => setGoalId(e.target.value)}
+                              >
                                 <option value="">Выберите действие</option>
-                      {goals.map((goal) => (
-                        <option key={goal.id} value={goal.id}>
-                          {goal.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {counterId && goalId && (
-                  <button
-                    className="primary"
-                    disabled={reading || needsReconnect}
-                    onClick={bindMetrica}
-                  >
+                                {goals.map((goal) => (
+                                  <option key={goal.id} value={goal.id}>
+                                    {goal.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {counterId && goalId && (
+                            <button
+                              className="primary"
+                              disabled={reading || needsReconnect}
+                              onClick={bindMetrica}
+                            >
                               Сохранить обращение
-                  </button>
-                )}
-                {ws.state.counterId && ws.state.goalId && (
-                  <div className="metrica-actions">
-                    <button
-                      className="secondary"
-                      disabled={reading || needsReconnect}
-                      onClick={loadMetricaSetup}
-                    >
+                            </button>
+                          )}
+                          {ws.state.counterId && ws.state.goalId && (
+                            <div className="metrica-actions">
+                              <button
+                                className="secondary"
+                                disabled={reading || needsReconnect}
+                                onClick={loadMetricaSetup}
+                              >
                                 Получить код для сайта
-                    </button>
-                    <button
-                      className="secondary"
-                      disabled={reading || needsReconnect}
-                      onClick={() => read("metrica-stats")}
-                    >
+                              </button>
+                              <button
+                                className="secondary"
+                                disabled={reading || needsReconnect}
+                                onClick={() => read("metrica-stats")}
+                              >
                                 Проверить обращение
-                    </button>
-                  </div>
-                )}
-                {metricaSetup && (
+                              </button>
+                            </div>
+                          )}
+                          {metricaSetup && (
                             <section
                               className="metrica-setup"
                               aria-live="polite"
                             >
-                    <div className="metrica-setup-heading">
-                      <div>
-                        <small>Что сделать на сайте</small>
-                        <b>{metricaSetup.counter.name}</b>
-                      </div>
+                              <div className="metrica-setup-heading">
+                                <div>
+                                  <small>Что сделать на сайте</small>
+                                  <b>{metricaSetup.counter.name}</b>
+                                </div>
                                 <Badge
                                   tone={metricaSetup.ready ? "green" : "amber"}
                                 >
-                        {metricaSetup.ready
-                          ? "Готово к установке"
-                          : "Нужна проверка"}
-                      </Badge>
-                    </div>
-                    <ul className="metrica-checks">
-                      {metricaSetup.checks.map((check) => (
-                        <li key={check.code} className={check.status}>
-                          {check.status === "ok" ? (
-                            <CheckCircle2 size={15} />
-                          ) : (
-                            <HelpCircle size={15} />
-                          )}
-                          {check.message}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="metrica-code-block">
-                      <div>
-                        <b>Добавьте этот код на все страницы сайта</b>
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() =>
+                                  {metricaSetup.ready
+                                    ? "Готово к установке"
+                                    : "Нужна проверка"}
+                                </Badge>
+                              </div>
+                              <ul className="metrica-checks">
+                                {metricaSetup.checks.map((check) => (
+                                  <li key={check.code} className={check.status}>
+                                    {check.status === "ok" ? (
+                                      <CheckCircle2 size={15} />
+                                    ) : (
+                                      <HelpCircle size={15} />
+                                    )}
+                                    {check.message}
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="metrica-code-block">
+                                <div>
+                                  <b>Добавьте этот код на все страницы сайта</b>
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() =>
                                       copyText(
-                              metricaSetup.installation.counterCode,
-                              "counter",
-                            )
-                          }
-                        >
-                          {copied === "counter" ? (
-                            <Check size={14} />
-                          ) : (
-                            <Copy size={14} />
-                          )}
+                                        metricaSetup.installation.counterCode,
+                                        "counter",
+                                      )
+                                    }
+                                  >
+                                    {copied === "counter" ? (
+                                      <Check size={14} />
+                                    ) : (
+                                      <Copy size={14} />
+                                    )}
                                     {copied === "counter"
                                       ? "Скопировано"
                                       : "Копировать"}
-                        </button>
-                      </div>
+                                  </button>
+                                </div>
                                 <pre>
                                   {metricaSetup.installation.counterCode}
                                 </pre>
-                    </div>
-                    {metricaSetup.installation.goalCall && (
-                      <div className="metrica-code-block compact">
-                        <div>
+                              </div>
+                              {metricaSetup.installation.goalCall && (
+                                <div className="metrica-code-block compact">
+                                  <div>
                                     <b>
                                       Добавьте этот код после успешного
                                       обращения
                                     </b>
-                          <button
-                            type="button"
-                            className="text-button"
-                            onClick={() =>
+                                    <button
+                                      type="button"
+                                      className="text-button"
+                                      onClick={() =>
                                         copyText(
-                                metricaSetup.installation.goalCall!,
-                                "goal",
-                              )
-                            }
-                          >
-                            {copied === "goal" ? (
-                              <Check size={14} />
-                            ) : (
-                              <Copy size={14} />
-                            )}
+                                          metricaSetup.installation.goalCall!,
+                                          "goal",
+                                        )
+                                      }
+                                    >
+                                      {copied === "goal" ? (
+                                        <Check size={14} />
+                                      ) : (
+                                        <Copy size={14} />
+                                      )}
                                       {copied === "goal"
                                         ? "Скопировано"
                                         : "Копировать"}
-                          </button>
-                        </div>
+                                    </button>
+                                  </div>
                                   <pre>
                                     {metricaSetup.installation.goalCall}
                                   </pre>
-                      </div>
-                    )}
-                    <p>{metricaSetup.installation.placement}</p>
-                  </section>
-                )}
+                                </div>
+                              )}
+                              <p>{metricaSetup.installation.placement}</p>
+                            </section>
+                          )}
                         </>
                       )}
-              </div>
-            )}
+                  </div>
+                )}
               </>
             )}
           </div>

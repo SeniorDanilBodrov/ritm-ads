@@ -1642,6 +1642,186 @@ tbody tr:hover {
   color: var(--warning) !important;
 }
 
+.hosted-plan-layout {
+  grid-template-columns: 1fr;
+}
+
+.hosted-plan-empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.hosted-plan-empty h2,
+.hosted-plan-empty p {
+  margin: 0;
+}
+
+.hosted-plan-empty p {
+  max-width: 68ch;
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.hosted-plan-summary,
+.hosted-launch-review {
+  grid-column: 1 / -1;
+}
+
+.hosted-launch-review {
+  padding: 22px 24px;
+}
+
+.hosted-launch-review > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hosted-launch-review > header h2 {
+  margin: 10px 0 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.hosted-launch-review > header p {
+  max-width: 72ch;
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hosted-launch-review > header > button {
+  flex: 0 0 auto;
+  min-height: 42px;
+}
+
+.hosted-launch-blockers {
+  margin: 20px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.hosted-launch-blockers li {
+  min-height: 76px;
+  padding: 14px 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.hosted-launch-blockers li > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--brand);
+  background: var(--surface-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.hosted-launch-blockers b,
+.hosted-launch-blockers p {
+  margin: 0;
+}
+
+.hosted-launch-blockers b {
+  color: var(--ink);
+}
+
+.hosted-launch-blockers p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hosted-launch-blockers .text-button {
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.hosted-plan-confirmation {
+  margin-top: 20px;
+  padding-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px 24px;
+  border-top: 1px solid var(--line);
+}
+
+.hosted-plan-confirmation h3,
+.hosted-plan-confirmation p {
+  margin: 0;
+}
+
+.hosted-plan-confirmation p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hosted-plan-confirmation label {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.hosted-plan-confirmation input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  accent-color: var(--brand-action);
+}
+
+.hosted-plan-confirmation > button {
+  min-width: 190px;
+}
+
+.hosted-plan-confirmed {
+  margin-top: 20px;
+  padding: 16px 0 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--success);
+}
+
+.hosted-plan-confirmed b {
+  color: var(--ink);
+}
+
+.hosted-plan-confirmed p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hosted-launch-review .inline-error {
+  margin-top: 16px;
+}
+
 .plan-review-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr);
@@ -6668,6 +6848,44 @@ textarea::placeholder {
     padding: 15px;
   }
 
+  .hosted-plan-empty {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .hosted-plan-empty > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hosted-launch-review > header {
+    flex-direction: column;
+  }
+
+  .hosted-launch-review > header > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hosted-launch-blockers li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .hosted-launch-blockers .text-button {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .hosted-plan-confirmation {
+    grid-template-columns: 1fr;
+  }
+
+  .hosted-plan-confirmation > button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
   .ai-plan-card-heading {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -6684,6 +6902,11 @@ textarea::placeholder {
 }
 
 @media (max-width: 440px) {
+  .hosted-plan-empty,
+  .hosted-launch-review {
+    padding: 16px;
+  }
+
   .ai-plan-card-heading {
     gap: 10px;
   }

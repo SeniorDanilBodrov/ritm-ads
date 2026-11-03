@@ -4,7 +4,9 @@ import { PostgresDatabase } from "../server/postgres-async.js";
 import { runPostgresReportCycle } from "../server/postgres-reports.js";
 
 if (process.env.DATABASE_SMOKE_TEST !== "true")
-  throw new Error("Acceptance-проверка создаёт и удаляет демо-данные. Укажите DATABASE_SMOKE_TEST=true.");
+  throw new Error(
+    "Acceptance-проверка создаёт и удаляет демо-данные. Укажите DATABASE_SMOKE_TEST=true.",
+  );
 if (!/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL || ""))
   throw new Error("Для проверки PostgreSQL задайте DATABASE_URL.");
 
@@ -32,7 +34,8 @@ let cookie = "";
 let userId = null;
 let businessId = null;
 const trace = (step) => {
-  if (process.env.DATABASE_SMOKE_VERBOSE === "true") console.log(`[postgres-pilot] ${step}`);
+  if (process.env.DATABASE_SMOKE_VERBOSE === "true")
+    console.log(`[postgres-pilot] ${step}`);
 };
 const request = async (path, options = {}) => {
   const headers = new Headers(options.headers || {});
@@ -59,29 +62,76 @@ try {
   const businesses = await (await request("/api/businesses")).json();
   assert.equal(businesses.length, 1);
   businessId = businesses[0].id;
-  trace("queue demo report");
-  const reportResponse = await request(`/api/businesses/${businessId}/reports`, {
+  trace("refresh advertising plan");
+  const planResponse = await request(`/api/businesses/${businessId}/ai-plan`, {
     method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID(), "Content-Type": "application/json" },
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+      "Content-Type": "application/json",
+    },
     body: "{}",
   });
+  assert.equal(planResponse.status, 201);
+  assert.equal(
+    Boolean((await planResponse.json()).plan?.plan?.ads?.length),
+    true,
+  );
+  trace("check launch readiness");
+  const readiness = await (
+    await request(`/api/businesses/${businessId}/launch-readiness`)
+  ).json();
+  assert.equal(typeof readiness.ready, "boolean");
+  assert.equal(Array.isArray(readiness.blockers), true);
+  trace("queue demo report");
+  const reportResponse = await request(
+    `/api/businesses/${businessId}/reports`,
+    {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    },
+  );
   assert.equal(reportResponse.status, 202);
   trace("process report");
-  assert.equal((await runPostgresReportCycle(db, { key: Buffer.alloc(32) })).status, "succeeded");
+  assert.equal(
+    (await runPostgresReportCycle(db, { key: Buffer.alloc(32) })).status,
+    "succeeded",
+  );
   trace("read workspace");
-  const workspace = await (await request(`/api/workspace?businessId=${businessId}`)).json();
+  const workspace = await (
+    await request(`/api/workspace?businessId=${businessId}`)
+  ).json();
   assert.equal(workspace.reports.length, 1);
-  assert.equal(workspace.events.some((entry) => entry.kind === "observation"), true);
+  assert.equal(
+    workspace.events.some((entry) => entry.kind === "observation"),
+    true,
+  );
   trace("download xlsx");
-  const xlsx = await request(`/api/businesses/${businessId}/reports/${workspace.reports[0].id}/xlsx`);
+  const xlsx = await request(
+    `/api/businesses/${businessId}/reports/${workspace.reports[0].id}/xlsx`,
+  );
   assert.equal(xlsx.status, 200);
-  assert.equal(Buffer.from(await xlsx.arrayBuffer()).subarray(0, 2).toString(), "PK");
-  console.log(JSON.stringify({ ok: true, scenario: "demo-report-xlsx-history" }));
+  assert.equal(
+    Buffer.from(await xlsx.arrayBuffer())
+      .subarray(0, 2)
+      .toString(),
+    "PK",
+  );
+  console.log(
+    JSON.stringify({ ok: true, scenario: "demo-report-xlsx-history" }),
+  );
 } finally {
   trace("cleanup");
   if (businessId) {
-    await db.prepare("DELETE FROM report_snapshots WHERE business_id=?").run(businessId);
-    await db.prepare("DELETE FROM commands WHERE business_id=?").run(businessId);
+    await db
+      .prepare("DELETE FROM report_snapshots WHERE business_id=?")
+      .run(businessId);
+    await db
+      .prepare("DELETE FROM commands WHERE business_id=?")
+      .run(businessId);
     await db.prepare("DELETE FROM events WHERE business_id=?").run(businessId);
     await db.prepare("DELETE FROM jobs WHERE business_id=?").run(businessId);
     await db.prepare("DELETE FROM businesses WHERE id=?").run(businessId);

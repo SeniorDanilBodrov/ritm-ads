@@ -20,7 +20,7 @@ import {
   rebalance,
 } from "./engine.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
-import { createAdvertisingPlan } from "./ai-plan.js";
+import { advertisingPlanInputHash, createAdvertisingPlan } from "./ai-plan.js";
 import {
   token,
   hash,
@@ -202,11 +202,11 @@ async function command(db, userId, businessId, key, fingerprint, action) {
         "UPDATE businesses SET state=?,version=? WHERE id=? AND user_id=?",
       )
       .run(
-      JSON.stringify(business.state),
-      business.version,
-      business.id,
-      userId,
-    );
+        JSON.stringify(business.state),
+        business.version,
+        business.id,
+        userId,
+      );
     const response = { ok: true, version: business.version, ...result };
     await tx
       .prepare("INSERT INTO commands VALUES(?,?,?,?)")
@@ -372,7 +372,7 @@ export function createPostgresApp({
         reason:
           "Это вымышленные данные студии. Никакие реальные аккаунты не подключены.",
         rule: "demo",
-    });
+      });
     });
     sessionCookie(
       res,
@@ -414,7 +414,7 @@ export function createPostgresApp({
           verifier,
           Date.now() + 600_000,
           null,
-      );
+        );
     });
     res.cookie("ritm_oauth", binding, {
       httpOnly: true,
@@ -597,7 +597,7 @@ export function createPostgresApp({
   app.post(
     "/api/businesses/:businessId/yandex/oauth/complete",
     async (req, res) => {
-    const user = await auth(req);
+      const user = await auth(req);
       if (!user)
         throw new AppError(401, "Войдите в свой аккаунт.", "unauthorized");
       if (
@@ -612,7 +612,7 @@ export function createPostgresApp({
         );
       const code =
         typeof req.body?.code === "string" ? req.body.code.trim() : "";
-    if (!/^[A-Za-z0-9_-]{4,2048}$/.test(code))
+      if (!/^[A-Za-z0-9_-]{4,2048}$/.test(code))
         throw new AppError(
           400,
           "Вставьте код подтверждения, показанный Яндексом.",
@@ -657,15 +657,15 @@ export function createPostgresApp({
           "Яндекс не подтвердил код. Откройте подключение и получите новый.",
           "oauth_failed",
         );
-    const credentials = await response.json();
+      const credentials = await response.json();
       if (!credentials?.access_token)
         throw new AppError(
           401,
           "Яндекс не вернул токен доступа.",
           "oauth_failed",
         );
-    const now = Date.now();
-    const expiresIn = Number(credentials.expires_in);
+      const now = Date.now();
+      const expiresIn = Number(credentials.expires_in);
       const normalized = {
         ...credentials,
         obtained_at: now,
@@ -674,7 +674,7 @@ export function createPostgresApp({
             ? now + Math.floor(expiresIn * 1000)
             : null,
       };
-    const encrypted = encrypt(normalized, key, `${business.id}:yandex`);
+      const encrypted = encrypt(normalized, key, `${business.id}:yandex`);
       const metadata = {
         connectionId: randomUUID(),
         connectedAt: new Date().toISOString(),
@@ -685,20 +685,20 @@ export function createPostgresApp({
           ? new Date(normalized.expires_at).toISOString()
           : null,
       };
-    try {
+      try {
         const clients = await new DirectClient({
           accessToken: normalized.access_token,
           sandbox: false,
         }).clients();
-      metadata.clients = clients.Clients || [];
-      metadata.validation = "verified";
-      metadata.validationMessage = null;
-      metadata.validatedAt = new Date().toISOString();
-    } catch (error) {
-      Object.assign(metadata, describeDirectValidationFailure(error));
-      metadata.lastValidationAt = new Date().toISOString();
-    }
-    await db.transaction(async (tx) => {
+        metadata.clients = clients.Clients || [];
+        metadata.validation = "verified";
+        metadata.validationMessage = null;
+        metadata.validatedAt = new Date().toISOString();
+      } catch (error) {
+        Object.assign(metadata, describeDirectValidationFailure(error));
+        metadata.lastValidationAt = new Date().toISOString();
+      }
+      await db.transaction(async (tx) => {
         await tx
           .prepare(
             "INSERT INTO connections VALUES(?,?,?,?) ON CONFLICT(business_id,provider) DO UPDATE SET encrypted=excluded.encrypted,metadata=excluded.metadata",
@@ -716,109 +716,109 @@ export function createPostgresApp({
               : "Токен сохранён, но проверка кабинета ещё не завершена.",
           rule: "yandex-readonly",
         });
-    });
-    res.clearCookie("ritm_oauth", { path: "/" });
-    res.json({
-      ok: true,
-      validation: metadata.validation,
-      validationCode: metadata.validationCode || null,
-      message: metadata.validationMessage || null,
+      });
+      res.clearCookie("ritm_oauth", { path: "/" });
+      res.json({
+        ok: true,
+        validation: metadata.validation,
+        validationCode: metadata.validationCode || null,
+        message: metadata.validationMessage || null,
         clients: metadata.clients.map((client) => ({
           Login: client.Login,
           ClientId: client.ClientId,
         })),
-  });
+      });
     },
   );
   app.get(
     "/api/businesses/:id/provider/:resource",
     authenticated,
     async (req, res) => {
-    const business = await requireBusiness(db, req.user.id, req.params.id);
-    if (req.params.resource === "counters") {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      if (req.params.resource === "counters") {
         res.json(
           await metricaForBusiness(db, key, business).then((client) =>
             client.counters(),
           ),
         );
-      return;
-    }
-    if (req.params.resource === "goals") {
-      res.json(
-        await metricaForBusiness(db, key, business).then((client) =>
-          client.goals(String(req.query.counterId || "")),
-        ),
-      );
-      return;
-    }
-    const connection = await directConnectionForBusiness(db, key, business);
-    let metadata = connection.metadata;
-    const refreshClients = async () => {
-      try {
-        const result = await new DirectClient({
-          accessToken: connection.credentials.access_token,
-          sandbox: false,
-        }).clients();
-        metadata = {
-          ...metadata,
-          clients: result.Clients || [],
-          validation: "verified",
-          validationCode: null,
-          validationMessage: null,
-          validatedAt: new Date().toISOString(),
-          lastValidationAt: new Date().toISOString(),
-        };
-        await db
+        return;
+      }
+      if (req.params.resource === "goals") {
+        res.json(
+          await metricaForBusiness(db, key, business).then((client) =>
+            client.goals(String(req.query.counterId || "")),
+          ),
+        );
+        return;
+      }
+      const connection = await directConnectionForBusiness(db, key, business);
+      let metadata = connection.metadata;
+      const refreshClients = async () => {
+        try {
+          const result = await new DirectClient({
+            accessToken: connection.credentials.access_token,
+            sandbox: false,
+          }).clients();
+          metadata = {
+            ...metadata,
+            clients: result.Clients || [],
+            validation: "verified",
+            validationCode: null,
+            validationMessage: null,
+            validatedAt: new Date().toISOString(),
+            lastValidationAt: new Date().toISOString(),
+          };
+          await db
             .prepare(
               "UPDATE connections SET metadata=? WHERE business_id=? AND provider='yandex'",
             )
-          .run(JSON.stringify(metadata), business.id);
-        return result;
-      } catch (error) {
-        const failure = describeDirectValidationFailure(error);
-        metadata = {
-          ...metadata,
-          ...failure,
-          clients: [],
-          lastValidationAt: new Date().toISOString(),
-        };
-        await db
+            .run(JSON.stringify(metadata), business.id);
+          return result;
+        } catch (error) {
+          const failure = describeDirectValidationFailure(error);
+          metadata = {
+            ...metadata,
+            ...failure,
+            clients: [],
+            lastValidationAt: new Date().toISOString(),
+          };
+          await db
             .prepare(
               "UPDATE connections SET metadata=? WHERE business_id=? AND provider='yandex'",
             )
-          .run(JSON.stringify(metadata), business.id);
+            .run(JSON.stringify(metadata), business.id);
           throw new AppError(
             409,
             failure.validationMessage,
             failure.validationCode,
           );
+        }
+      };
+      if (req.params.resource === "clients") {
+        res.json(await refreshClients());
+        return;
       }
-    };
-    if (req.params.resource === "clients") {
-      res.json(await refreshClients());
-      return;
-    }
-    if (!["campaigns", "report"].includes(req.params.resource))
-      throw new AppError(404, "Ресурс не найден.");
-    if (!metadata.clients?.length) await refreshClients();
+      if (!["campaigns", "report"].includes(req.params.resource))
+        throw new AppError(404, "Ресурс не найден.");
+      if (!metadata.clients?.length) await refreshClients();
       const login = String(
         req.query.login || metadata.clients?.[0]?.Login || "",
       );
-    if (!metadata.clients.some((client) => client.Login === login))
-      throw new AppError(403, "Кабинет не доступен этому подключению.");
-    const direct = new DirectClient({
-      accessToken: connection.credentials.access_token,
-      login,
-      sandbox: false,
-    });
-    res.json(
-      req.params.resource === "campaigns"
-        ? await direct.campaigns()
+      if (!metadata.clients.some((client) => client.Login === login))
+        throw new AppError(403, "Кабинет не доступен этому подключению.");
+      const direct = new DirectClient({
+        accessToken: connection.credentials.access_token,
+        login,
+        sandbox: false,
+      });
+      res.json(
+        req.params.resource === "campaigns"
+          ? await direct.campaigns()
           : await direct.report(
               business.state.periodStart,
               business.state.periodEnd,
             ),
-    );
+      );
     },
   );
   app.post(
@@ -835,8 +835,8 @@ export function createPostgresApp({
         goalId = String(input.goalId);
       if (!/^\d+$/.test(counterId) || !/^\d+$/.test(goalId))
         throw new AppError(400, "Выберите счётчик и цель Метрики.");
-    const original = await requireBusiness(db, req.user.id, req.params.id);
-    const metrica = await metricaForBusiness(db, key, original);
+      const original = await requireBusiness(db, req.user.id, req.params.id);
+      const metrica = await metricaForBusiness(db, key, original);
       const [counters, goals] = await Promise.all([
         metrica.counters(),
         metrica.goals(counterId),
@@ -856,14 +856,14 @@ export function createPostgresApp({
         idempotencyKey(req),
         hash(JSON.stringify({ action: "metrica-bind", counterId, goalId })),
         async (business, tx) => {
-      if (business.version !== original.version)
+          if (business.version !== original.version)
             throw new AppError(
               409,
               "Данные бизнеса изменились во время настройки Метрики. Повторите выбор.",
               "stale_business",
             );
-      business.state.counterId = counterId;
-      business.state.goalId = goalId;
+          business.state.counterId = counterId;
+          business.state.goalId = goalId;
           business.state.metrica = {
             counter: { id: counterId, name: counter.name || counterId },
             goal: { id: goalId, name: goal.name || goalId },
@@ -874,27 +874,27 @@ export function createPostgresApp({
             title: "Обращение настроено",
             reason: `Будем считать цель «${goal.name || goalId}» в счётчике «${counter.name || counterId}».`,
             rule: "metrica",
-    });
+          });
           return {
             message:
               "Обращение настроено. Теперь Ритм сможет сопоставлять его с расходами рекламы.",
           };
         },
       );
-    res.json(response);
+      res.json(response);
     },
   );
   app.get(
     "/api/businesses/:id/metrica/setup",
     authenticated,
     async (req, res) => {
-    const business = await requireBusiness(db, req.user.id, req.params.id);
-    if (!business.state.counterId || !business.state.goalId)
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      if (!business.state.counterId || !business.state.goalId)
         throw new AppError(
           409,
           "Сначала выберите, какое действие на сайте считать обращением.",
         );
-    const metrica = await metricaForBusiness(db, key, business);
+      const metrica = await metricaForBusiness(db, key, business);
       const [counters, goals] = await Promise.all([
         metrica.counters(),
         metrica.goals(business.state.counterId),
@@ -914,8 +914,8 @@ export function createPostgresApp({
     "/api/businesses/:id/launch-readiness",
     authenticated,
     async (req, res) => {
-    const business = await requireBusiness(db, req.user.id, req.params.id);
-    const blockers = [];
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const blockers = [];
       if (
         !business.state.name ||
         !business.state.category ||
@@ -935,7 +935,7 @@ export function createPostgresApp({
           title: "Укажите бюджет",
           detail: "Ритм не подготовит запуск без лимита расходов.",
         });
-    if (!business.state.website)
+      if (!business.state.website)
         blockers.push({
           code: "website",
           title: "Выберите страницу для клиентов",
@@ -964,8 +964,8 @@ export function createPostgresApp({
           detail:
             "Ритм сможет проверить кабинет, но не начнёт показы без вашего отдельного подтверждения.",
         });
-    else {
-      const metadata = JSON.parse(connection.metadata);
+      else {
+        const metadata = JSON.parse(connection.metadata);
         if (metadata.validation !== "verified")
           blockers.push({
             code: "yandex",
@@ -973,40 +973,51 @@ export function createPostgresApp({
             detail:
               "Подключение сохранено, но доступ к кабинету ещё не подтверждён.",
           });
-    }
-    if (!business.state.aiPlan?.plan?.ads?.length)
+      }
+      if (!business.state.aiPlan?.plan?.ads?.length)
         blockers.push({
           code: "plan",
           title: "Подготовьте объявления",
           detail: "Ритм создаст понятный план по данным вашего бизнеса.",
         });
-    const ready = blockers.length === 0;
-    res.json({
-      ready,
-      status: ready ? "ready_for_review" : "needs_setup",
+      else if (
+        business.state.aiPlan.inputHash !==
+        advertisingPlanInputHash(business.state)
+      )
+        blockers.push({
+          code: "plan_outdated",
+          title: "Обновите рекламный план",
+          detail: "Данные бизнеса изменились после подготовки этого варианта.",
+        });
+      const ready = blockers.length === 0;
+      res.json({
+        ready,
+        status: ready ? "ready_for_review" : "needs_setup",
         title: ready
           ? "План готов к вашей проверке"
           : "До запуска осталось несколько шагов",
         detail: ready
           ? "Проверьте подготовленный план. Реклама не начнётся без отдельного подтверждения."
           : "Ритм собрал только обязательные шаги — без терминов рекламного кабинета.",
-      blockers,
-    });
+        blockers,
+      });
     },
   );
   app.post(
     "/api/businesses/:id/launch-readiness/confirm",
     authenticated,
     async (req, res) => {
-    z.object({ confirmed: z.literal(true) }).parse(req.body);
-    const original = await requireBusiness(db, req.user.id, req.params.id);
-    const missing = [
-      !original.state.website,
+      z.object({ confirmed: z.literal(true) }).parse(req.body);
+      const original = await requireBusiness(db, req.user.id, req.params.id);
+      const missing = [
+        !original.state.website,
         original.state.landingMode !== "yandex_landing" &&
           (!original.state.counterId || !original.state.goalId),
-      !original.state.aiPlan?.plan?.ads?.length,
-      !Number.isInteger(original.state.budget) || original.state.budget <= 0,
-    ].some(Boolean);
+        !original.state.aiPlan?.plan?.ads?.length,
+        original.state.aiPlan?.inputHash !==
+          advertisingPlanInputHash(original.state),
+        !Number.isInteger(original.state.budget) || original.state.budget <= 0,
+      ].some(Boolean);
       const connection = await db
         .prepare(
           "SELECT metadata FROM connections WHERE business_id=? AND provider='yandex'",
@@ -1044,17 +1055,16 @@ export function createPostgresApp({
           await event(tx, business.id, {
             kind: "approval",
             title: "План подтверждён",
-            reason:
-              "Вы просмотрели подготовку. В PostgreSQL-пилоте реклама не публикуется автоматически.",
+            reason: "План сохранён как проверенный. Показы не запускались.",
             rule: "postgres-launch/confirm",
-    });
+          });
           return {
             message:
-              "План сохранён как проверенный. Следующий шаг — отдельное подтверждение реального запуска после приёмки интеграции.",
+              "План сохранён как проверенный. Показы не начались: запуск на этом сервере пока отключён.",
           };
         },
       );
-    res.json(response);
+      res.json(response);
     },
   );
   app.post("/api/businesses/:id/reports", authenticated, async (req, res) => {
@@ -1073,13 +1083,13 @@ export function createPostgresApp({
     "/api/businesses/:id/reports/:reportId/raw",
     authenticated,
     async (req, res) => {
-    await requireBusiness(db, req.user.id, req.params.id);
+      await requireBusiness(db, req.user.id, req.params.id);
       const report = await db
         .prepare(
           "SELECT raw_tsv FROM report_snapshots WHERE id=? AND business_id=?",
         )
         .get(req.params.reportId, req.params.id);
-    if (!report) throw new AppError(404, "Снимок отчёта не найден.");
+      if (!report) throw new AppError(404, "Снимок отчёта не найден.");
       res
         .set({
           "Content-Type": "text/tab-separated-values; charset=utf-8",
@@ -1092,18 +1102,18 @@ export function createPostgresApp({
     "/api/businesses/:id/reports/:reportId/xlsx",
     authenticated,
     async (req, res) => {
-    await requireBusiness(db, req.user.id, req.params.id);
+      await requireBusiness(db, req.user.id, req.params.id);
       const report = await db
         .prepare(
           "SELECT date_from,date_to,rows_json,totals_json FROM report_snapshots WHERE id=? AND business_id=?",
         )
         .get(req.params.reportId, req.params.id);
-    if (!report) throw new AppError(404, "Снимок отчёта не найден.");
+      if (!report) throw new AppError(404, "Снимок отчёта не найден.");
       const rows = JSON.parse(report.rows_json),
         totals = JSON.parse(report.totals_json);
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Ритм";
-    const sheet = workbook.addWorksheet("Отчёт");
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "Ритм";
+      const sheet = workbook.addWorksheet("Отчёт");
       sheet.columns = [
         { header: "Дата", key: "date", width: 14 },
         { header: "Кампания", key: "campaign", width: 34 },
@@ -1112,9 +1122,9 @@ export function createPostgresApp({
         { header: "Показы", key: "impressions", width: 14 },
         { header: "Обращения", key: "conversions", width: 16 },
       ];
-    sheet.insertRow(1, [`Отчёт за ${report.date_from} — ${report.date_to}`]);
+      sheet.insertRow(1, [`Отчёт за ${report.date_from} — ${report.date_to}`]);
       sheet.mergeCells("A1:F1");
-    sheet.getCell("A1").font = { bold: true, size: 16 };
+      sheet.getCell("A1").font = { bold: true, size: 16 };
       for (const row of rows)
         sheet.addRow({
           date: row.Date,
@@ -1123,7 +1133,7 @@ export function createPostgresApp({
           clicks: row.clicks,
           impressions: row.impressions,
           conversions: row.conversions || 0,
-  });
+        });
       sheet.addRow({
         campaign: "Итого",
         spent: totals.spent / 100,
@@ -1189,6 +1199,7 @@ export function createPostgresApp({
           "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается.",
       },
       capabilities: {
+        postgresPilot: true,
         google: Boolean(config.googleId && config.googleSecret),
         yandex: Boolean(config.yandexId && config.yandexSecret),
         liveLaunch: false,
@@ -1242,15 +1253,15 @@ export function createPostgresApp({
         await tx
           .prepare("INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?)")
           .run(
-          remoteJob.id,
-          remoteJob.businessId,
-          "remote_ai_plan",
-          "pending",
-          remoteJob.availableAt,
-          0,
-          remoteJob.payload,
-          null,
-        );
+            remoteJob.id,
+            remoteJob.businessId,
+            "remote_ai_plan",
+            "pending",
+            remoteJob.availableAt,
+            0,
+            remoteJob.payload,
+            null,
+          );
       await event(tx, id, {
         kind: "created",
         title: "Бизнес добавлен",
@@ -1271,6 +1282,46 @@ export function createPostgresApp({
       });
     });
     res.status(201).json({ id, plan });
+  });
+  app.post("/api/businesses/:id/ai-plan", authenticated, async (req, res) => {
+    const original = await requireBusiness(db, req.user.id, req.params.id);
+    const generated = await advertisingPlanner(
+      original.state,
+      remoteAiEnabled(config) ? { ...config, aiProvider: "rules" } : config,
+    );
+    const response = await command(
+      db,
+      req.user.id,
+      original.id,
+      idempotencyKey(req),
+      hash(
+        JSON.stringify({ action: "ai-plan", inputHash: generated.inputHash }),
+      ),
+      async (business, tx) => {
+        if (generated.inputHash !== advertisingPlanInputHash(business.state))
+          throw new AppError(
+            409,
+            "Данные бизнеса изменились, пока Рита готовила план. Обновите план ещё раз.",
+            "plan_outdated",
+          );
+        attachAdvertisingPlan(business.state, generated);
+        business.state.postgresPilot = {
+          ...(business.state.postgresPilot || {}),
+          planConfirmedAt: null,
+        };
+        await event(tx, business.id, {
+          kind: "ai_plan",
+          title: "Рекламный план обновлён",
+          reason:
+            generated.provider === "ollama"
+              ? "Рита уточнила аудитории, объявления и распределение бюджета."
+              : "Рита обновила безопасный план по данным бизнеса.",
+          rule: `${generated.provider}/${generated.model}`,
+        });
+        return { plan: business.state.aiPlan };
+      },
+    );
+    res.status(201).json(response);
   });
   app.post(
     "/api/businesses/:id/connections/yandex/disconnect",
@@ -1341,14 +1392,14 @@ export function createPostgresApp({
       idempotencyKey(req),
       hash(JSON.stringify(input)),
       async (business, tx) => {
-      const state = business.state;
-      let message = "Сохранено";
-      let entries = [];
-      if (input.action === "tick") {
-        entries = tickDemo(state);
-        message = "Тестовый день рассчитан";
-      } else if (input.action === "toggle") {
-        state.running = !state.running;
+        const state = business.state;
+        let message = "Сохранено";
+        let entries = [];
+        if (input.action === "tick") {
+          entries = tickDemo(state);
+          message = "Тестовый день рассчитан";
+        } else if (input.action === "toggle") {
+          state.running = !state.running;
           entries = [
             {
               kind: "control",
@@ -1360,14 +1411,15 @@ export function createPostgresApp({
             },
           ];
         } else if (input.action === "schedule") {
-        state.shadowAnalysis = z.boolean().parse(input.payload.enabled);
+          state.shadowAnalysis = z.boolean().parse(input.payload.enabled);
           entries = [
             {
               kind: "control",
               title: state.shadowAnalysis
                 ? "Наблюдение включено"
                 : "Наблюдение на паузе",
-              reason: "В пилоте PostgreSQL анализ не меняет рекламу.",
+              reason:
+                "Наблюдение ничего не меняет в рекламе — только готовит рекомендации.",
               rule: "user",
             },
           ];
@@ -1386,6 +1438,10 @@ export function createPostgresApp({
           const budgetChanged = parsed.budget !== state.budget;
           Object.assign(state, parsed);
           if (budgetChanged) rebalance(state);
+          state.postgresPilot = {
+            ...(state.postgresPilot || {}),
+            planConfirmedAt: null,
+          };
           state.settingsRevision = Number(state.settingsRevision || 0) + 1;
           message = "Профиль бизнеса сохранён";
           entries = [
@@ -1399,22 +1455,20 @@ export function createPostgresApp({
               rule: "user",
             },
           ];
-      }
-      assertBudget(state);
-      for (const entry of entries) await event(tx, business.id, entry);
-      return { message };
+        }
+        assertBudget(state);
+        for (const entry of entries) await event(tx, business.id, entry);
+        return { message };
       },
     );
     res.json(response);
   });
   app.use("/api", (_req, res) =>
-    res
-      .status(404)
-      .json({
-        error:
-          "Этот раздел переносится на PostgreSQL. Доступны обзор, демо и создание плана.",
-        code: "postgres_pilot_pending",
-      }),
+    res.status(404).json({
+      error:
+        "Это действие пока недоступно в опубликованной версии. Вернитесь к основному маршруту или обновите страницу.",
+      code: "postgres_pilot_pending",
+    }),
   );
   const dist = resolve("dist");
   if (existsSync(dist)) {
@@ -1434,15 +1488,13 @@ export function createPostgresApp({
       );
       if (process.env.DEBUG_POSTGRES_PILOT === "true") console.error(error);
     }
-    res
-      .status(error.status || 500)
-      .json({
-        error:
-          error instanceof AppError
-            ? error.message
-            : "Не удалось выполнить действие. Попробуйте снова.",
-        code: error.code || "internal_error",
-      });
+    res.status(error.status || 500).json({
+      error:
+        error instanceof AppError
+          ? error.message
+          : "Не удалось выполнить действие. Попробуйте снова.",
+      code: error.code || "internal_error",
+    });
   });
   return app;
 }

@@ -149,7 +149,8 @@ export type Workspace = {
     sandbox: boolean;
     model?: string;
     purpose?: string;
-    validation?: "pending" | "verified" | "reauth_required";
+    validation?: "pending" | "blocked" | "verified" | "reauth_required";
+    validationCode?: string | null;
     validationMessage?: string | null;
     validatedAt?: string;
     tokenRefreshedAt?: string;

@@ -171,13 +171,15 @@ const pageDetails: Record<
   },
   advisor: {
     title: "Наблюдение Ритма",
-    description: "Ритм наблюдает за результатом и объясняет, что стоит проверить.",
+    description:
+      "Ритм наблюдает за результатом и объясняет, что стоит проверить.",
     eyebrow: "Только предложения",
     icon: ChartLine,
   },
   reports: {
     title: "Данные и отчёты",
-    description: "Расходы, клики и обращения — с понятным источником каждой цифры.",
+    description:
+      "Расходы, клики и обращения — с понятным источником каждой цифры.",
     eyebrow: "Понятные итоги",
     icon: Database,
   },
@@ -189,13 +191,15 @@ const pageDetails: Record<
   },
   connections: {
     title: "Сайт и Директ",
-    description: "Подключите рекламу и выберите действие на сайте, которое считать обращением.",
+    description:
+      "Подключите рекламу и выберите действие на сайте, которое считать обращением.",
     eyebrow: "Второй шаг",
     icon: Plug,
   },
   settings: {
     title: "О бизнесе",
-    description: "Ритм использует эти данные, чтобы подготовить рекламу именно для вас.",
+    description:
+      "Ритм использует эти данные, чтобы подготовить рекламу именно для вас.",
     eyebrow: "Первый шаг",
     icon: SlidersHorizontal,
   },
@@ -361,7 +365,8 @@ function WorkspaceSwitcher({
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", closeOnOutsidePress);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePress);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, []);
 
   useEffect(() => {
@@ -433,7 +438,8 @@ function WorkspaceSwitcher({
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
               const step = event.key === "ArrowDown" ? 1 : -1;
-              const nextIndex = (currentIndex + step + items.length) % items.length;
+              const nextIndex =
+                (currentIndex + step + items.length) % items.length;
               items[nextIndex]?.focus();
             }
           }}
@@ -451,7 +457,9 @@ function WorkspaceSwitcher({
               }}
             >
               <span>{business.name}</span>
-              {business.id === activeId && <Check size={15} aria-hidden="true" />}
+              {business.id === activeId && (
+                <Check size={15} aria-hidden="true" />
+              )}
             </button>
           ))}
           <button
@@ -508,15 +516,19 @@ function App() {
   const notificationToastRef = useRef<string | null>(null);
   selectedRef.current = activeId;
   const notificationScope =
-    session?.user && ws ? `ritm:autopilot-notifications:${session.user.id}:${ws.id}` : "";
-  const autopilotNotifications = ws?.events.filter(isAutopilotNotification) || [];
+    session?.user && ws
+      ? `ritm:autopilot-notifications:${session.user.id}:${ws.id}`
+      : "";
+  const autopilotNotifications =
+    ws?.events.filter(isAutopilotNotification) || [];
   const unreadNotifications = autopilotNotifications.filter(
     (event) => Date.parse(event.at) > notificationsReadAt,
   );
   const markNotificationsRead = () => {
     const readAt = Date.now();
     setNotificationsReadAt(readAt);
-    if (notificationScope) safeStorage.setItem(notificationScope, String(readAt));
+    if (notificationScope)
+      safeStorage.setItem(notificationScope, String(readAt));
   };
   async function load(id = selectedRef.current) {
     const list = await api("/businesses");
@@ -767,7 +779,9 @@ function App() {
                   <a className="button primary large" href="/auth/google/start">
                     Начать с Ритой <ArrowRight size={18} />
                   </a>
-                  <small>Войдёте через Google, затем Рита спросит о бизнесе.</small>
+                  <small>
+                    Войдёте через Google, затем Рита спросит о бизнесе.
+                  </small>
                 </div>
               ) : (
                 <span className="google-pending">
@@ -788,7 +802,9 @@ function App() {
                     )}{" "}
                     Посмотреть демо <ArrowRight size={18} />
                   </button>
-                  <small>Тестовые данные. Реклама и деньги не затрагиваются.</small>
+                  <small>
+                    Тестовые данные. Реклама и деньги не затрагиваются.
+                  </small>
                 </div>
               )}
             </div>
@@ -899,8 +915,7 @@ function App() {
               className={page === "settings" ? "selected" : ""}
               onClick={() => select("settings")}
             >
-              <SlidersHorizontal size={19} />
-              О бизнесе
+              <SlidersHorizontal size={19} />О бизнесе
             </button>
             <button
               aria-current={page === "connections" ? "page" : undefined}
@@ -964,9 +979,13 @@ function App() {
                   <n.icon size={19} />
                   {n.name}
                   {n.id === "experiments" &&
-                  s?.experiments.filter((e) => e.status === "running").length ? (
+                  s?.experiments.filter((e) => e.status === "running")
+                    .length ? (
                     <span className="nav-count">
-                      {s.experiments.filter((e) => e.status === "running").length}
+                      {
+                        s.experiments.filter((e) => e.status === "running")
+                          .length
+                      }
                     </span>
                   ) : null}
                 </button>
@@ -993,11 +1012,7 @@ function App() {
               <b>{session.user.name}</b>
               <small>Владелец бизнеса</small>
             </div>
-            <button
-              aria-label="Выйти"
-              title="Выйти"
-              onClick={signOut}
-            >
+            <button aria-label="Выйти" title="Выйти" onClick={signOut}>
               <LogOut size={17} />
             </button>
           </div>
@@ -1239,14 +1254,20 @@ function App() {
                 </button>
               }
             >
-              <section className="empty-growth" aria-label="Путь запуска рекламы">
+              <section
+                className="empty-growth"
+                aria-label="Путь запуска рекламы"
+              >
                 <div>
                   <b>Ваше дерево рекламы</b>
                   <span>Оно начнёт расти с первого ответа Рите.</span>
                 </div>
                 <ol aria-hidden="true">
                   {rhythmGrowthImages.map((image, index) => (
-                    <li className={index === 0 ? "current" : "pending"} key={image}>
+                    <li
+                      className={index === 0 ? "current" : "pending"}
+                      key={image}
+                    >
                       <img src={image} alt="" />
                     </li>
                   ))}
@@ -1989,7 +2010,13 @@ function App() {
         <button
           className={
             mobileMore ||
-            ["experiments", "creatives", "advisor", "reports", "history"].includes(page)
+            [
+              "experiments",
+              "creatives",
+              "advisor",
+              "reports",
+              "history",
+            ].includes(page)
               ? "selected"
               : ""
           }
@@ -2252,14 +2279,14 @@ function Reports({
         <h2>Отдельный журнал источников</h2>
         <p>
           Ритм показывает расходы и клики из рекламы отдельно от визитов и
-          обращений на сайте. Он не складывает эти цифры автоматически, чтобы
-          не выдать обычный визит за результат рекламы.
+          обращений на сайте. Он не складывает эти цифры автоматически, чтобы не
+          выдать обычный визит за результат рекламы.
         </p>
         {ws.state.mode === "demo" ? (
           <p className="muted">
-            В демо формируется тестовый отчёт из текущей симуляции.
-            «Проверить расхождение» добавляет 125 ₽ только в тестовый отчёт —
-            бюджет и расход симулятора не меняются.
+            В демо формируется тестовый отчёт из текущей симуляции. «Проверить
+            расхождение» добавляет 125 ₽ только в тестовый отчёт — бюджет и
+            расход симулятора не меняются.
           </p>
         ) : (
           <label>
@@ -2520,7 +2547,7 @@ function Reports({
             )}
           </div>
           <div className="card advisor-item">
-          <h3>Последние обновления</h3>
+            <h3>Последние обновления</h3>
             <ul>
               {ws.reports.map((r) => (
                 <li key={r.id}>
@@ -2580,14 +2607,12 @@ function Advisor({
       <div className="card advisor-intro">
         <div>
           <Badge tone={ws.state.shadowAnalysis ? "green" : "neutral"}>
-            {ws.state.shadowAnalysis
-              ? "Ритм наблюдает"
-              : "Наблюдение на паузе"}
+            {ws.state.shadowAnalysis ? "Ритм наблюдает" : "Наблюдение на паузе"}
           </Badge>
           <h2>Ритм следит за результатом и подсказывает следующий шаг</h2>
           <p>
-            Пока этот режим собирает данные и объясняет, что происходит.
-            Он не запускает показы, не меняет рекламу и не увеличивает бюджет.
+            Пока этот режим собирает данные и объясняет, что происходит. Он не
+            запускает показы, не меняет рекламу и не увеличивает бюджет.
           </p>
         </div>
         <button
@@ -2608,8 +2633,8 @@ function Advisor({
           <h2>Находит изменения и объясняет их простыми словами</h2>
           <p>
             Рита может предложить новый текст или подсказать, что проверить.
-            Любое изменение рекламы остаётся видимым для вас, а общий бюджет
-            без вашего решения не увеличивается.
+            Любое изменение рекламы остаётся видимым для вас, а общий бюджет без
+            вашего решения не увеличивается.
           </p>
         </div>
         <button
@@ -2786,7 +2811,9 @@ function LiveOverview({
       page: "reports",
     },
   ];
-  const completedGrowthStages = growthStages.filter((stage) => stage.done).length;
+  const completedGrowthStages = growthStages.filter(
+    (stage) => stage.done,
+  ).length;
   const nextGrowthStage = growthStages.find((stage) => !stage.done);
   return (
     <div className="live-overview">
@@ -2795,8 +2822,8 @@ function LiveOverview({
           <span className="eyebrow">ВАШ МАРШРУТ</span>
           <h2>От рассказа о бизнесе — к понятным итогам рекламы.</h2>
           <p>
-            Расскажите о бизнесе, подключите сайт и Директ, проверьте план —
-            и Ритм покажет, что реклама принесла. До отдельного подтверждения
+            Расскажите о бизнесе, подключите сайт и Директ, проверьте план — и
+            Ритм покажет, что реклама принесла. До отдельного подтверждения
             показы не начнутся.
           </p>
           <button
@@ -2859,7 +2886,9 @@ function LiveOverview({
         </article>
         <article className="card live-step">
           <span className="live-step-index">02 / ОБРАЩЕНИЯ</span>
-          <h3>{analyticsReady ? "Обращение выбрано" : "Что считать обращением?"}</h3>
+          <h3>
+            {analyticsReady ? "Обращение выбрано" : "Что считать обращением?"}
+          </h3>
           <p>
             {analyticsReady
               ? "Ритм будет считать выбранное действие на сайте: так вы увидите, сколько людей действительно обращается."
@@ -2920,11 +2949,18 @@ function LiveOverview({
             </span>
           </div>
         </header>
-        <ol className="dispatcher-growth-map" aria-label="Этапы запуска рекламы">
+        <ol
+          className="dispatcher-growth-map"
+          aria-label="Этапы запуска рекламы"
+        >
           {growthStages.map((stage, index) => (
             <li
               className={
-                stage.done ? "done" : stage === nextGrowthStage ? "current" : "pending"
+                stage.done
+                  ? "done"
+                  : stage === nextGrowthStage
+                    ? "current"
+                    : "pending"
               }
               key={stage.label}
             >
@@ -3070,11 +3106,27 @@ function Overview({
   const hasPreparation = hasPlan && s.campaigns.length > 0;
   const hasAds = hasPreparation && s.running;
   const rhythmStages = [
-    { label: "Бизнес", description: "Расскажите, чем занимаетесь", done: hasBusiness },
+    {
+      label: "Бизнес",
+      description: "Расскажите, чем занимаетесь",
+      done: hasBusiness,
+    },
     { label: "План", description: "Цели, аудитории и бюджет", done: hasPlan },
-    { label: "Подготовка", description: "Направления и объявления", done: hasPreparation },
-    { label: "Реклама", description: "Показы и первые обращения", done: hasAds },
-    { label: "Результат", description: "Понимаем, что работает", done: hasAds && t.leads > 0 },
+    {
+      label: "Подготовка",
+      description: "Направления и объявления",
+      done: hasPreparation,
+    },
+    {
+      label: "Реклама",
+      description: "Показы и первые обращения",
+      done: hasAds,
+    },
+    {
+      label: "Результат",
+      description: "Понимаем, что работает",
+      done: hasAds && t.leads > 0,
+    },
   ];
   const rhythmReady = rhythmStages.filter((stage) => stage.done).length;
   const nextRhythmStage = rhythmStages.find((stage) => !stage.done);
@@ -3193,7 +3245,11 @@ function Overview({
         </header>
         <div className="dispatcher-trend-legend">
           <span>
-            <i className={chartMode === "bars" ? "is-bars" : ""} aria-hidden="true" /> Количество обращений
+            <i
+              className={chartMode === "bars" ? "is-bars" : ""}
+              aria-hidden="true"
+            />{" "}
+            Количество обращений
           </span>
           <span>
             {chartMode === "line"
@@ -3286,25 +3342,46 @@ function Overview({
           <div>
             <span className="dispatcher-section-label">Путь запуска</span>
             <h2 id="dispatcher-actions-title">Дерево рекламы</h2>
-            <p>Каждый готовый этап помогает рекламе расти — без лишних действий и расходов.</p>
+            <p>
+              Каждый готовый этап помогает рекламе расти — без лишних действий и
+              расходов.
+            </p>
           </div>
-          <div className="dispatcher-growth-score" aria-label={`Готово ${rhythmReady} из ${rhythmStages.length} этапов`}>
+          <div
+            className="dispatcher-growth-score"
+            aria-label={`Готово ${rhythmReady} из ${rhythmStages.length} этапов`}
+          >
             <b>{rhythmReady}</b>
-            <span>из {rhythmStages.length}<small>этапов</small></span>
+            <span>
+              из {rhythmStages.length}
+              <small>этапов</small>
+            </span>
           </div>
         </header>
-        <ol className="dispatcher-growth-map" aria-label="Этапы запуска рекламы">
+        <ol
+          className="dispatcher-growth-map"
+          aria-label="Этапы запуска рекламы"
+        >
           {rhythmStages.map((stage, index) => (
             <li className={stage.done ? "done" : "pending"} key={stage.label}>
               <span className="dispatcher-growth-tree" aria-hidden="true">
                 <img src={rhythmGrowthImages[index]} alt="" />
               </span>
               <span className="dispatcher-growth-copy">
-                <b><em>{index + 1}</em>{stage.label}</b>
+                <b>
+                  <em>{index + 1}</em>
+                  {stage.label}
+                </b>
                 <small>{stage.description}</small>
               </span>
               <span className="dispatcher-growth-status">
-                {stage.done ? <><Check size={12} aria-hidden="true" /> Готово</> : "Следующий шаг"}
+                {stage.done ? (
+                  <>
+                    <Check size={12} aria-hidden="true" /> Готово
+                  </>
+                ) : (
+                  "Следующий шаг"
+                )}
               </span>
             </li>
           ))}
@@ -3316,7 +3393,8 @@ function Overview({
               : "Все этапы готовы. Теперь Ритм следит за результатом и бережёт бюджет."}
           </span>
           <button type="button" onClick={() => select("campaigns")}>
-            {nextRhythmStage ? "Продолжить" : "Открыть рекламу"} <ArrowRight size={14} />
+            {nextRhythmStage ? "Продолжить" : "Открыть рекламу"}{" "}
+            <ArrowRight size={14} />
           </button>
         </footer>
       </aside>
@@ -3540,7 +3618,8 @@ function Chart({
         </div>
       )}
       <span className="chart-caption">
-        Дни — слева направо. Высота {mode === "line" ? "линии" : "столбца"} показывает количество обращений.
+        Дни — слева направо. Высота {mode === "line" ? "линии" : "столбца"}{" "}
+        показывает количество обращений.
       </span>
     </div>
   );
@@ -3833,8 +3912,9 @@ function DirectControlCard({
       {review ? (
         <>
           <p>
-            Ритм сверил состояние кампании, лимит {money(review.budget.limitKopecks)}
-            и подтверждённый расход за период {money(review.budget.spentKopecks)}.
+            Ритм сверил состояние кампании, лимит{" "}
+            {money(review.budget.limitKopecks)}и подтверждённый расход за период{" "}
+            {money(review.budget.spentKopecks)}.
           </p>
           {review.budget.spentKopecks === null && (
             <small>
@@ -3848,7 +3928,10 @@ function DirectControlCard({
               <b className="launch-blockers-title">Что мешает запуску</b>
               <ul>
                 {review.blockers.map((code) => (
-                  <li key={code}>{controlBlockers[code] || "Нужна дополнительная проверка кампании."}</li>
+                  <li key={code}>
+                    {controlBlockers[code] ||
+                      "Нужна дополнительная проверка кампании."}
+                  </li>
                 ))}
               </ul>
             </>
@@ -3859,8 +3942,8 @@ function DirectControlCard({
             </p>
           )}
           <small>
-            Проверено {new Date(review.checkedAt).toLocaleString("ru-RU")}.
-            Эта проверка не меняет рекламу и не запускает показы.
+            Проверено {new Date(review.checkedAt).toLocaleString("ru-RU")}. Эта
+            проверка не меняет рекламу и не запускает показы.
           </small>
         </>
       ) : (
@@ -5194,9 +5277,11 @@ function DirectPlanBuilder({
             <Sparkles size={18} />
           </div>
           <div>
-              <span className="eyebrow">ПОДГОТОВКА ЗАПУСКА</span>
+            <span className="eyebrow">ПОДГОТОВКА ЗАПУСКА</span>
             <h2>
-              {aiPlan ? "План готов к проверке" : "Сначала расскажите о бизнесе"}
+              {aiPlan
+                ? "План готов к проверке"
+                : "Сначала расскажите о бизнесе"}
             </h2>
             <p>
               {aiPlan
@@ -5748,9 +5833,7 @@ function DirectPlanBuilder({
         </dl>
         <div className="queue-list">
           <h3>Планы и созданные кампании</h3>
-          {!changes.length && (
-            <p className="muted">План ещё не проверяли.</p>
-          )}
+          {!changes.length && <p className="muted">План ещё не проверяли.</p>}
           {changes.map((change) => (
             <article key={change.id}>
               <div className="direct-existing-summary">
@@ -5833,7 +5916,7 @@ function DirectPlanBuilder({
                       подтвердить план.
                     </p>
                   </>
-              )}
+                )}
               {change.status === "succeeded" &&
                 linked &&
                 (change.plan?.periodStart || "") <= moscowDateAfter(0) && (
@@ -5855,130 +5938,142 @@ function DirectPlanBuilder({
                 )}
               {change.preflight &&
                 (change.plan?.periodStart || "") > moscowDateAfter(0) && (
-                <div className="direct-preflight-result" aria-live="polite">
-                  <b>
-                    {change.preflight.ready
-                      ? "План прошёл предварительную проверку на указанное время"
-                      : "До реального создания есть препятствия"}
-                  </b>
-                  <small>
-                    Проверено {new Date(change.preflight.checkedAt).toLocaleString(
-                      "ru-RU",
-                    )}. Реклама пока не менялась.
-                  </small>
-                  {change.preflight.ready && (
-                    <p className="direct-next-step">
-                      Следующий шаг: подтвердите план ниже. Только после
-                      отдельного согласия можно создать выключенный черновик
-                      кампании.
-                    </p>
-                  )}
-                  <ul>
-                    {change.preflight.findings.map((finding) => (
-                      <li key={finding.code} className={finding.severity}>
-                        {finding.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                  <div className="direct-preflight-result" aria-live="polite">
+                    <b>
+                      {change.preflight.ready
+                        ? "План прошёл предварительную проверку на указанное время"
+                        : "До реального создания есть препятствия"}
+                    </b>
+                    <small>
+                      Проверено{" "}
+                      {new Date(change.preflight.checkedAt).toLocaleString(
+                        "ru-RU",
+                      )}
+                      . Реклама пока не менялась.
+                    </small>
+                    {change.preflight.ready && (
+                      <p className="direct-next-step">
+                        Следующий шаг: подтвердите план ниже. Только после
+                        отдельного согласия можно создать выключенный черновик
+                        кампании.
+                      </p>
+                    )}
+                    <ul>
+                      {change.preflight.findings.map((finding) => (
+                        <li key={finding.code} className={finding.severity}>
+                          {finding.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               {change.preflight?.ready &&
                 (change.plan?.periodStart || "") > moscowDateAfter(0) && (
-                <div className="direct-approval" data-direct-approval={change.id}>
-                  <b>Подтвердите подготовленный план</b>
-                  <p className="direct-approval-explainer">
-                    Подтверждение разрешает следующий шаг: создать выключенный
-                    черновик кампании в Директе. Показы от этого не начнутся.
-                  </p>
-                  {Date.parse(change.preflight.checkedAt) + 10 * 60_000 <=
-                    clock && (
-                    <small>
-                      Проверка устарела. Повторите её перед подтверждением.
-                    </small>
-                  )}
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={
-                        reviewed ===
-                        `${change.id}:${change.preflight.planFingerprint}`
-                      }
-                      onChange={(event) =>
-                        setReviewed(
-                          event.target.checked
-                            ? `${change.id}:${change.preflight!.planFingerprint}`
-                            : null,
-                        )
-                      }
-                    />
-                    Я просмотрел план и понимаю, что реклама пока не запустится
-                  </label>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={
-                      busy ||
-                      Date.parse(change.preflight.checkedAt) + 10 * 60_000 <=
-                        clock ||
-                      reviewed !==
-                        `${change.id}:${change.preflight.planFingerprint}`
-                    }
-                    onClick={() =>
-                      confirmPlan(change.id, change.preflight!.planFingerprint)
-                    }
+                  <div
+                    className="direct-approval"
+                    data-direct-approval={change.id}
                   >
-                    Подтвердить и перейти к черновику
-                  </button>
-                  {change.approval && !change.execution && (
-                    <div className="direct-approval-state" role="status">
-                      <b>
-                        {Date.parse(change.approval.expiresAt) > clock
-                          ? "План подтверждён. Реклама ещё не создана."
-                          : "Подтверждение истекло. Реклама не создана."}
-                      </b>
+                    <b>Подтвердите подготовленный план</b>
+                    <p className="direct-approval-explainer">
+                      Подтверждение разрешает следующий шаг: создать выключенный
+                      черновик кампании в Директе. Показы от этого не начнутся.
+                    </p>
+                    {Date.parse(change.preflight.checkedAt) + 10 * 60_000 <=
+                      clock && (
                       <small>
-                        {Date.parse(change.approval.expiresAt) > clock
-                          ? `Можно продолжить до ${new Date(change.approval.expiresAt).toLocaleString("ru-RU")}.`
-                          : "Повторите проверку и подтвердите план заново."}
+                        Проверка устарела. Повторите её перед подтверждением.
                       </small>
-                    </div>
-                  )}
-                  {change.approval &&
-                    !change.execution &&
-                    ws.capabilities.directWritePilot && (
-                      <button
-                        type="button"
-                        className="primary direct-execute-button"
-                        disabled={
-                          busy || Date.parse(change.approval.expiresAt) <= clock
+                    )}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={
+                          reviewed ===
+                          `${change.id}:${change.preflight.planFingerprint}`
                         }
-                        onClick={() =>
-                          executePlan(
-                            change.id,
-                            change.approval!.planFingerprint,
-                            change.plan?.campaignName || "Новая кампания",
-                            change.plan?.budget || 0,
+                        onChange={(event) =>
+                          setReviewed(
+                            event.target.checked
+                              ? `${change.id}:${change.preflight!.planFingerprint}`
+                              : null,
                           )
                         }
-                      >
-                        Создать выключенный черновик
-                      </button>
-                    )}
-                  {change.approval &&
-                    !change.execution &&
-                    !ws.capabilities.directWritePilot && (
-                      <div className="direct-publish-blocked" role="status">
-                        <b>Реклама не появится в Директе из этого просмотра</b>
-                        <p>
-                          Сервер работает в безопасном режиме: он умеет
-                          подготовить и проверить план, но не создаёт кампании.
-                          Для размещения нужен рабочий сервер с отдельно
-                          включённым созданием кампаний.
-                        </p>
+                      />
+                      Я просмотрел план и понимаю, что реклама пока не
+                      запустится
+                    </label>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={
+                        busy ||
+                        Date.parse(change.preflight.checkedAt) + 10 * 60_000 <=
+                          clock ||
+                        reviewed !==
+                          `${change.id}:${change.preflight.planFingerprint}`
+                      }
+                      onClick={() =>
+                        confirmPlan(
+                          change.id,
+                          change.preflight!.planFingerprint,
+                        )
+                      }
+                    >
+                      Подтвердить и перейти к черновику
+                    </button>
+                    {change.approval && !change.execution && (
+                      <div className="direct-approval-state" role="status">
+                        <b>
+                          {Date.parse(change.approval.expiresAt) > clock
+                            ? "План подтверждён. Реклама ещё не создана."
+                            : "Подтверждение истекло. Реклама не создана."}
+                        </b>
+                        <small>
+                          {Date.parse(change.approval.expiresAt) > clock
+                            ? `Можно продолжить до ${new Date(change.approval.expiresAt).toLocaleString("ru-RU")}.`
+                            : "Повторите проверку и подтвердите план заново."}
+                        </small>
                       </div>
                     )}
-                </div>
-              )}
+                    {change.approval &&
+                      !change.execution &&
+                      ws.capabilities.directWritePilot && (
+                        <button
+                          type="button"
+                          className="primary direct-execute-button"
+                          disabled={
+                            busy ||
+                            Date.parse(change.approval.expiresAt) <= clock
+                          }
+                          onClick={() =>
+                            executePlan(
+                              change.id,
+                              change.approval!.planFingerprint,
+                              change.plan?.campaignName || "Новая кампания",
+                              change.plan?.budget || 0,
+                            )
+                          }
+                        >
+                          Создать выключенный черновик
+                        </button>
+                      )}
+                    {change.approval &&
+                      !change.execution &&
+                      !ws.capabilities.directWritePilot && (
+                        <div className="direct-publish-blocked" role="status">
+                          <b>
+                            Реклама не появится в Директе из этого просмотра
+                          </b>
+                          <p>
+                            Сервер работает в безопасном режиме: он умеет
+                            подготовить и проверить план, но не создаёт
+                            кампании. Для размещения нужен рабочий сервер с
+                            отдельно включённым созданием кампаний.
+                          </p>
+                        </div>
+                      )}
+                  </div>
+                )}
               {change.execution && (
                 <div className="direct-execution-result" role="status">
                   <b>
@@ -6248,7 +6343,10 @@ function Experiments({
     );
   return (
     <>
-      <section className="experiment-guide" aria-labelledby="experiment-guide-title">
+      <section
+        className="experiment-guide"
+        aria-labelledby="experiment-guide-title"
+      >
         <div className="experiment-guide-copy">
           <div className="experiment-guide-heading">
             <Split size={20} aria-hidden="true" />
@@ -6263,8 +6361,8 @@ function Experiments({
             </div>
           </div>
           <small>
-            За раз меняем только одну деталь. Если данных недостаточно,
-            остаётся исходный текст.
+            За раз меняем только одну деталь. Если данных недостаточно, остаётся
+            исходный текст.
           </small>
         </div>
         <div className="experiment-guide-action">
@@ -7021,7 +7119,9 @@ function Creatives({
   removeImage: (id: string) => void;
   refresh: () => Promise<void>;
 }) {
-  const [style, setStyle] = useState<"editorial" | "local" | "detail">("editorial"),
+  const [style, setStyle] = useState<"editorial" | "local" | "detail">(
+      "editorial",
+    ),
     [goal, setGoal] = useState<"leads" | "trust" | "offer">("leads"),
     [hook, setHook] = useState<"outcome" | "human" | "perspective">("outcome"),
     [format, setFormat] = useState<"standard" | "square" | "wide" | "vertical">(
@@ -7058,10 +7158,13 @@ function Creatives({
           <span className="eyebrow">ИЗОБРАЖЕНИЯ ДЛЯ РЕКЛАМЫ</span>
           <h2>Покажите услугу так, чтобы захотелось записаться</h2>
           <p>
-            Ничего придумывать и писать не нужно. Рита возьмёт услугу, город
-            и преимущество из профиля, а вы выберете, на чём сделать акцент.
+            Ничего придумывать и писать не нужно. Рита возьмёт услугу, город и
+            преимущество из профиля, а вы выберете, на чём сделать акцент.
           </p>
-          <dl className="creative-specs" aria-label="Как Ритм подготовит изображение">
+          <dl
+            className="creative-specs"
+            aria-label="Как Ритм подготовит изображение"
+          >
             <div>
               <dt>Сюжет</dt>
               <dd>из данных о бизнесе</dd>
@@ -7081,207 +7184,221 @@ function Creatives({
           </div>
         </div>
         {openAiConnected ? (
-        <form
-          noValidate
-          className="creative-generator-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void generateImage({
-              prompt: "",
-              style,
-              goal,
-              hook,
-              format,
-              audience: "",
-              brandPlacement,
-            });
-          }}
-        >
-          <div className="creative-provider-status">
-            <span><i aria-hidden="true" /> OpenAI подключён</span>
-            <button type="button" onClick={disconnectOpenAi} disabled={busy}>
-              Отключить
-            </button>
-          </div>
-          <fieldset className="creative-choice-group">
-            <legend>Задача фотографии</legend>
-            <div className="creative-choice-row goal-options">
-              {(
-                [
-                  ["leads", "Получить заявки", "Понятно показать услугу"],
-                  ["trust", "Вызвать доверие", "Показать процесс и заботу"],
-                  ["offer", "Раскрыть выгоду", "Сфокусироваться на результате"],
-                ] as const
-              ).map(([value, title, text]) => (
-                <label key={value} className={goal === value ? "selected" : ""}>
-                  <input
-                    type="radio"
-                    name="creative-goal"
-                    value={value}
-                    checked={goal === value}
-                    onChange={() => setGoal(value)}
-                  />
-                  <span>
-                    <b>{title}</b>
-                    <small>{text}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset className="creative-choice-group">
-            <legend>Что остановит взгляд</legend>
-            <div className="creative-choice-row hook-options">
-              {(
-                [
-                  [
-                    "outcome",
-                    "Желаемый результат",
-                    "Выгода понятна за секунду",
-                  ],
-                  ["human", "Живой момент", "Эмоция без постановочной улыбки"],
-                  [
-                    "perspective",
-                    "Сильный ракурс",
-                    "Контрастный кадр без сюрреализма",
-                  ],
-                ] as const
-              ).map(([value, title, text]) => (
-                <label key={value} className={hook === value ? "selected" : ""}>
-                  <input
-                    type="radio"
-                    name="creative-hook"
-                    value={value}
-                    checked={hook === value}
-                    onChange={() => setHook(value)}
-                  />
-                  <span>
-                    <b>{title}</b>
-                    <small>{text}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <label htmlFor="creative-style">
-            Визуальный подход
-            <select
-              id="creative-style"
-              value={style}
-              onChange={(event) =>
-                setStyle(event.target.value as "editorial" | "local" | "detail")
-              }
-            >
-              <option value="editorial">Редакционная фотография</option>
-              <option value="local">Живой локальный бизнес</option>
-              <option value="detail">Акцент на деталях</option>
-            </select>
-          </label>
-          <fieldset className="creative-choice-group format-choice">
-            <legend>Формат размещения</legend>
-            <div className="creative-format-row">
-              {(
-                [
-                  ["standard", "4:3", "Основной"],
-                  ["square", "1:1", "Квадрат"],
-                  ["wide", "16:9", "Широкий"],
-                  ["vertical", "3:4", "Вертикальный"],
-                ] as const
-              ).map(([value, ratio, title]) => (
-                <label
-                  key={value}
-                  className={format === value ? "selected" : ""}
-                >
-                  <input
-                    type="radio"
-                    name="creative-format"
-                    value={value}
-                    checked={format === value}
-                    onChange={() => setFormat(value)}
-                  />
-                  <span
-                    className={`format-shape ${value}`}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <b>{ratio}</b>
-                    <small>{title}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <p className="field-hint format-hint">
-              Для первого варианта рекомендуем 4:3: Директ использует его на
-              большинстве площадок.
-            </p>
-          </fieldset>
-          <fieldset className="creative-choice-group brand-choice">
-            <legend>Название компании на изображении</legend>
-            <div className="brand-name-preview">
-              <span>Название из профиля</span>
-              <strong>{ws.state.name}</strong>
-            </div>
-            <div className="creative-choice-row brand-options">
-              {(
-                [
-                  ["bottom-left", "Слева", "В нижнем углу"],
-                  ["bottom-right", "Справа", "В нижнем углу"],
-                  ["none", "Без названия", "Только фотография"],
-                ] as const
-              ).map(([value, title, text]) => (
-                <label
-                  key={value}
-                  className={brandPlacement === value ? "selected" : ""}
-                >
-                  <input
-                    type="radio"
-                    name="creative-brand-placement"
-                    value={value}
-                    checked={brandPlacement === value}
-                    onChange={() => setBrandPlacement(value)}
-                  />
-                  <span>
-                    <b>{title}</b>
-                    <small>{text}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <p className="field-hint format-hint">
-              Название наносится после генерации точным шрифтом. Модель не
-              рисует буквы, поэтому текст не искажается.
-            </p>
-          </fieldset>
-          <button
-            className="primary"
-            disabled={
-              busy ||
-              !hasCostConsent ||
-              !openAiConnected
-            }
+          <form
+            noValidate
+            className="creative-generator-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void generateImage({
+                prompt: "",
+                style,
+                goal,
+                hook,
+                format,
+                audience: "",
+                brandPlacement,
+              });
+            }}
           >
-            {busy ? (
-              <LoaderCircle className="spin" size={17} />
-            ) : (
-              <Images size={17} />
-            )}
-            <span>{busy ? "Создаём вариант…" : "Подготовить вариант"}</span>
-          </button>
-          <label className="creative-cost-consent">
-            <input
-              type="checkbox"
-              checked={hasCostConsent}
-              onChange={(event) => setHasCostConsent(event.target.checked)}
-            />
-            <span>
-              Понимаю: OpenAI спишет кредиты за новый вариант. В рекламу он не
-              попадёт без моей проверки.
-            </span>
-          </label>
-          <small className="muted">
-            Не более трёх вариантов на бизнес за 24 часа.
-          </small>
-        </form>
+            <div className="creative-provider-status">
+              <span>
+                <i aria-hidden="true" /> OpenAI подключён
+              </span>
+              <button type="button" onClick={disconnectOpenAi} disabled={busy}>
+                Отключить
+              </button>
+            </div>
+            <fieldset className="creative-choice-group">
+              <legend>Задача фотографии</legend>
+              <div className="creative-choice-row goal-options">
+                {(
+                  [
+                    ["leads", "Получить заявки", "Понятно показать услугу"],
+                    ["trust", "Вызвать доверие", "Показать процесс и заботу"],
+                    [
+                      "offer",
+                      "Раскрыть выгоду",
+                      "Сфокусироваться на результате",
+                    ],
+                  ] as const
+                ).map(([value, title, text]) => (
+                  <label
+                    key={value}
+                    className={goal === value ? "selected" : ""}
+                  >
+                    <input
+                      type="radio"
+                      name="creative-goal"
+                      value={value}
+                      checked={goal === value}
+                      onChange={() => setGoal(value)}
+                    />
+                    <span>
+                      <b>{title}</b>
+                      <small>{text}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset className="creative-choice-group">
+              <legend>Что остановит взгляд</legend>
+              <div className="creative-choice-row hook-options">
+                {(
+                  [
+                    [
+                      "outcome",
+                      "Желаемый результат",
+                      "Выгода понятна за секунду",
+                    ],
+                    [
+                      "human",
+                      "Живой момент",
+                      "Эмоция без постановочной улыбки",
+                    ],
+                    [
+                      "perspective",
+                      "Сильный ракурс",
+                      "Контрастный кадр без сюрреализма",
+                    ],
+                  ] as const
+                ).map(([value, title, text]) => (
+                  <label
+                    key={value}
+                    className={hook === value ? "selected" : ""}
+                  >
+                    <input
+                      type="radio"
+                      name="creative-hook"
+                      value={value}
+                      checked={hook === value}
+                      onChange={() => setHook(value)}
+                    />
+                    <span>
+                      <b>{title}</b>
+                      <small>{text}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label htmlFor="creative-style">
+              Визуальный подход
+              <select
+                id="creative-style"
+                value={style}
+                onChange={(event) =>
+                  setStyle(
+                    event.target.value as "editorial" | "local" | "detail",
+                  )
+                }
+              >
+                <option value="editorial">Редакционная фотография</option>
+                <option value="local">Живой локальный бизнес</option>
+                <option value="detail">Акцент на деталях</option>
+              </select>
+            </label>
+            <fieldset className="creative-choice-group format-choice">
+              <legend>Формат размещения</legend>
+              <div className="creative-format-row">
+                {(
+                  [
+                    ["standard", "4:3", "Основной"],
+                    ["square", "1:1", "Квадрат"],
+                    ["wide", "16:9", "Широкий"],
+                    ["vertical", "3:4", "Вертикальный"],
+                  ] as const
+                ).map(([value, ratio, title]) => (
+                  <label
+                    key={value}
+                    className={format === value ? "selected" : ""}
+                  >
+                    <input
+                      type="radio"
+                      name="creative-format"
+                      value={value}
+                      checked={format === value}
+                      onChange={() => setFormat(value)}
+                    />
+                    <span
+                      className={`format-shape ${value}`}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      <b>{ratio}</b>
+                      <small>{title}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="field-hint format-hint">
+                Для первого варианта рекомендуем 4:3: Директ использует его на
+                большинстве площадок.
+              </p>
+            </fieldset>
+            <fieldset className="creative-choice-group brand-choice">
+              <legend>Название компании на изображении</legend>
+              <div className="brand-name-preview">
+                <span>Название из профиля</span>
+                <strong>{ws.state.name}</strong>
+              </div>
+              <div className="creative-choice-row brand-options">
+                {(
+                  [
+                    ["bottom-left", "Слева", "В нижнем углу"],
+                    ["bottom-right", "Справа", "В нижнем углу"],
+                    ["none", "Без названия", "Только фотография"],
+                  ] as const
+                ).map(([value, title, text]) => (
+                  <label
+                    key={value}
+                    className={brandPlacement === value ? "selected" : ""}
+                  >
+                    <input
+                      type="radio"
+                      name="creative-brand-placement"
+                      value={value}
+                      checked={brandPlacement === value}
+                      onChange={() => setBrandPlacement(value)}
+                    />
+                    <span>
+                      <b>{title}</b>
+                      <small>{text}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="field-hint format-hint">
+                Название наносится после генерации точным шрифтом. Модель не
+                рисует буквы, поэтому текст не искажается.
+              </p>
+            </fieldset>
+            <button
+              className="primary"
+              disabled={busy || !hasCostConsent || !openAiConnected}
+            >
+              {busy ? (
+                <LoaderCircle className="spin" size={17} />
+              ) : (
+                <Images size={17} />
+              )}
+              <span>{busy ? "Создаём вариант…" : "Подготовить вариант"}</span>
+            </button>
+            <label className="creative-cost-consent">
+              <input
+                type="checkbox"
+                checked={hasCostConsent}
+                onChange={(event) => setHasCostConsent(event.target.checked)}
+              />
+              <span>
+                Понимаю: OpenAI спишет кредиты за новый вариант. В рекламу он не
+                попадёт без моей проверки.
+              </span>
+            </label>
+            <small className="muted">
+              Не более трёх вариантов на бизнес за 24 часа.
+            </small>
+          </form>
         ) : (
           <form
             className="creative-generator-unavailable creative-provider-setup"
@@ -7298,14 +7415,17 @@ function Creatives({
               void connectOpenAi(value);
             }}
           >
-            <span className="creative-generator-unavailable-icon" aria-hidden="true">
+            <span
+              className="creative-generator-unavailable-icon"
+              aria-hidden="true"
+            >
               <Images size={22} />
             </span>
             <div>
               <h3>Подключите генерацию OpenAI</h3>
               <p>
-                Вставьте API-ключ один раз. Рита сама составит описание кадра
-                по профилю бизнеса, промпты писать не нужно.
+                Вставьте API-ключ один раз. Рита сама составит описание кадра по
+                профилю бизнеса, промпты писать не нужно.
               </p>
               {ws.capabilities.creativeImageSetup ? (
                 <>
@@ -7328,22 +7448,33 @@ function Creatives({
                     Ключ хранится на сервере в зашифрованном виде и больше не
                     показывается в браузере.
                   </small>
-                  <small id="openai-image-key-error" className="field-error" role="alert">
+                  <small
+                    id="openai-image-key-error"
+                    className="field-error"
+                    role="alert"
+                  >
                     {setupError}
                   </small>
                   <div className="creative-provider-actions">
-                    <button className="primary" disabled={busy || apiKey.trim().length < 16}>
+                    <button
+                      className="primary"
+                      disabled={busy || apiKey.trim().length < 16}
+                    >
                       Подключить OpenAI
                     </button>
-                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">
+                    <a
+                      href="https://platform.openai.com/api-keys"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       Где взять ключ
                     </a>
                   </div>
                 </>
               ) : (
                 <p className="creative-provider-warning">
-                  На сервере не настроено постоянное шифрование. Сначала добавьте
-                  TOKEN_ENCRYPTION_KEY, затем вернитесь сюда.
+                  На сервере не настроено постоянное шифрование. Сначала
+                  добавьте TOKEN_ENCRYPTION_KEY, затем вернитесь сюда.
                 </p>
               )}
             </div>
@@ -7642,9 +7773,7 @@ function HistoryView({
                   </Badge>
                 </div>
                 <p>{action.reason}</p>
-                <small>
-                  {time(action.createdAt, ws.state.timezone)}
-                </small>
+                <small>{time(action.createdAt, ws.state.timezone)}</small>
               </div>
               {action.status === "applied" && (
                 <button
@@ -7762,9 +7891,28 @@ function Connections({
     [metricaSetup, setMetricaSetup] = useState<MetricaSetup | null>(null),
     [copied, setCopied] = useState<"counter" | "goal" | null>(null);
   const linked = ws.connections.find((c) => c.provider === "yandex"),
+    directVerified = linked?.validation === "verified",
+    directBlocked = linked?.validation === "blocked",
     needsReconnect = linked?.validation === "reauth_required",
     retiredSandbox = linked?.sandbox === true,
     visibleError = retiredSandbox ? "" : error;
+  const directHelp =
+    linked?.validationCode === "application_access_pending"
+      ? {
+          href: "https://direct.yandex.ru/registered/main.pl?cmd=apiCertificationRequestList",
+          label: "Проверить заявку в Директе",
+        }
+      : linked?.validationCode === "direct_account_missing"
+        ? {
+            href: "https://direct.yandex.ru/",
+            label: "Создать кабинет Директа",
+          }
+        : linked?.validationCode === "direct_api_disabled"
+          ? {
+              href: "https://direct.yandex.ru/registered/main.pl?cmd=apiSettings",
+              label: "Открыть настройки API",
+            }
+          : null;
   async function read(kind: string) {
     setReading(true);
     setError("");
@@ -7914,7 +8062,9 @@ function Connections({
                   ? "amber"
                   : needsReconnect
                     ? "amber"
-                    : linked
+                    : directBlocked
+                      ? "amber"
+                      : directVerified
                       ? "green"
                       : "gray"
             }
@@ -7925,7 +8075,9 @@ function Connections({
                 ? "Нужно подключить кабинет"
                 : needsReconnect
                   ? "Нужно войти"
-                  : linked
+                  : directBlocked
+                    ? "Ожидает доступа"
+                    : directVerified
                     ? "Подключен"
                     : "Не подключен"}
           </Badge>
@@ -7933,6 +8085,8 @@ function Connections({
             <p>
               {ws.state.mode === "demo"
                 ? "В демо используется изолированный тестовый кабинет. Реальные токены и деньги не нужны."
+                : linked && !directVerified
+                  ? "Код Яндекса сохранён. Пока доступ к API Директа не подтверждён, Ритм не читает и не меняет рекламу."
                 : ws.capabilities.directWritePilot
                   ? "Кабинет готов к чтению данных и созданию выключенных черновиков после проверки плана и отдельного подтверждения."
                   : "Кабинет доступен для чтения. Создание выключенных черновиков закрыто серверным допуском; показы и расходы отключены."}
@@ -7945,7 +8099,10 @@ function Connections({
             ) : linked ? (
               <>
                 {retiredSandbox && (
-                  <section className="connection-reconnect" aria-label="Переподключение Яндекс Директа">
+                  <section
+                    className="connection-reconnect"
+                    aria-label="Переподключение Яндекс Директа"
+                  >
                     <div className="connected-line pending">
                       <Clock3 size={17} />
                       Старое тестовое подключение больше не работает. Подключите
@@ -7975,10 +8132,22 @@ function Connections({
                     </select>
                   </label>
                 ) : (
-                  <div className="connected-line pending">
-                    <Clock3 size={17} />
-                    {linked.validationMessage ||
-                      "Токен сохранен. Осталось проверить кабинет Директа."}
+                  <div className="connection-access-help">
+                    <div className="connected-line pending">
+                      <Clock3 size={17} />
+                      {linked.validationMessage ||
+                        "Код сохранён. Осталось проверить кабинет Директа."}
+                    </div>
+                    {directHelp && (
+                      <a
+                        className="button secondary"
+                        href={directHelp.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {directHelp.label} <ArrowUpRight size={15} />
+                      </a>
+                    )}
                   </div>
                 )}
                 <div className="button-row">
@@ -7990,7 +8159,7 @@ function Connections({
                         disabled={reading}
                         onClick={() => read("clients")}
                       >
-                        Повторить проверку Директа
+                        {reading ? "Проверяем доступ…" : "Проверить доступ"}
                       </button>
                     )}
                   <button
@@ -8132,7 +8301,9 @@ function Connections({
                       value={goalId}
                       onChange={(e) => setGoalId(e.target.value)}
                     >
-                      <option key={""} value="">Выберите действие</option>
+                      <option key={""} value="">
+                        Выберите действие
+                      </option>
                       {goals.map((goal) => (
                         <option key={goal.id} value={goal.id}>
                           {goal.name}
@@ -8254,8 +8425,8 @@ function Connections({
         <span>
           <b>Подключение к Яндексу</b>
           <br />
-          Ритм подключается к Яндексу напрямую. Реклама не запустится без
-          вашей проверки и отдельного подтверждения.
+          Ритм подключается к Яндексу напрямую. Реклама не запустится без вашей
+          проверки и отдельного подтверждения.
         </span>
       </div>
       {visibleError && (
@@ -8281,13 +8452,7 @@ type FormData = {
   periodEnd: string;
 };
 type EditableBusinessFact =
-  | "name"
-  | "category"
-  | "city"
-  | "service"
-  | "benefit"
-  | "budget"
-  | "website";
+  "name" | "category" | "city" | "service" | "benefit" | "budget" | "website";
 function formFrom(s: Business): FormData {
   return {
     name: s.name,
@@ -8523,9 +8688,8 @@ function BusinessModal({
     ),
     [draft, setDraft] = useState(""),
     [thinking, setThinking] = useState(false),
-    [assistantProvider, setAssistantProvider] = useState<
-      "ollama" | "fallback" | null
-    >(null),
+    [responseSlow, setResponseSlow] = useState(false),
+    [assistantProblem, setAssistantProblem] = useState(false),
     [editingFact, setEditingFact] = useState<EditableBusinessFact | null>(null),
     [factDraft, setFactDraft] = useState(""),
     [factError, setFactError] = useState(""),
@@ -8564,6 +8728,26 @@ function BusinessModal({
   ];
   const knownFacts = facts.filter((fact) => fact.value).length;
   const growthStage = ready ? 3 : knownFacts >= 3 ? 2 : knownFacts ? 1 : 0;
+  const assistantStatus = busy
+    ? initial
+      ? "Обновляет план"
+      : "Готовит план"
+    : thinking
+      ? "Печатает"
+      : assistantProblem
+        ? "Не удалось ответить"
+        : ready
+          ? "Ждёт подтверждения"
+          : "Готова ответить";
+  const assistantStatusKind = busy
+    ? "planning"
+    : thinking
+      ? "typing"
+      : assistantProblem
+        ? "problem"
+        : ready
+          ? "waiting"
+          : "ready";
 
   function startFactEdit(key: EditableBusinessFact) {
     setEditingFact(key);
@@ -8605,27 +8789,36 @@ function BusinessModal({
     setDraft("");
     setMessages((items) => [...items, { role: "user", text: message }]);
     setThinking(true);
+    setResponseSlow(false);
+    setAssistantProblem(false);
+    const slowTimer = window.setTimeout(() => setResponseSlow(true), 4_000);
     try {
-      const result = await api("/assistant/onboarding", {
-        message,
-        profile: {
-          name: form.name || undefined,
-          category: form.category || undefined,
-          city: form.city || undefined,
-          website: form.website || undefined,
-          service: form.service || undefined,
-          benefit: form.benefit || undefined,
-          price: form.price || undefined,
-          budget: form.budget || undefined,
+      const result = await api(
+        "/assistant/onboarding",
+        {
+          message,
+          profile: {
+            name: form.name || undefined,
+            category: form.category || undefined,
+            city: form.city || undefined,
+            website: form.website || undefined,
+            service: form.service || undefined,
+            benefit: form.benefit || undefined,
+            price: form.price || undefined,
+            budget: form.budget || undefined,
+          },
         },
-      }, "POST", undefined, 12_000);
+        "POST",
+        undefined,
+        12_000,
+      );
       set((current) => ({ ...current, ...result.profile }));
-      setAssistantProvider(result.provider);
       setMessages((items) => [
         ...items,
         { role: "assistant", text: result.reply },
       ]);
     } catch {
+      setAssistantProblem(true);
       setMessages((items) => [
         ...items,
         {
@@ -8634,6 +8827,8 @@ function BusinessModal({
         },
       ]);
     } finally {
+      window.clearTimeout(slowTimer);
+      setResponseSlow(false);
       setThinking(false);
     }
   }
@@ -8654,17 +8849,22 @@ function BusinessModal({
               <b>Рита</b>
               <span>Нейросетевой помощник по рекламе</span>
             </div>
-            <span className={`rita-status ${assistantProvider || "ready"}`}>
+            <span
+              className={`rita-status ${assistantStatusKind}`}
+              role="status"
+              aria-live="polite"
+            >
               <i aria-hidden="true" />
-              {assistantProvider === "fallback"
-                ? "Базовый режим"
-                : assistantProvider === "ollama"
-                  ? "Помощник включён"
-                  : "Готова к диалогу"}
+              {assistantStatus}
             </span>
           </header>
 
-          <div ref={chatRef} className="onboarding-chat" aria-live="polite">
+          <div
+            ref={chatRef}
+            className="onboarding-chat"
+            aria-live="polite"
+            aria-busy={thinking || busy}
+          >
             {messages.map((item, index) => (
               <div className={`onboarding-message ${item.role}`} key={index}>
                 {item.role === "assistant" && (
@@ -8687,17 +8887,49 @@ function BusinessModal({
                   Р
                 </span>
                 <div>
-                  <small>Рита</small>
-                  <p>
-                    <LoaderCircle className="spin" size={15} /> Разбираю ваш
-                    рассказ…
+                  <small>Рита печатает</small>
+                  <p className="rita-typing-bubble" aria-label="Рита печатает">
+                    <span className="rita-typing-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  </p>
+                  {responseSlow && (
+                    <span className="rita-wait-note" role="status">
+                      Ответ занимает чуть дольше обычного — ещё несколько
+                      секунд.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            {busy && (
+              <div className="onboarding-message assistant">
+                <span className="onboarding-message-avatar" aria-hidden="true">
+                  Р
+                </span>
+                <div>
+                  <small>Рита готовит план</small>
+                  <p className="rita-plan-progress">
+                    <LoaderCircle className="spin" size={15} />
+                    <span>
+                      {initial
+                        ? "Сохраняю изменения и обновляю план."
+                        : "Сохраняю профиль и открываю первый план."}
+                      <small>Обычно это занимает несколько секунд.</small>
+                    </span>
                   </p>
                 </div>
               </div>
             )}
           </div>
 
-          <form className="onboarding-chat-compose" noValidate onSubmit={sendMessage}>
+          <form
+            className="onboarding-chat-compose"
+            noValidate
+            onSubmit={sendMessage}
+          >
             <label className="sr-only" htmlFor="rita-message">
               Сообщение Рите
             </label>
@@ -8706,9 +8938,14 @@ function BusinessModal({
               className="resize-none"
               autoFocus
               value={draft}
+              disabled={busy}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
                   event.preventDefault();
                   event.currentTarget.form?.requestSubmit();
                 }
@@ -8720,8 +8957,13 @@ function BusinessModal({
                   : "Например: у меня студия маникюра в Екатеринбурге…"
               }
             />
-            <button className="primary" disabled={thinking || !draft.trim()}>
-              Отправить <ArrowRight size={15} />
+            <button
+              className="primary"
+              disabled={busy || thinking || !draft.trim()}
+              aria-busy={thinking}
+            >
+              {thinking ? "Рита отвечает…" : "Отправить"}
+              {!thinking && <ArrowRight size={15} />}
             </button>
           </form>
           <p className="rita-compose-hint">
@@ -8783,8 +9025,15 @@ function BusinessModal({
               >
                 <dt>{fact.label}</dt>
                 {editingFact === fact.key ? (
-                  <form className="rita-fact-editor" noValidate onSubmit={saveFactEdit}>
-                    <label className="sr-only" htmlFor={`rita-fact-${fact.key}`}>
+                  <form
+                    className="rita-fact-editor"
+                    noValidate
+                    onSubmit={saveFactEdit}
+                  >
+                    <label
+                      className="sr-only"
+                      htmlFor={`rita-fact-${fact.key}`}
+                    >
                       {fact.label}
                     </label>
                     <input
@@ -8799,7 +9048,9 @@ function BusinessModal({
                         if (factError) setFactError("");
                       }}
                       aria-invalid={!!factError}
-                      aria-describedby={factError ? "rita-fact-error" : undefined}
+                      aria-describedby={
+                        factError ? "rita-fact-error" : undefined
+                      }
                     />
                     <button type="submit">Сохранить</button>
                     <button
@@ -8812,7 +9063,11 @@ function BusinessModal({
                       Отмена
                     </button>
                     {factError && (
-                      <p id="rita-fact-error" className="field-error" role="alert">
+                      <p
+                        id="rita-fact-error"
+                        className="field-error"
+                        role="alert"
+                      >
                         {factError}
                       </p>
                     )}
@@ -8843,7 +9098,11 @@ function BusinessModal({
                 Сайт <small>необязательно</small>
               </dt>
               {editingFact === "website" ? (
-                <form className="rita-fact-editor" noValidate onSubmit={saveFactEdit}>
+                <form
+                  className="rita-fact-editor"
+                  noValidate
+                  onSubmit={saveFactEdit}
+                >
                   <label className="sr-only" htmlFor="rita-fact-website">
                     Сайт
                   </label>
@@ -8871,7 +9130,11 @@ function BusinessModal({
                     Отмена
                   </button>
                   {factError && (
-                    <p id="rita-fact-error" className="field-error" role="alert">
+                    <p
+                      id="rita-fact-error"
+                      className="field-error"
+                      role="alert"
+                    >
                       {factError}
                     </p>
                   )}
@@ -8899,7 +9162,10 @@ function BusinessModal({
                 <CheckCircle2 size={18} />
                 <p>
                   <b>Профиль собран</b>
-                  <span>Проверьте факты и подтвердите создание плана.</span>
+                  <span>
+                    Проверьте факты. После подтверждения план откроется через
+                    несколько секунд.
+                  </span>
                 </p>
               </>
             ) : (
@@ -8922,6 +9188,7 @@ function BusinessModal({
             <button
               className="primary rita-confirm-button"
               disabled={busy || thinking || !ready}
+              aria-busy={busy}
             >
               {busy ? (
                 <LoaderCircle className="spin" size={15} />
@@ -8930,11 +9197,11 @@ function BusinessModal({
               )}
               {busy
                 ? initial
-                  ? "Рита обновляет план…"
-                  : "Рита собирает план…"
+                  ? "Обновляю план…"
+                  : "Создаю план…"
                 : initial
-                  ? "Всё верно — обновить план"
-                  : "Всё верно — создать план"}
+                  ? "Обновить рекламный план"
+                  : "Создать рекламный план"}
             </button>
           </form>
         </aside>

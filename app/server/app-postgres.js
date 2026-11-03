@@ -15,7 +15,7 @@ import { seedDemo, freshBusiness, totals, assertBudget, tickDemo } from "./engin
 import { onboardingAssistant } from "./onboarding-chat.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
 import { token, hash, cookie, encrypt, sessionCookie, sameOrigin, isLoopbackOrigin, secureEquals } from "./security.js";
-import { DirectClient } from "./providers.js";
+import { DirectClient, describeDirectValidationFailure } from "./providers.js";
 import { MetricaClient } from "./providers.js";
 import { decrypt } from "./security.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
@@ -105,6 +105,28 @@ async function metricaForBusiness(db, key, business) {
   if (!credentials.access_token)
     throw new AppError(409, "В подключении Яндекса нет действующего токена.", "yandex_invalid");
   return new MetricaClient(credentials.access_token);
+}
+
+async function directConnectionForBusiness(db, key, business) {
+  if (business.state.mode === "demo")
+    throw new AppError(409, "Демо не обращается к реальным кабинетам.");
+  const row = await db
+    .prepare("SELECT encrypted,metadata FROM connections WHERE business_id=? AND provider='yandex'")
+    .get(business.id);
+  if (!row) throw new AppError(409, "Сначала подключите Яндекс.", "yandex_missing");
+  let credentials;
+  try {
+    credentials = decrypt(row.encrypted, key, `${business.id}:yandex`);
+  } catch {
+    throw new AppError(
+      409,
+      "Не удалось прочитать подключение Яндекса. Подключите кабинет заново.",
+      "yandex_invalid",
+    );
+  }
+  if (!credentials.access_token)
+    throw new AppError(409, "В подключении Яндекса нет действующего токена.", "yandex_invalid");
+  return { credentials, metadata: JSON.parse(row.metadata) };
 }
 
 async function command(db, userId, businessId, key, fingerprint, action) {
@@ -360,8 +382,8 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
       metadata.validationMessage = null;
       metadata.validatedAt = new Date().toISOString();
     } catch (error) {
-      metadata.validationMessage = error?.retryable ? "Токен сохранён. Директ пока не ответил — повторите проверку кабинета." : "Не удалось подтвердить доступ к Директу. Подключите кабинет заново.";
-      if (!error?.retryable) throw new AppError(401, "Яндекс не подтвердил доступ к Директу.", "direct_access_failed");
+      Object.assign(metadata, describeDirectValidationFailure(error));
+      metadata.lastValidationAt = new Date().toISOString();
     }
     await db.transaction(async (tx) => {
       await tx.prepare("INSERT INTO connections VALUES(?,?,?,?) ON CONFLICT(business_id,provider) DO UPDATE SET encrypted=excluded.encrypted,metadata=excluded.metadata").run(business.id, "yandex", encrypted, JSON.stringify(metadata));
@@ -369,18 +391,83 @@ export function createPostgresApp({ db, config, key, advertisingPlanner = create
       await event(tx, business.id, { kind: "connected", title: "Яндекс подключён", reason: metadata.validation === "verified" ? "Доступ к кабинету подтверждён. Реклама не менялась." : "Токен сохранён, но проверка кабинета ещё не завершена.", rule: "yandex-readonly" });
     });
     res.clearCookie("ritm_oauth", { path: "/" });
-    res.json({ ok: true, validation: metadata.validation, clients: metadata.clients.map((client) => ({ Login: client.Login, ClientId: client.ClientId })) });
+    res.json({
+      ok: true,
+      validation: metadata.validation,
+      validationCode: metadata.validationCode || null,
+      message: metadata.validationMessage || null,
+      clients: metadata.clients.map((client) => ({ Login: client.Login, ClientId: client.ClientId })),
+    });
   });
-  app.get("/api/businesses/:id/provider/counters", authenticated, async (req, res) => {
+  app.get("/api/businesses/:id/provider/:resource", authenticated, async (req, res) => {
     const business = await requireBusiness(db, req.user.id, req.params.id);
-    const result = await metricaForBusiness(db, key, business).then((client) => client.counters());
-    res.json(result);
-  });
-  app.get("/api/businesses/:id/provider/goals", authenticated, async (req, res) => {
-    const business = await requireBusiness(db, req.user.id, req.params.id);
-    const counterId = String(req.query.counterId || "");
-    const result = await metricaForBusiness(db, key, business).then((client) => client.goals(counterId));
-    res.json(result);
+    if (req.params.resource === "counters") {
+      res.json(await metricaForBusiness(db, key, business).then((client) => client.counters()));
+      return;
+    }
+    if (req.params.resource === "goals") {
+      res.json(
+        await metricaForBusiness(db, key, business).then((client) =>
+          client.goals(String(req.query.counterId || "")),
+        ),
+      );
+      return;
+    }
+    const connection = await directConnectionForBusiness(db, key, business);
+    let metadata = connection.metadata;
+    const refreshClients = async () => {
+      try {
+        const result = await new DirectClient({
+          accessToken: connection.credentials.access_token,
+          sandbox: false,
+        }).clients();
+        metadata = {
+          ...metadata,
+          clients: result.Clients || [],
+          validation: "verified",
+          validationCode: null,
+          validationMessage: null,
+          validatedAt: new Date().toISOString(),
+          lastValidationAt: new Date().toISOString(),
+        };
+        await db
+          .prepare("UPDATE connections SET metadata=? WHERE business_id=? AND provider='yandex'")
+          .run(JSON.stringify(metadata), business.id);
+        return result;
+      } catch (error) {
+        const failure = describeDirectValidationFailure(error);
+        metadata = {
+          ...metadata,
+          ...failure,
+          clients: [],
+          lastValidationAt: new Date().toISOString(),
+        };
+        await db
+          .prepare("UPDATE connections SET metadata=? WHERE business_id=? AND provider='yandex'")
+          .run(JSON.stringify(metadata), business.id);
+        throw new AppError(409, failure.validationMessage, failure.validationCode);
+      }
+    };
+    if (req.params.resource === "clients") {
+      res.json(await refreshClients());
+      return;
+    }
+    if (!["campaigns", "report"].includes(req.params.resource))
+      throw new AppError(404, "Ресурс не найден.");
+    if (!metadata.clients?.length) await refreshClients();
+    const login = String(req.query.login || metadata.clients?.[0]?.Login || "");
+    if (!metadata.clients.some((client) => client.Login === login))
+      throw new AppError(403, "Кабинет не доступен этому подключению.");
+    const direct = new DirectClient({
+      accessToken: connection.credentials.access_token,
+      login,
+      sandbox: false,
+    });
+    res.json(
+      req.params.resource === "campaigns"
+        ? await direct.campaigns()
+        : await direct.report(business.state.periodStart, business.state.periodEnd),
+    );
   });
   app.post("/api/businesses/:id/metrica/bind", authenticated, async (req, res) => {
     const input = z.object({ counterId: z.union([z.string(), z.number()]), goalId: z.union([z.string(), z.number()]) }).parse(req.body);

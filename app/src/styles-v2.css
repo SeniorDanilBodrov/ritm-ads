@@ -3612,6 +3612,34 @@ textarea.resize-none {
   justify-self: start;
 }
 
+.connection-access-help {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 7%, var(--surface));
+}
+
+.connection-access-help .connected-line {
+  align-items: flex-start;
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.connection-access-help .connected-line > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.connection-access-help .button {
+  min-height: 38px;
+}
+
 .provider-result {
   grid-column: 1 / -1;
 }
@@ -3926,11 +3954,21 @@ textarea.resize-none {
   object-position: center bottom;
 }
 
-.empty-growth li:nth-child(1) img { transform: translateY(-2px); }
-.empty-growth li:nth-child(2) img { transform: translateY(-4px); }
-.empty-growth li:nth-child(3) img { transform: translateY(-4px); }
-.empty-growth li:nth-child(4) img { transform: translateY(-3px); }
-.empty-growth li:nth-child(5) img { transform: translateY(-4px); }
+.empty-growth li:nth-child(1) img {
+  transform: translateY(-2px);
+}
+.empty-growth li:nth-child(2) img {
+  transform: translateY(-4px);
+}
+.empty-growth li:nth-child(3) img {
+  transform: translateY(-4px);
+}
+.empty-growth li:nth-child(4) img {
+  transform: translateY(-3px);
+}
+.empty-growth li:nth-child(5) img {
+  transform: translateY(-4px);
+}
 
 .empty-growth li.pending img {
   filter: grayscale(0.62);
@@ -6568,8 +6606,18 @@ textarea::placeholder {
   background: var(--success);
 }
 
-.rita-status.fallback i {
+.rita-status.typing i,
+.rita-status.planning i {
   background: var(--warning);
+  animation: rita-presence-pulse 1.2s ease-in-out infinite;
+}
+
+.rita-status.waiting i {
+  background: var(--brand);
+}
+
+.rita-status.problem i {
+  background: var(--danger);
 }
 
 .assistant-modal .onboarding-chat {
@@ -6645,6 +6693,92 @@ textarea::placeholder {
   vertical-align: -3px;
 }
 
+.assistant-modal .onboarding-message .rita-typing-bubble {
+  min-width: 58px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.rita-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rita-typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: rita-typing-dot 1.15s ease-in-out infinite;
+}
+
+.rita-typing-dots i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.rita-typing-dots i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.rita-wait-note {
+  display: block;
+  max-width: 360px;
+  margin: 6px 4px 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.assistant-modal .onboarding-message .rita-plan-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.assistant-modal .onboarding-message .rita-plan-progress > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.rita-plan-progress > span,
+.rita-plan-progress > span > small {
+  display: block;
+}
+
+.rita-plan-progress > span > small {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 450;
+}
+
+@keyframes rita-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.38;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes rita-presence-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 32%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
 .assistant-modal .onboarding-chat-compose {
   margin-top: 0;
   align-items: end;
@@ -6676,7 +6810,7 @@ textarea::placeholder {
   flex-direction: column;
   border-left: 1px solid var(--line);
   background: var(--surface-soft);
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
@@ -6738,18 +6872,30 @@ textarea::placeholder {
   object-position: center bottom;
 }
 
-.rita-growth li:nth-child(1) img { transform: translateY(-2px); }
-.rita-growth li:nth-child(2) img { transform: translateY(-4px); }
-.rita-growth li:nth-child(3) img { transform: translateY(-4px); }
-.rita-growth li:nth-child(4) img { transform: translateY(-3px); }
-.rita-growth li:nth-child(5) img { transform: translateY(-4px); }
+.rita-growth li:nth-child(1) img {
+  transform: translateY(-2px);
+}
+.rita-growth li:nth-child(2) img {
+  transform: translateY(-4px);
+}
+.rita-growth li:nth-child(3) img {
+  transform: translateY(-4px);
+}
+.rita-growth li:nth-child(4) img {
+  transform: translateY(-3px);
+}
+.rita-growth li:nth-child(5) img {
+  transform: translateY(-4px);
+}
 
 .rita-growth li.pending img {
   filter: grayscale(0.62);
   opacity: 0.3;
 }
 
-.rita-growth li.done img { opacity: 0.7; }
+.rita-growth li.done img {
+  opacity: 0.7;
+}
 
 .rita-growth li.current img {
   opacity: 1;
@@ -6804,7 +6950,12 @@ textarea::placeholder {
 }
 
 .rita-facts {
+  min-height: 0;
+  flex: 1 1 auto;
   margin: 0;
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .rita-facts > div {
@@ -6947,7 +7098,7 @@ textarea::placeholder {
 }
 
 .rita-confirmation {
-  margin-top: auto;
+  margin-top: 0;
   padding: 14px 0 12px;
   display: flex;
   align-items: flex-start;
@@ -7015,6 +7166,12 @@ textarea::placeholder {
 
   .rita-confirmation {
     margin-top: 18px;
+  }
+
+  .rita-facts {
+    flex: none;
+    padding-right: 0;
+    overflow: visible;
   }
 }
 
@@ -7418,8 +7575,10 @@ textarea::placeholder {
   border-radius: 2px;
   background:
     linear-gradient(to top, var(--brand) 0 100%) left bottom / 4px 7px no-repeat,
-    linear-gradient(to top, var(--brand) 0 100%) center bottom / 4px 12px no-repeat,
-    linear-gradient(to top, var(--brand) 0 100%) right bottom / 4px 9px no-repeat;
+    linear-gradient(to top, var(--brand) 0 100%) center bottom / 4px 12px
+      no-repeat,
+    linear-gradient(to top, var(--brand) 0 100%) right bottom / 4px 9px
+      no-repeat;
 }
 
 .dispatcher-trend .chart {
@@ -7465,7 +7624,9 @@ textarea::placeholder {
 .dispatcher-trend .chart-bar {
   fill: var(--brand);
   opacity: 0.84;
-  transition: opacity 140ms ease, fill 140ms ease;
+  transition:
+    opacity 140ms ease,
+    fill 140ms ease;
 }
 
 .dispatcher-trend .chart-bar.is-hover {

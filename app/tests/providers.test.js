@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import {
   DirectClient,
+  describeDirectValidationFailure,
   MetricaClient,
   parseReport,
   requestJson,
@@ -157,7 +158,34 @@ test("logical API errors remain failures on HTTP 200", async () => {
     accessToken: "test",
     fetcher: async () => Response.json({ error: { error_code: 1002 } }),
   });
-  await assert.rejects(() => c.clients(), /1002/);
+  await assert.rejects(
+    () => c.clients(),
+    (error) => {
+      assert.match(error.message, /1002/);
+      assert.equal(error.providerCode, 1002);
+      return true;
+    },
+  );
+});
+
+test("Direct access blockers are translated into a recoverable user step", () => {
+  assert.deepEqual(
+    describeDirectValidationFailure({ providerCode: 58, retryable: false }),
+    {
+      validation: "blocked",
+      validationCode: "application_access_pending",
+      validationMessage:
+        "Код принят. Заявка приложения Ритма на доступ к API Директа ещё не одобрена Яндексом. Повторно подключать кабинет не нужно — после одобрения нажмите «Проверить доступ».",
+    },
+  );
+  assert.equal(
+    describeDirectValidationFailure({ providerCode: 513 }).validationCode,
+    "direct_account_missing",
+  );
+  assert.equal(
+    describeDirectValidationFailure({ retryable: true }).validation,
+    "pending",
+  );
 });
 
 test("report download rejects oversized data and invalid UTF-8", async () => {

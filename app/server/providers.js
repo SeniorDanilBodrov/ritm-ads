@@ -62,6 +62,51 @@ export class ProviderError extends AppError {
     });
   }
 }
+
+export function describeDirectValidationFailure(error) {
+  const providerCode = Number(error?.providerCode);
+  if (providerCode === 58)
+    return {
+      validation: "blocked",
+      validationCode: "application_access_pending",
+      validationMessage:
+        "Код принят. Заявка приложения Ритма на доступ к API Директа ещё не одобрена Яндексом. Повторно подключать кабинет не нужно — после одобрения нажмите «Проверить доступ».",
+    };
+  if (providerCode === 513)
+    return {
+      validation: "blocked",
+      validationCode: "direct_account_missing",
+      validationMessage:
+        "Код принят, но на этом Яндекс ID ещё нет кабинета Директа. Создайте кабинет в Яндекс Директе, затем нажмите «Проверить доступ».",
+    };
+  if (providerCode === 3000)
+    return {
+      validation: "blocked",
+      validationCode: "direct_api_disabled",
+      validationMessage:
+        "Код принят, но для этого кабинета закрыт доступ к API Директа. Проверьте настройки API и ограничения по IP, затем повторите проверку.",
+    };
+  if (providerCode === 54)
+    return {
+      validation: "reauth_required",
+      validationCode: "direct_rights_missing",
+      validationMessage:
+        "Код принят, но у этого аккаунта недостаточно прав на кабинет Директа. Войдите представителем с правом редактирования и подключите кабинет заново.",
+    };
+  if (error?.retryable)
+    return {
+      validation: "pending",
+      validationCode: "direct_temporarily_unavailable",
+      validationMessage:
+        "Код принят. Директ пока не ответил — повторите проверку через несколько минут.",
+    };
+  return {
+    validation: "reauth_required",
+    validationCode: providerCode ? `direct_${providerCode}` : "direct_access_failed",
+    validationMessage:
+      "Код принят, но Яндекс не разрешил доступ к Директу. Проверьте, что выбран нужный аккаунт, и подключите кабинет заново.",
+  };
+}
 function parseDirectJson(body) {
   let output = "",
     inString = false,
@@ -165,14 +210,17 @@ export class DirectClient {
       },
       this.fetcher,
     );
-    if (data.error)
-      throw new ProviderError(
+    if (data.error) {
+      const error = new ProviderError(
         `Ошибка Директа ${data.error.error_code}. Проверьте доступ и параметры кабинета.`,
         [52, 9000].includes(data.error.error_code),
         data.error.request_id,
         30,
         [53, 1002].includes(data.error.error_code),
       );
+      error.providerCode = Number(data.error.error_code);
+      throw error;
+    }
     if (!data.result)
       throw new ProviderError("Директ вернул ответ без результата.");
     for (const [key, value] of Object.entries(data.result))

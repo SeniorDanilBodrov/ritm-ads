@@ -18,6 +18,7 @@
     "db:migrate:postgres": "node --env-file-if-exists=.env scripts/migrate-postgres.js",
     "db:verify:postgres-async": "node --env-file-if-exists=.env scripts/verify-postgres-async.js",
     "acceptance:postgres-pilot": "node --env-file-if-exists=.env scripts/acceptance-postgres-pilot.js",
+    "acceptance:postgres-direct": "node --env-file-if-exists=.env scripts/acceptance-postgres-direct.js",
     "ops:check": "node --env-file-if-exists=.env scripts/check-operations.js",
     "ops:load": "node scripts/load-smoke.js",
     "local-image:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local-image-api.ps1",

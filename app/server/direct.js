@@ -9,11 +9,16 @@ const negativePhrase = z
   .trim()
   .min(2)
   .max(250)
-  .refine((value) => !value.startsWith("-"), "Минус-фраза задаётся без начального минуса")
+  .refine(
+    (value) => !value.startsWith("-"),
+    "Минус-фраза задаётся без начального минуса",
+  )
   .refine(
     (value) =>
       value.split(/\s+/u).length <= 7 &&
-      value.split(/\s+/u).every((word) => word.replace(/^[-+!]+/u, "").length <= 35),
+      value
+        .split(/\s+/u)
+        .every((word) => word.replace(/^[-+!]+/u, "").length <= 35),
     "Минус-фраза превышает ограничения Директа",
   );
 const httpUrl = z
@@ -61,7 +66,11 @@ export function assertPortfolioBudget(db, business, change) {
   const configuredBudget = business?.state?.budget;
   const candidate = change?.plan?.budget;
   if (!Number.isSafeInteger(candidate) || candidate <= 0)
-    throw new AppError(409, "Лимит новой кампании некорректен.", "portfolio_budget_invalid");
+    throw new AppError(
+      409,
+      "Лимит новой кампании некорректен.",
+      "portfolio_budget_invalid",
+    );
   const reserved = db
     .prepare(
       `SELECT dc.plan_json,cba.limit_kopecks FROM campaign_ad_lifecycle cl
@@ -75,7 +84,10 @@ export function assertPortfolioBudget(db, business, change) {
     .reduce((total, row) => {
       const value = row.limit_kopecks ?? JSON.parse(row.plan_json)?.budget;
       if (!Number.isSafeInteger(value) || value <= 0)
-        throw new AppError(409, "В портфеле найдена кампания с некорректным лимитом.");
+        throw new AppError(
+          409,
+          "В портфеле найдена кампания с некорректным лимитом.",
+        );
       return total + value;
     }, 0);
   // A pre-portfolio business from an older database can still launch its first
@@ -87,14 +99,22 @@ export function assertPortfolioBudget(db, business, change) {
         ? candidate
         : null;
   if (!Number.isSafeInteger(reserved) || !budget)
-    throw new AppError(409, "Не задан общий бюджет бизнеса.", "portfolio_budget_missing");
+    throw new AppError(
+      409,
+      "Не задан общий бюджет бизнеса.",
+      "portfolio_budget_missing",
+    );
   if (reserved + candidate > budget)
     throw new AppError(
       409,
       "Лимиты кампаний превысят общий бюджет бизнеса. Уменьшите лимит новой кампании или освободите остаток другой кампании.",
       "portfolio_budget_exceeded",
     );
-  return { budgetKopecks: budget, reservedKopecks: reserved, availableKopecks: budget - reserved };
+  return {
+    budgetKopecks: budget,
+    reservedKopecks: reserved,
+    availableKopecks: budget - reserved,
+  };
 }
 
 const micros = (kopecks) => kopecks * 10_000;
@@ -629,7 +649,10 @@ export function evaluateDirectPreflight(
   )
     block("dry_run_incomplete", "Сначала подготовьте план к проверке.");
   if (fingerprint(commands) !== fingerprint(rebuilt.commands))
-    block("plan_changed", "План изменился после подготовки. Соберите его заново.");
+    block(
+      "plan_changed",
+      "План изменился после подготовки. Соберите его заново.",
+    );
   const account = clients.find((item) => item.Login === plan.login);
   if (!account)
     block("account_missing", "Ритм не видит выбранный рекламный кабинет.");
@@ -645,33 +668,37 @@ export function evaluateDirectPreflight(
       "duplicate_campaign",
       "В рекламном кабинете уже есть кампания с таким названием.",
     );
-  if (!plan.counterId || !plan.goalId)
-    block("analytics_missing", "Выберите на сайте действие, которое считать обращением.");
+  if (
+    business.state.landingMode !== "yandex_landing" &&
+    (!plan.counterId || !plan.goalId)
+  )
+    block(
+      "analytics_missing",
+      "Выберите на сайте действие, которое считать обращением.",
+    );
   else if (
-    String(business.state.counterId || "") !== plan.counterId ||
-    String(business.state.goalId || "") !== plan.goalId
+    business.state.landingMode !== "yandex_landing" &&
+    (String(business.state.counterId || "") !== plan.counterId ||
+      String(business.state.goalId || "") !== plan.goalId)
   )
     block(
       "analytics_changed",
       "Выбранное обращение на сайте изменилось после подготовки плана.",
     );
   if (plan.regionIds.includes(0))
-    block("geography_broad", "Для первого запуска укажите конкретный город или регион.");
-  if (plan.periodStart <= localDate(now, "Europe/Moscow"))
     block(
-      "start_not_future",
-      "Выберите дату начала после сегодняшнего дня.",
+      "geography_broad",
+      "Для первого запуска укажите конкретный город или регион.",
     );
+  if (plan.periodStart <= localDate(now, "Europe/Moscow"))
+    block("start_not_future", "Выберите дату начала после сегодняшнего дня.");
   const periodDays =
     (Date.parse(`${plan.periodEnd}T00:00:00Z`) -
       Date.parse(`${plan.periodStart}T00:00:00Z`)) /
       86_400_000 +
     1;
   if (!Number.isInteger(periodDays) || periodDays < 1 || periodDays > 90)
-    block(
-      "period_range",
-      "Выберите период от 1 до 90 дней.",
-    );
+    block("period_range", "Выберите период от 1 до 90 дней.");
   else {
     const minimumKopecks = Math.max(30_000, periodDays * 5_000);
     if (plan.budget < minimumKopecks)
@@ -682,7 +709,10 @@ export function evaluateDirectPreflight(
   }
   const domain = new URL(plan.website).hostname;
   if (plan.ads.some((ad) => new URL(ad.href).hostname !== domain))
-    block("landing_mismatch", "Ссылка в объявлении ведёт не на тот сайт, который указан в плане.");
+    block(
+      "landing_mismatch",
+      "Ссылка в объявлении ведёт не на тот сайт, который указан в плане.",
+    );
   if (
     business.state.website &&
     new URL(business.state.website).hostname !== domain

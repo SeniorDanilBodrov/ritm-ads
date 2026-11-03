@@ -1864,6 +1864,186 @@ tbody tr:hover {
   justify-content: center;
 }
 
+.hosted-direct-stage {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.hosted-direct-stage-heading {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.hosted-direct-stage-heading h3,
+.hosted-direct-stage-heading p,
+.hosted-direct-action b,
+.hosted-direct-action small,
+.hosted-direct-progress-row b,
+.hosted-direct-progress-row small,
+.hosted-direct-success b,
+.hosted-direct-success p {
+  margin: 0;
+}
+
+.hosted-direct-stage-heading h3 {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.hosted-direct-stage-heading p {
+  max-width: 70ch;
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hosted-direct-action {
+  margin-top: 16px;
+  padding: 15px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.hosted-direct-action > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.hosted-direct-action small,
+.hosted-direct-progress-row small,
+.hosted-direct-gate small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hosted-direct-progress {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.hosted-direct-progress > button {
+  justify-self: start;
+}
+
+.hosted-direct-progress-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hosted-direct-progress-row.complete > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--success);
+}
+
+.hosted-direct-progress-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.hosted-direct-confirmation {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.hosted-direct-confirmation label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.hosted-direct-confirmation input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  padding: 0;
+  accent-color: var(--brand-action);
+}
+
+.hosted-direct-confirmation > button {
+  justify-self: start;
+}
+
+.hosted-direct-gate {
+  max-width: 420px;
+  display: grid;
+  gap: 4px;
+}
+
+.hosted-direct-success {
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid var(--success-line);
+  border-radius: 14px;
+  background: var(--success-soft);
+}
+
+.hosted-direct-success > svg {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.hosted-direct-success p {
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hosted-direct-progress .inline-error ul {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+}
+
+.creative-next-step {
+  margin-top: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.creative-next-step b,
+.creative-next-step p {
+  margin: 0;
+}
+
+.creative-next-step p {
+  max-width: 64ch;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .hosted-launch-review .inline-error {
   margin-top: 16px;
 }
@@ -6942,6 +7122,28 @@ textarea::placeholder {
     grid-column: 1 / -1;
     width: 100%;
     min-width: 0;
+  }
+
+  .hosted-direct-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hosted-direct-action > button,
+  .hosted-direct-confirmation > button,
+  .hosted-direct-progress > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .creative-next-step {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .creative-next-step > button {
+    width: 100%;
+    justify-content: center;
   }
 
   .ai-plan-card-heading {

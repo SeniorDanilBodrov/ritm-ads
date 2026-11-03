@@ -55,6 +55,15 @@ import {
   postgresCreativeImages,
   removePostgresCreativeImage,
 } from "./postgres-creatives.js";
+import { canWritePaidAdvertising } from "./live-ads.js";
+import {
+  confirmPostgresDirectPlan,
+  executePostgresDirectPlan,
+  inspectPostgresDirectExecution,
+  postgresDirectChanges,
+  preflightPostgresDirectPlan,
+  preparePostgresDirectPlan,
+} from "./postgres-direct.js";
 
 const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -237,6 +246,7 @@ export function createPostgresApp({
   key,
   advertisingPlanner = createAdvertisingPlan,
   revokeToken = revokeYandexToken,
+  directFactory = (options) => new DirectClient(options),
 }) {
   const app = express();
   const attempts = new Map();
@@ -293,7 +303,8 @@ export function createPostgresApp({
     res.json({
       ok: true,
       mode: "postgres-pilot",
-      liveLaunch: false,
+      liveLaunch:
+        canWritePaidAdvertising(config) && config.directWritePilot === true,
       creativeImages: Boolean(config.encryptionConfigured),
       imageProvider: "kie",
       textApproval: true,
@@ -325,7 +336,8 @@ export function createPostgresApp({
       demoAvailable: config.demo,
       googleConfigured: Boolean(config.googleId && config.googleSecret),
       yandexConfigured: Boolean(config.yandexId && config.yandexSecret),
-      liveLaunch: false,
+      liveLaunch:
+        canWritePaidAdvertising(config) && config.directWritePilot === true,
       postgresPilot: true,
     });
   });
@@ -1192,6 +1204,18 @@ export function createPostgresApp({
     const kieImages = connections.some(
       (connection) => connection.provider === "kie-image",
     );
+    const directChanges = await postgresDirectChanges(
+      db,
+      req.user.id,
+      business.id,
+    );
+    const lifecycleRow = await db
+      .prepare(
+        "SELECT status,change_id,reason,updated_at FROM campaign_ad_lifecycle WHERE business_id=? ORDER BY updated_at DESC LIMIT 1",
+      )
+      .get(business.id);
+    const directWriteEnabled =
+      canWritePaidAdvertising(config) && config.directWritePilot === true;
     res.json({
       id: business.id,
       version: business.version,
@@ -1201,7 +1225,7 @@ export function createPostgresApp({
       reports: await reportView(db, business.id),
       reportJobs: [],
       jobs: [],
-      directChanges: [],
+      directChanges,
       abPlans: [],
       controlReviews: [],
       shadowReviews: [],
@@ -1211,17 +1235,26 @@ export function createPostgresApp({
       audienceExperiments: [],
       creativeImages: await postgresCreativeImages(db, business.id),
       connections,
-      adLifecycle: {
-        status: "not_started",
-        reason:
-          "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается.",
-      },
+      adLifecycle: lifecycleRow
+        ? {
+            status: lifecycleRow.status,
+            changeId: lifecycleRow.change_id,
+            reason: lifecycleRow.reason,
+            updatedAt: lifecycleRow.updated_at,
+          }
+        : {
+            status: "draft",
+            changeId: null,
+            reason:
+              "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается.",
+            updatedAt: null,
+          },
       capabilities: {
         postgresPilot: true,
         google: Boolean(config.googleId && config.googleSecret),
         yandex: Boolean(config.yandexId && config.yandexSecret),
-        liveLaunch: false,
-        directWritePilot: false,
+        liveLaunch: directWriteEnabled,
+        directWritePilot: directWriteEnabled,
         directArchivePilot: false,
         directModerationPilot: false,
         directResumePilot: false,
@@ -1236,6 +1269,149 @@ export function createPostgresApp({
       },
     });
   });
+  app.post(
+    "/api/businesses/:id/direct/dry-run",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      res
+        .status(201)
+        .json(
+          await preparePostgresDirectPlan(
+            db,
+            req.user.id,
+            req.params.id,
+            requestKey,
+            req.body,
+          ),
+        );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/preflight",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const accounts = await directFactory({
+        accessToken: connection.credentials.access_token,
+        sandbox: false,
+      }).clients();
+      const clients = accounts.Clients || [];
+      if (!clients.some((item) => item.Login === change.plan.login))
+        throw new AppError(
+          409,
+          "Выбранный кабинет больше не доступен. Проверьте подключение.",
+          "direct_account_missing",
+        );
+      res.json(
+        await preflightPostgresDirectPlan(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          requestKey,
+          {
+            clients,
+            connectionId: connection.metadata.connectionId,
+            clientForLogin: directFactory({
+              accessToken: connection.credentials.access_token,
+              login: change.plan.login,
+              sandbox: false,
+            }),
+          },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/confirm",
+    authenticated,
+    async (req, res) => {
+      const input = z
+        .object({ planFingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await confirmPostgresDirectPlan(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.changeId,
+          input.planFingerprint,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/execute",
+    authenticated,
+    async (req, res) => {
+      if (!canWritePaidAdvertising(config) || config.directWritePilot !== true)
+        throw new AppError(
+          409,
+          "Создание кампаний ещё не разрешено на этом сервере.",
+          "live_gate",
+        );
+      const input = z
+        .object({ planFingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      res.json(
+        await executePostgresDirectPlan(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          input.planFingerprint,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/execution/inspect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      res.json(
+        await inspectPostgresDirectExecution(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
   app.put(
     "/api/businesses/:id/image-provider/kie",
     authenticated,

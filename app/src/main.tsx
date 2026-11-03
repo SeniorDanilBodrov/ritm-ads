@@ -43,6 +43,7 @@ import {
   Plug,
   RefreshCw,
   Search,
+  Send,
   SlidersHorizontal,
   Split,
   Sparkles,
@@ -1793,6 +1794,7 @@ function App() {
                 <Creatives
                   ws={ws}
                   busy={busy}
+                  navigate={select}
                   approve={(id) =>
                     performWithResult(() => cmd("approve", { id }))
                   }
@@ -3688,6 +3690,11 @@ function HostedPlanReview({
   navigate,
   editBusiness,
   prepareAiPlan,
+  dryRun,
+  preflight,
+  confirmPlan,
+  executePlan,
+  inspectExecution,
   refresh,
 }: {
   ws: Workspace;
@@ -3695,6 +3702,16 @@ function HostedPlanReview({
   navigate: (page: string) => void;
   editBusiness: () => void;
   prepareAiPlan: () => void;
+  dryRun: (plan: DirectPlan) => void;
+  preflight: (id: string) => void;
+  confirmPlan: (id: string, planFingerprint: string) => void;
+  executePlan: (
+    id: string,
+    planFingerprint: string,
+    name: string,
+    budget: number,
+  ) => void;
+  inspectExecution: (id: string) => void;
   refresh: () => Promise<void>;
 }) {
   const plan = ws.state.aiPlan;
@@ -3705,7 +3722,56 @@ function HostedPlanReview({
     Boolean(ws.state.postgresPilot?.planConfirmedAt),
   );
   const [acknowledged, setAcknowledged] = useState(false);
+  const [draftAcknowledged, setDraftAcknowledged] = useState(false);
   const [localError, setLocalError] = useState("");
+  const approvedTexts = ws.state.creatives.filter(
+    (item) => item.status === "approved",
+  );
+  const directChange =
+    ws.directChanges.find(
+      (item) =>
+        item.plan?.website === ws.state.website &&
+        item.plan?.budget === ws.state.budget &&
+        item.plan?.ads.every((ad) =>
+          approvedTexts.some(
+            (creative) =>
+              creative.title.slice(0, 56) === ad.title &&
+              creative.text.slice(0, 81) === ad.text,
+          ),
+        ),
+    ) || null;
+  const directPreflightFresh = Boolean(
+    directChange?.preflight &&
+    Date.parse(directChange.preflight.checkedAt) + 10 * 60_000 > Date.now(),
+  );
+  const yandex = ws.connections.find((item) => item.provider === "yandex");
+  const period = nextCampaignPeriod("", "");
+  const regionId = /екатеринбург/i.test(ws.state.city) ? 54 : null;
+
+  function prepareHeldDraft() {
+    if (!plan || !approvedTexts.length || !yandex?.clients?.[0] || !regionId)
+      return;
+    dryRun({
+      login: yandex.clients[0].Login,
+      campaignName: `${ws.state.name} · Поиск`.slice(0, 255),
+      website: ws.state.website,
+      audience: plan.plan.audiences.map((item) => item.name).join("; "),
+      regionIds: [regionId],
+      budget: ws.state.budget,
+      targetCpa: ws.state.targetCpa,
+      periodStart: period.start,
+      periodEnd: period.end,
+      ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
+      ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ads: approvedTexts.map((item) => ({
+        title: item.title.slice(0, 56),
+        text: item.text.slice(0, 81),
+        href: ws.state.website,
+      })),
+      keywords: plan.plan.keywords,
+      negativeKeywords: plan.plan.negativeKeywords,
+    });
+  }
 
   async function checkReadiness() {
     setChecking(true);
@@ -3942,6 +4008,222 @@ function HostedPlanReview({
                   Подготовить изображения
                 </button>
               </div>
+              <div className="hosted-direct-stage">
+                <div className="hosted-direct-stage-heading">
+                  <span className="hosted-plan-next-icon" aria-hidden="true">
+                    <Send size={20} />
+                  </span>
+                  <div>
+                    <h3>Подготовьте выключенную кампанию в Директе</h3>
+                    <p>
+                      Ритм проверит кабинет, даты и лимит. Созданная кампания
+                      останется выключенной — показы и расходы не начнутся.
+                    </p>
+                  </div>
+                </div>
+
+                {!approvedTexts.length ? (
+                  <div className="hosted-direct-action">
+                    <div>
+                      <b>Сначала согласуйте текст объявления</b>
+                      <small>
+                        В кампанию попадут только варианты, которые вы проверили
+                        сами.
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => navigate("creatives")}
+                    >
+                      Перейти к текстам <ArrowRight size={15} />
+                    </button>
+                  </div>
+                ) : !regionId ? (
+                  <div className="inline-error" role="alert">
+                    Для города «{ws.state.city}» пока не найден точный регион
+                    Директа. Добавьте выбор региона перед подготовкой кампании.
+                  </div>
+                ) : !directChange ? (
+                  <div className="hosted-direct-action">
+                    <div>
+                      <b>Материалы готовы</b>
+                      <small>
+                        {approvedTexts.length} согласованных текстов · бюджет{" "}
+                        {money(ws.state.budget)}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={busy}
+                      onClick={prepareHeldDraft}
+                    >
+                      <ShieldCheck size={16} />
+                      Подготовить запуск
+                    </button>
+                  </div>
+                ) : (
+                  <div className="hosted-direct-progress" aria-live="polite">
+                    <div className="hosted-direct-progress-row complete">
+                      <CheckCircle2 size={18} />
+                      <div>
+                        <b>План кампании собран</b>
+                        <small>
+                          {directChange.summary.ads} объявлений ·{" "}
+                          {directChange.summary.keywords} фраз
+                        </small>
+                      </div>
+                    </div>
+
+                    {(!directChange.preflight || !directPreflightFresh) && (
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={busy}
+                        onClick={() => preflight(directChange.id)}
+                      >
+                        <ShieldCheck size={16} />
+                        {directChange.preflight
+                          ? "Проверить кабинет снова"
+                          : "Проверить кабинет и лимит"}
+                      </button>
+                    )}
+
+                    {directChange.preflight &&
+                      directPreflightFresh &&
+                      !directChange.preflight.ready && (
+                        <div className="inline-error" role="alert">
+                          <b>До создания кампании нужно исправить:</b>
+                          <ul>
+                            {directChange.preflight.findings.map((finding) => (
+                              <li key={finding.code}>{finding.message}</li>
+                            ))}
+                          </ul>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => preflight(directChange.id)}
+                          >
+                            Проверить снова
+                          </button>
+                        </div>
+                      )}
+
+                    {directChange.preflight?.ready &&
+                      directPreflightFresh &&
+                      !directChange.approval && (
+                        <div className="hosted-direct-confirmation">
+                          <div className="hosted-direct-progress-row complete">
+                            <CheckCircle2 size={18} />
+                            <div>
+                              <b>Кабинет и лимит проверены</b>
+                              <small>В Директе пока ничего не создано.</small>
+                            </div>
+                          </div>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={draftAcknowledged}
+                              onChange={(event) =>
+                                setDraftAcknowledged(event.target.checked)
+                              }
+                            />
+                            <span>
+                              Я понимаю: следующий шаг создаст только
+                              выключенную кампанию без показов
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={!draftAcknowledged || busy}
+                            onClick={() =>
+                              confirmPlan(
+                                directChange.id,
+                                directChange.preflight!.planFingerprint,
+                              )
+                            }
+                          >
+                            Подтвердить подготовку черновика
+                          </button>
+                        </div>
+                      )}
+
+                    {directChange.approval && !directChange.execution && (
+                      <div className="hosted-direct-action">
+                        <div>
+                          <b>Создание черновика подтверждено</b>
+                          <small>
+                            Подтверждение ограничено этим планом и действует 10
+                            минут.
+                          </small>
+                        </div>
+                        {ws.capabilities.directWritePilot ? (
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={busy}
+                            onClick={() =>
+                              executePlan(
+                                directChange.id,
+                                directChange.approval!.planFingerprint,
+                                directChange.plan?.campaignName ||
+                                  "Новая кампания",
+                                directChange.plan?.budget || 0,
+                              )
+                            }
+                          >
+                            Создать выключенную кампанию
+                          </button>
+                        ) : (
+                          <div className="hosted-direct-gate" role="status">
+                            <b>Создание кампании пока недоступно</b>
+                            <small>
+                              План и проверка сохранены. Для первого создания в
+                              рабочем кабинете нужно включить эту функцию на
+                              сервере.
+                            </small>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {directChange.execution?.status === "succeeded" && (
+                      <div className="hosted-direct-success" role="status">
+                        <CheckCircle2 size={20} />
+                        <div>
+                          <b>Выключенная кампания создана и сверена</b>
+                          <p>
+                            Она находится в Яндекс Директе, а не на вашем сайте.
+                            Показы не идут. Следующий отдельный этап — модерация
+                            и подтверждение запуска.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {directChange.execution?.status ===
+                      "needs_reconciliation" && (
+                      <div className="inline-error" role="alert">
+                        <p>
+                          Ответ Директа нужно сверить. Повторная отправка
+                          заблокирована, чтобы не создать дубликат.
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => inspectExecution(directChange.id)}
+                        >
+                          Сверить с Директом
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="hosted-plan-confirmation">
@@ -4046,6 +4328,11 @@ function Campaigns({
         navigate={navigate}
         editBusiness={editBusiness}
         prepareAiPlan={prepareAiPlan}
+        dryRun={dryRun}
+        preflight={preflight}
+        confirmPlan={confirmPlan}
+        executePlan={executePlan}
+        inspectExecution={inspectExecution}
         refresh={refresh}
       />
     );
@@ -7467,6 +7754,7 @@ function LiveExperiments({
 function Creatives({
   ws,
   busy,
+  navigate,
   approve,
   generateImage,
   connectKie,
@@ -7477,6 +7765,7 @@ function Creatives({
 }: {
   ws: Workspace;
   busy: boolean;
+  navigate: (page: string) => void;
   approve: (id: string) => Promise<boolean>;
   generateImage: (input: {
     prompt?: string;
@@ -8060,6 +8349,25 @@ function Creatives({
           </section>
         ))}
       </div>
+      {ws.capabilities.postgresPilot &&
+        ws.state.creatives.some((item) => item.status === "approved") && (
+          <section className="card creative-next-step">
+            <div>
+              <b>Текст согласован</b>
+              <p>
+                Вернитесь к плану. Там Ритм проверит кабинет и подготовит
+                выключенную кампанию.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => navigate("campaigns")}
+            >
+              Продолжить запуск <ArrowRight size={16} />
+            </button>
+          </section>
+        )}
       {!ws.state.creatives.length && (
         <Empty
           title="Расскажите о своем предложении"

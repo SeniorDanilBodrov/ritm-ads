@@ -13,6 +13,13 @@ import {
 import { runOptimizerCycle } from "../server/live-data-worker.js";
 
 const targetCpa = 45_000;
+const moscowDate = (now) =>
+  new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(now));
 
 function remoteBudget(id, plan, limitKopecks) {
   return {
@@ -74,8 +81,9 @@ function fixture({ action = "pause" } = {}) {
     "encrypted",
     JSON.stringify({ connectionId, sandbox: false }),
   );
-  const periodStart = new Date().toISOString().slice(0, 10),
-    periodEnd = new Date(Date.now() + 13 * 86400000).toISOString().slice(0, 10),
+  const now = Date.now(),
+    periodStart = moscowDate(now),
+    periodEnd = moscowDate(now + 13 * 86400000),
     plan = {
       login: "client",
       campaignName: "Тест",

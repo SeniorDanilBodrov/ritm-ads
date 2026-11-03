@@ -1777,8 +1777,10 @@ tbody tr:hover {
 .hosted-plan-confirmation label {
   grid-column: 1 / -1;
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 9px;
+  margin: 0;
   color: var(--ink-soft);
   font-size: 13px;
   font-weight: 600;
@@ -1789,8 +1791,10 @@ tbody tr:hover {
 .hosted-plan-confirmation input {
   width: 18px;
   height: 18px;
+  min-height: 18px;
   flex: 0 0 auto;
   margin: 1px 0 0;
+  padding: 0;
   accent-color: var(--brand-action);
 }
 

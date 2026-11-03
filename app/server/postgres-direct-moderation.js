@@ -219,7 +219,9 @@ export async function inspectPostgresDirectControl(
     blockers.push("budget_drift");
   if (!["OFF", "SUSPENDED"].includes(remote.State))
     blockers.push("campaign_not_suspended");
-  if (remote.Status !== "ACCEPTED") blockers.push("campaign_not_accepted");
+  if (["MODERATION", "PREACCEPTED"].includes(remote.Status))
+    blockers.push("campaign_under_review");
+  else if (remote.Status !== "ACCEPTED") blockers.push("campaign_not_accepted");
   if (remote.StatusPayment !== "ALLOWED")
     blockers.push("payment_not_confirmed");
   if (
@@ -228,7 +230,11 @@ export async function inspectPostgresDirectControl(
     )
   )
     blockers.push("group_mismatch");
-  if (
+  const adsUnderReview = ads.some((ad) =>
+    ["MODERATION", "PREACCEPTED"].includes(ad.Status),
+  );
+  if (adsUnderReview) blockers.push("ads_under_review");
+  else if (
     ads.some(
       (ad) =>
         String(ad.CampaignId) !== String(bundle.campaignId) ||

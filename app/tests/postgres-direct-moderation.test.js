@@ -359,8 +359,8 @@ test("PostgreSQL control review persists the read-only Yandex decision", async (
   );
   assert.equal(result.status, "blocked");
   assert.equal(result.externalWrites, 0);
-  assert.ok(result.blockers.includes("campaign_not_accepted"));
-  assert.ok(result.blockers.includes("ads_not_ready"));
+  assert.ok(result.blockers.includes("campaign_under_review"));
+  assert.ok(result.blockers.includes("ads_under_review"));
   assert.ok(result.blockers.includes("spend_not_verified"));
   assert.equal(
     (await postgresControlReviews(data.db, data.userId, data.businessId))

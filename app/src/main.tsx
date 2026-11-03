@@ -1586,10 +1586,19 @@ function App() {
                           "POST",
                           crypto.randomUUID(),
                         );
+                        const waitingForYandex = result.blockers?.some(
+                          (code: string) =>
+                            [
+                              "campaign_under_review",
+                              "ads_under_review",
+                            ].includes(code),
+                        );
                         setToast(
-                          result.status === "technical_ready"
-                            ? "Техническая проверка пройдена; для запуска нужны отдельные согласования"
-                            : "Проверка показала препятствия для запуска",
+                          waitingForYandex
+                            ? "Яндекс ещё проверяет объявление. Показы не запущены"
+                            : result.status === "technical_ready"
+                              ? "Техническая проверка пройдена; для запуска нужны отдельные согласования"
+                              : "Яндекс пока не разрешил показы — причина указана ниже",
                         );
                       } finally {
                         await load(ws.id);
@@ -4569,12 +4578,14 @@ const controlBlockers: Record<string, string> = {
   website_changed: "Сайт бизнеса отличается от сайта кампании.",
   budget_drift: "Лимит или стратегия отличаются от утверждённого плана.",
   campaign_not_suspended: "Кампания не находится в безопасном режиме ожидания.",
+  campaign_under_review: "Яндекс ещё проверяет кампанию.",
   campaign_not_accepted: "Кампания ещё не принята модерацией.",
   payment_not_confirmed: "Директ не подтвердил возможность оплаты показов.",
   spend_not_verified: "Нет свежего отчёта о расходе за период кампании.",
   budget_exhausted: "Лимит кампании уже исчерпан.",
   group_mismatch:
     "Группа объявлений больше не соответствует сохранённому плану.",
+  ads_under_review: "Яндекс ещё проверяет объявление.",
   ads_not_ready: "Объявление не принято или остановлено отдельно от кампании.",
   ad_content_changed:
     "Текст или ссылка объявления отличаются от утверждённого плана.",
@@ -4590,31 +4601,67 @@ function DirectControlCard({
   busy: boolean;
   onInspect: () => Promise<boolean> | boolean | void;
 }) {
+  const moderationPending = Boolean(
+    review?.blockers.some((code) =>
+      ["campaign_under_review", "ads_under_review"].includes(code),
+    ),
+  );
+  const moderationUnresolved = Boolean(
+    review?.blockers.some((code) =>
+      [
+        "campaign_under_review",
+        "ads_under_review",
+        "campaign_not_accepted",
+        "ads_not_ready",
+      ].includes(code),
+    ),
+  );
+  const visibleBlockers =
+    review?.blockers.filter(
+      (code) =>
+        !moderationUnresolved ||
+        !["spend_not_verified", "payment_not_confirmed"].includes(code),
+    ) || [];
+
   return (
     <div
       className="direct-execution-result direct-control-card"
       aria-live="polite"
     >
-      <b>Проверка перед запуском</b>
+      <b>
+        {moderationPending
+          ? "Яндекс проверяет объявление"
+          : moderationUnresolved
+            ? "Яндекс ещё не разрешил показы"
+            : "Проверка перед запуском"}
+      </b>
       {review ? (
         <>
-          <p>
-            Ритм сверил состояние кампании, лимит{" "}
-            {money(review.budget.limitKopecks)}и подтверждённый расход за период{" "}
-            {money(review.budget.spentKopecks)}.
-          </p>
-          {review.budget.spentKopecks === null && (
+          {moderationUnresolved ? (
+            <p>
+              {moderationPending
+                ? "Пока ничего исправлять не нужно. Объявление принято на проверку, показы не запущены и бюджет не расходуется."
+                : "Показы пока не разрешены. Проверьте решение ещё раз; если статус не изменится, Яндекс покажет причину рядом с объявлением в Директе."}
+            </p>
+          ) : (
+            <p>
+              Ритм сверил состояние кампании, лимит{" "}
+              {money(review.budget.limitKopecks)} и подтверждённый расход за
+              период {money(review.budget.spentKopecks)}.
+            </p>
+          )}
+          {!moderationUnresolved && review.budget.spentKopecks === null && (
             <small>
               {review.budget.reportDateTo
                 ? `Последний сохранённый отчёт — по ${review.budget.reportDateTo}; он не подтверждает расход этой кампании за текущий период.`
                 : "Отчёта о расходе за период кампании пока нет."}
             </small>
           )}
-          {review.blockers.length ? (
+          {visibleBlockers.length && !moderationPending ? (
             <>
               <b className="launch-blockers-title">Что мешает запуску</b>
               <ul>
-                {review.blockers.map((code) => (
+                {visibleBlockers.map((code) => (
                   <li key={code}>
                     {controlBlockers[code] ||
                       "Нужна дополнительная проверка кампании."}
@@ -4622,12 +4669,12 @@ function DirectControlCard({
                 ))}
               </ul>
             </>
-          ) : (
+          ) : !moderationUnresolved ? (
             <p>
               Технические условия пройдены. Запуск требует отдельного решения
               владельца.
             </p>
-          )}
+          ) : null}
           <small>
             Проверено {new Date(review.checkedAt).toLocaleString("ru-RU")}. Эта
             проверка не меняет рекламу и не запускает показы.
@@ -4659,7 +4706,11 @@ function DirectControlCard({
         disabled={busy}
         onClick={onInspect}
       >
-        Проверить готовность в Директе
+        {busy
+          ? "Проверяем решение…"
+          : moderationUnresolved
+            ? "Проверить решение Яндекса"
+            : "Проверить готовность в Директе"}
       </button>
     </div>
   );

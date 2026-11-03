@@ -125,7 +125,9 @@ export async function inspectDirectControl(
   if (budget.status !== "matched") blockers.push("budget_drift");
   if (budget.remote.state !== "SUSPENDED")
     blockers.push("campaign_not_suspended");
-  if (budget.remote.status !== "ACCEPTED")
+  if (["MODERATION", "PREACCEPTED"].includes(budget.remote.status))
+    blockers.push("campaign_under_review");
+  else if (budget.remote.status !== "ACCEPTED")
     blockers.push("campaign_not_accepted");
   if (budget.remote.statusPayment !== "ALLOWED")
     blockers.push("payment_not_confirmed");
@@ -144,8 +146,13 @@ export async function inspectDirectControl(
     )
   )
     blockers.push("group_mismatch");
+  const matchingAds = matching(ads, ids.ads);
   if (
-    matching(ads, ids.ads).some(
+    matchingAds.some((ad) => ["MODERATION", "PREACCEPTED"].includes(ad.Status))
+  )
+    blockers.push("ads_under_review");
+  else if (
+    matchingAds.some(
       (item) =>
         String(item.CampaignId) !== String(campaignId) ||
         !ids.adgroup.some((id) => String(id) === String(item.AdGroupId)) ||
@@ -155,7 +162,7 @@ export async function inspectDirectControl(
   )
     blockers.push("ads_not_ready");
   if (
-    matching(ads, ids.ads).some((ad) => {
+    matchingAds.some((ad) => {
       const originalIndex = execution.calls
         .find((call) => call.key === "ads")
         .ids.findIndex((id) => String(id) === String(ad.Id));

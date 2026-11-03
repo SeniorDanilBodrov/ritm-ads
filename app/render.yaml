@@ -31,3 +31,5 @@ services:
         value: "false"
       - key: POSTGRES_SSL
         value: "true"
+      - key: REQUIRE_POSTGRES
+        value: "true"

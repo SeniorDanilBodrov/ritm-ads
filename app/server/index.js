@@ -116,6 +116,14 @@ if (config.autopilotEnabled && !config.liveAdsEnabled)
   throw new Error("AUTOPILOT_ENABLED requires LIVE_ADS_ENABLED=true.");
 const databaseTarget =
   process.env.DATABASE_URL || process.env.DATABASE_PATH || "./data/ritm.sqlite";
+if (
+  production &&
+  process.env.REQUIRE_POSTGRES === "true" &&
+  !process.env.DATABASE_URL
+)
+  throw new Error(
+    "REQUIRE_POSTGRES=true требует DATABASE_URL. Временная SQLite недопустима для этого окружения.",
+  );
 const key = encryptionKey(process.env.TOKEN_ENCRYPTION_KEY, production),
   db = openDatabase(databaseTarget);
 config.openAiImageCredential = (businessId) => {

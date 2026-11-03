@@ -35,3 +35,7 @@ services:
         value: "true"
       - key: REQUIRE_POSTGRES
         value: "true"
+      # The new PostgreSQL route stays off until its limited pilot is enabled
+      # deliberately in Render after a deployment smoke test.
+      - key: POSTGRES_ASYNC_PILOT
+        value: "false"

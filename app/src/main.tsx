@@ -694,6 +694,20 @@ function App() {
       setBusy(false);
     }
   }
+  async function performWithResult(fn: () => Promise<void>): Promise<boolean> {
+    if (busy) return false;
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
   async function signOut() {
     await perform(async () => {
       await api("/logout", {});
@@ -1779,7 +1793,9 @@ function App() {
                 <Creatives
                   ws={ws}
                   busy={busy}
-                  approve={(id) => perform(() => cmd("approve", { id }))}
+                  approve={(id) =>
+                    performWithResult(() => cmd("approve", { id }))
+                  }
                   generateImage={(input) =>
                     perform(async () => {
                       await api(`/businesses/${ws.id}/creative-images`, input);
@@ -7461,7 +7477,7 @@ function Creatives({
 }: {
   ws: Workspace;
   busy: boolean;
-  approve: (id: string) => void;
+  approve: (id: string) => Promise<boolean>;
   generateImage: (input: {
     prompt?: string;
     style: "editorial" | "local" | "detail";
@@ -7490,7 +7506,10 @@ function Creatives({
     >("bottom-left"),
     [hasCostConsent, setHasCostConsent] = useState(false),
     [apiKey, setApiKey] = useState(""),
-    [setupError, setSetupError] = useState("");
+    [setupError, setSetupError] = useState(""),
+    [approvingTextId, setApprovingTextId] = useState(""),
+    [textApprovalError, setTextApprovalError] = useState(""),
+    [textApprovalErrorId, setTextApprovalErrorId] = useState("");
   const kieConnected = ws.capabilities.creativeImageProvider === "kie";
   const hasPendingImages = ws.creativeImages.some((image) =>
     ["pending", "running"].includes(image.status),
@@ -7509,6 +7528,20 @@ function Creatives({
     succeeded: "Готово",
     failed: "Не удалось",
   } as const;
+  async function approveText(id: string) {
+    if (busy || approvingTextId) return;
+    setApprovingTextId(id);
+    setTextApprovalError("");
+    setTextApprovalErrorId("");
+    const approved = await approve(id);
+    if (!approved) {
+      setTextApprovalError(
+        "Не удалось согласовать текст. Обновите страницу и попробуйте ещё раз.",
+      );
+      setTextApprovalErrorId(id);
+    }
+    setApprovingTextId("");
+  }
   return (
     <>
       <section className="card creative-generator">
@@ -7997,17 +8030,32 @@ function Creatives({
                   : "Сайт не указан"}
               </div>
               <button
+                type="button"
                 className={
                   c.status === "approved"
                     ? "approved-button full"
                     : "secondary full"
                 }
                 disabled={busy || c.status === "approved"}
-                onClick={() => approve(c.id)}
+                aria-busy={approvingTextId === c.id}
+                onClick={() => void approveText(c.id)}
               >
-                <Check size={16} />
-                {c.status === "approved" ? "Согласовано" : "Согласовать текст"}
+                {approvingTextId === c.id ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <Check size={16} />
+                )}
+                {c.status === "approved"
+                  ? "Согласовано"
+                  : approvingTextId === c.id
+                    ? "Согласовываем…"
+                    : "Согласовать текст"}
               </button>
+              {textApprovalError && textApprovalErrorId === c.id && (
+                <small className="field-error" role="alert">
+                  {textApprovalError}
+                </small>
+              )}
             </div>
           </section>
         ))}

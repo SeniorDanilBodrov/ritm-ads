@@ -18,6 +18,7 @@ import {
   assertBudget,
   tickDemo,
   rebalance,
+  generateCreatives,
 } from "./engine.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
 import { advertisingPlanInputHash, createAdvertisingPlan } from "./ai-plan.js";
@@ -295,6 +296,7 @@ export function createPostgresApp({
       liveLaunch: false,
       creativeImages: Boolean(config.encryptionConfigured),
       imageProvider: "kie",
+      textApproval: true,
     });
   });
   app.get("/api/ready", async (_req, res) => {
@@ -1544,7 +1546,14 @@ export function createPostgresApp({
   app.post("/api/businesses/:id/command", authenticated, async (req, res) => {
     const input = z
       .object({
-        action: z.enum(["tick", "toggle", "schedule", "settings"]),
+        action: z.enum([
+          "tick",
+          "toggle",
+          "schedule",
+          "settings",
+          "generate",
+          "approve",
+        ]),
         payload: z.record(z.string(), z.unknown()).default({}),
       })
       .parse(req.body);
@@ -1586,6 +1595,38 @@ export function createPostgresApp({
               rule: "user",
             },
           ];
+        } else if (input.action === "generate") {
+          state.creatives = generateCreatives(state);
+          message = "Тексты подготовлены";
+          entries = [
+            {
+              kind: "creative",
+              title: "Подготовлены варианты текста",
+              reason:
+                "Рита собрала три объявления по данным бизнеса. Перед запуском каждый текст нужно согласовать.",
+              rule: "templates/1",
+            },
+          ];
+        } else if (input.action === "approve") {
+          const creativeId = z.string().min(1).max(160).parse(input.payload.id);
+          const creative = (state.creatives || []).find(
+            (item) => item.id === creativeId,
+          );
+          if (!creative) throw new AppError(404, "Текст объявления не найден.");
+          if (creative.status === "approved") {
+            message = "Текст уже согласован";
+          } else {
+            creative.status = "approved";
+            message = "Текст согласован";
+            entries = [
+              {
+                kind: "approved",
+                title: "Текст объявления согласован",
+                reason: creative.title,
+                rule: "user",
+              },
+            ];
+          }
         } else {
           const parsed = withStartingTargetCpa(
             businessSchema.parse(input.payload),

@@ -36,11 +36,11 @@ services:
       - key: TOKEN_ENCRYPTION_KEY
         sync: false
       - key: LIVE_ADS_ENABLED
-        value: "false"
+        value: "true"
       - key: AUTOPILOT_ENABLED
         value: "false"
       - key: DIRECT_WRITE_PILOT_ENABLED
-        value: "false"
+        value: "true"
       - key: DIRECT_ARCHIVE_PILOT_ENABLED
         value: "false"
       - key: DIRECT_AB_VARIANT_PILOT_ENABLED

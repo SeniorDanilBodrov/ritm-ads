@@ -1366,6 +1366,7 @@ function App() {
                   ws={ws}
                   busy={busy}
                   navigate={select}
+                  editBusiness={() => setModal("business-edit")}
                   budget={() => setModal("budget")}
                   launch={() =>
                     setConfirmation({
@@ -3669,12 +3670,14 @@ function HostedPlanReview({
   ws,
   busy,
   navigate,
+  editBusiness,
   prepareAiPlan,
   refresh,
 }: {
   ws: Workspace;
   busy: boolean;
   navigate: (page: string) => void;
+  editBusiness: () => void;
   prepareAiPlan: () => void;
   refresh: () => Promise<void>;
 }) {
@@ -3743,8 +3746,8 @@ function HostedPlanReview({
         action: () => navigate("connections"),
       };
     return {
-      label: "Проверить данные бизнеса",
-      action: () => navigate("settings"),
+      label: "Изменить данные бизнеса",
+      action: editBusiness,
     };
   }
 
@@ -3793,15 +3796,10 @@ function HostedPlanReview({
           <button
             type="button"
             className="secondary ai-plan-button"
-            disabled={busy}
-            onClick={prepareAiPlan}
+            onClick={editBusiness}
           >
-            {busy ? (
-              <LoaderCircle className="spin" size={16} />
-            ) : (
-              <RefreshCw size={16} />
-            )}
-            {busy ? "Обновляем…" : "Обновить план"}
+            <SlidersHorizontal size={16} />
+            Изменить данные
           </button>
         </div>
         <div className="ai-plan-summary">
@@ -3829,6 +3827,10 @@ function HostedPlanReview({
         {plan.plan.warnings.length > 0 && (
           <p className="ai-plan-warning">{plan.plan.warnings.join(" ")}</p>
         )}
+        <p className="hosted-plan-source-note">
+          План меняется вместе с данными бизнеса: услугой, преимуществами,
+          бюджетом и страницей для клиентов.
+        </p>
       </section>
 
       <section className="card hosted-launch-review" aria-live="polite">
@@ -3837,25 +3839,35 @@ function HostedPlanReview({
             <Badge tone={readiness?.ready ? "green" : "neutral"}>
               {checking
                 ? "Проверяем"
-                : readiness?.ready
-                  ? "Готово к подтверждению"
-                  : "Нужны действия"}
+                : confirmed
+                  ? "План сохранён"
+                  : readiness?.ready
+                    ? "Готово к подтверждению"
+                    : "Нужны действия"}
             </Badge>
-            <h2>{readiness?.title || "Проверяем подготовку"}</h2>
+            <h2>
+              {confirmed
+                ? "План проверен — переходите к материалам"
+                : readiness?.title || "Проверяем подготовку"}
+            </h2>
             <p>
-              {readiness?.detail ||
-                "Сверяем страницу, обращение, кабинет и бюджет."}
+              {confirmed
+                ? "Подготовка завершена. Новый вариант плана появится только после изменения данных бизнеса."
+                : readiness?.detail ||
+                  "Сверяем страницу, обращение, кабинет и бюджет."}
             </p>
           </div>
-          <button
-            type="button"
-            className="secondary"
-            disabled={checking}
-            onClick={() => void checkReadiness()}
-          >
-            <RefreshCw className={checking ? "spin" : ""} size={16} />
-            {checking ? "Проверяем…" : "Проверить снова"}
-          </button>
+          {!confirmed && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={checking}
+              onClick={() => void checkReadiness()}
+            >
+              <RefreshCw className={checking ? "spin" : ""} size={16} />
+              {checking ? "Проверяем…" : "Проверить снова"}
+            </button>
+          )}
         </header>
 
         {localError && (
@@ -3888,14 +3900,31 @@ function HostedPlanReview({
           </ol>
         ) : readiness?.ready ? (
           confirmed ? (
-            <div className="hosted-plan-confirmed" role="status">
-              <CheckCircle2 size={20} />
-              <div>
-                <b>План проверен и сохранён</b>
-                <p>
-                  Показы не начались. Реальный запуск на этом сервере пока
-                  отключён.
-                </p>
+            <div className="hosted-plan-complete">
+              <div className="hosted-plan-next">
+                <span className="hosted-plan-next-icon" aria-hidden="true">
+                  <Images size={20} />
+                </span>
+                <div>
+                  <h3>Теперь подготовьте изображения</h3>
+                  <p>
+                    Рита предложит сюжеты по вашему описанию. Вы сами выберете,
+                    какие варианты можно использовать в рекламе.
+                  </p>
+                  <small>
+                    После подготовки материалов останется отдельный запуск в
+                    Директе. На этом сервере он пока отключён, поэтому показы и
+                    расходы не начнутся.
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => navigate("creatives")}
+                >
+                  <Images size={16} />
+                  Подготовить изображения
+                </button>
               </div>
             </div>
           ) : (
@@ -3942,6 +3971,7 @@ function Campaigns({
   ws,
   busy,
   navigate,
+  editBusiness,
   budget,
   launch,
   toggle,
@@ -3962,6 +3992,7 @@ function Campaigns({
   ws: Workspace;
   busy: boolean;
   navigate: (page: string) => void;
+  editBusiness: () => void;
   budget: () => void;
   launch: () => void;
   toggle: (c: Campaign) => void;
@@ -3997,6 +4028,7 @@ function Campaigns({
         ws={ws}
         busy={busy}
         navigate={navigate}
+        editBusiness={editBusiness}
         prepareAiPlan={prepareAiPlan}
         refresh={refresh}
       />

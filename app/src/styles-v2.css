@@ -1642,6 +1642,12 @@ tbody tr:hover {
   color: var(--warning) !important;
 }
 
+.hosted-plan-source-note {
+  margin: 8px 0 0 !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+
 .hosted-plan-layout {
   grid-template-columns: 1fr;
 }
@@ -1802,24 +1808,60 @@ tbody tr:hover {
   min-width: 190px;
 }
 
-.hosted-plan-confirmed {
+.hosted-plan-complete {
   margin-top: 20px;
-  padding: 16px 0 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
   border-top: 1px solid var(--line);
-  color: var(--success);
 }
 
-.hosted-plan-confirmed b {
+.hosted-plan-next {
+  padding: 18px 0 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
+.hosted-plan-next-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  color: var(--brand);
+  background: var(--surface-soft);
+}
+
+.hosted-plan-next h3,
+.hosted-plan-next p {
+  margin: 0;
+}
+
+.hosted-plan-next h3 {
   color: var(--ink);
+  font-size: 17px;
 }
 
-.hosted-plan-confirmed p {
-  margin: 4px 0 0;
+.hosted-plan-next p {
+  max-width: 68ch;
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hosted-plan-next small {
+  display: block;
+  max-width: 72ch;
+  margin-top: 9px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.hosted-plan-next > button {
+  min-width: 210px;
+  justify-content: center;
 }
 
 .hosted-launch-review .inline-error {
@@ -6888,6 +6930,16 @@ textarea::placeholder {
     width: 100%;
     min-width: 0;
     justify-content: center;
+  }
+
+  .hosted-plan-next {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .hosted-plan-next > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
   }
 
   .ai-plan-card-heading {

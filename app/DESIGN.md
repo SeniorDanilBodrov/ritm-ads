@@ -31,7 +31,7 @@ spacing:
 typography:
   display:
     fontFamily: "Aptos Display, Segoe UI Variable Display, sans-serif"
-    fontSize: "clamp(2rem, 3.1vw, 3.35rem)"
+    fontSize: "3.35rem"
     fontWeight: 700
     letterSpacing: "-0.055em"
   body:

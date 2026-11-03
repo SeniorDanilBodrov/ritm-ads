@@ -8,6 +8,10 @@ import {
   preflightPostgresDirectPlan,
   preparePostgresDirectPlan,
 } from "../server/postgres-direct.js";
+import {
+  inspectPostgresModerationReadiness,
+  submitPostgresModeration,
+} from "../server/postgres-direct-moderation.js";
 
 if (process.env.DATABASE_SMOKE_TEST !== "true")
   throw new Error("Укажите DATABASE_SMOKE_TEST=true для изолированной ветки.");
@@ -69,20 +73,37 @@ const plan = {
   negativeKeywords: ["обучение", "вакансия"],
 };
 
+let moderated = false;
+let moderationWrites = 0;
+const remoteCampaign = () => ({
+  Id: 101,
+  Name: plan.campaignName,
+  State: "OFF",
+  Status: "DRAFT",
+  Type: "TEXT_CAMPAIGN",
+  Currency: "RUB",
+  TextCampaign: {
+    BiddingStrategy: {
+      Search: {
+        BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+        WbMaximumClicks: {
+          CustomPeriodBudget: {
+            SpendLimit: plan.budget * 10_000,
+            StartDate: plan.periodStart,
+            EndDate: plan.periodEnd,
+            AutoContinue: "NO",
+          },
+        },
+      },
+      Network: { BiddingStrategyType: "SERVING_OFF" },
+    },
+  },
+});
 const fake = {
   campaigns: async () => ({ Campaigns: [] }),
   createCampaigns: async () => ({ AddResults: [{ Id: 101 }] }),
-  campaignsByIds: async () => ({
-    Campaigns: [
-      {
-        Id: 101,
-        Name: plan.campaignName,
-        State: "OFF",
-        Status: "DRAFT",
-        Type: "TEXT_CAMPAIGN",
-      },
-    ],
-  }),
+  campaignsByIds: async () => ({ Campaigns: [remoteCampaign()] }),
+  campaignBudgetById: async () => ({ Campaigns: [remoteCampaign()] }),
   suspendCampaigns: async () => ({ SuspendResults: [{ Id: 101 }] }),
   createAdGroups: async () => ({ AddResults: [{ Id: 201 }] }),
   createKeywords: async (items) => ({
@@ -95,11 +116,35 @@ const fake = {
     AdGroups: [{ Id: 201, CampaignId: 101 }],
   }),
   keywordsByIds: async (ids) => ({
-    Keywords: ids.map((id) => ({ Id: id, AdGroupId: 201 })),
+    Keywords: ids.map((id) => ({ Id: id, CampaignId: 101, AdGroupId: 201 })),
   }),
   adsByIds: async (ids) => ({
-    Ads: ids.map((id) => ({ Id: id, AdGroupId: 201 })),
+    Ads: ids.map((id) => ({
+      Id: id,
+      CampaignId: 101,
+      AdGroupId: 201,
+      Status: moderated ? "MODERATION" : "DRAFT",
+      TextAd: {
+        Title: plan.ads[0].title,
+        Text: plan.ads[0].text,
+        Href: plan.ads[0].href,
+      },
+    })),
   }),
+  advertiserMarkingDetails: async () => ({
+    Clients: [
+      {
+        Type: "CLIENT",
+        TinInfo: { TinType: "LEGAL", Tin: "acceptance-test" },
+        ErirAttributes: { Organization: { Name: "acceptance-test" } },
+      },
+    ],
+  }),
+  moderateAds: async (ids) => {
+    moderationWrites++;
+    moderated = true;
+    return { ModerateResults: ids.map((Id) => ({ Id })) };
+  },
 };
 
 let changeId = null;
@@ -187,16 +232,61 @@ try {
   const visible = await postgresDirectChanges(db, userId, businessId);
   assert.equal(visible[0].execution.status, "succeeded");
   assert.equal(visible[0].approval, null);
+
+  const readiness = await inspectPostgresModerationReadiness(
+    db,
+    userId,
+    businessId,
+    changeId,
+    fake,
+    connectionId,
+  );
+  assert.equal(readiness.status, "technical_ready");
+  const moderationKey = randomUUID();
+  const moderation = await submitPostgresModeration(
+    db,
+    userId,
+    businessId,
+    changeId,
+    moderationKey,
+    fake,
+    connectionId,
+    {
+      enabled: true,
+      advertiserConfirmed: true,
+      siteConfirmed: true,
+    },
+  );
+  assert.equal(moderation.status, "succeeded");
+  const replay = await submitPostgresModeration(
+    db,
+    userId,
+    businessId,
+    changeId,
+    moderationKey,
+    fake,
+    connectionId,
+    {
+      enabled: true,
+      advertiserConfirmed: true,
+      siteConfirmed: true,
+    },
+  );
+  assert.equal(replay.id, moderation.id);
+  assert.equal(moderationWrites, 1);
   console.log(
     JSON.stringify({
       ok: true,
-      scenario: "postgres-disabled-direct-campaign",
+      scenario: "postgres-disabled-direct-campaign-and-moderation",
       externalNetworkWrites: 0,
     }),
   );
 } finally {
   await db.transaction(async (tx) => {
     if (changeId) {
+      await tx
+        .prepare("DELETE FROM direct_moderation_actions WHERE change_id=?")
+        .run(changeId);
       await tx
         .prepare("DELETE FROM direct_executions WHERE change_id=?")
         .run(changeId);

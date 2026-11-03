@@ -5005,10 +5005,12 @@ type ModerationAction = {
   updatedAt: string;
 };
 const moderationBlockerText: Record<string, string> = {
+  lifecycle_not_paused:
+    "Ритм ещё не подтвердил выключенное состояние кампании.",
   budget_drift: "Бюджет или период в Директе отличается от плана.",
   campaign_not_held: "Кампания не удерживается в выключенном состоянии.",
   period_ended: "Бюджетный период уже закончился.",
-  website_changed: "Сайт бизнеса отличается от сайта кампании.",
+  website_changed: "Страница для клиентов отличается от страницы кампании.",
   advertiser_data_incomplete:
     "Основные данные рекламодателя в Директе не найдены.",
   ads_not_draft: "Не все объявления находятся в статусе черновика.",
@@ -5141,8 +5143,8 @@ function ModerationCard({
             </ul>
           )}
           <small>
-            Данные рекламодателя и содержание сайта нужно проверить лично до
-            отправки.
+            Данные рекламодателя, страницу для клиентов и тексты нужно проверить
+            лично до отправки.
           </small>
         </div>
       )}
@@ -5168,7 +5170,7 @@ function ModerationCard({
                 checked={siteConfirmed}
                 onChange={(event) => setSiteConfirmed(event.target.checked)}
               />{" "}
-              Я проверил сайт и тексты объявлений
+              Я проверил страницу для клиентов и тексты объявлений
             </label>
             <button
               type="button"

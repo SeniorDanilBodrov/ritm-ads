@@ -41,6 +41,8 @@ services:
         value: "false"
       - key: DIRECT_WRITE_PILOT_ENABLED
         value: "true"
+      - key: DIRECT_MODERATION_PILOT_ENABLED
+        value: "false"
       - key: DIRECT_ARCHIVE_PILOT_ENABLED
         value: "false"
       - key: DIRECT_AB_VARIANT_PILOT_ENABLED

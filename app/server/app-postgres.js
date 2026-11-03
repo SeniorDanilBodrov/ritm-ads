@@ -64,6 +64,12 @@ import {
   preflightPostgresDirectPlan,
   preparePostgresDirectPlan,
 } from "./postgres-direct.js";
+import {
+  inspectPostgresModerationAction,
+  inspectPostgresModerationReadiness,
+  postgresModerationActions,
+  submitPostgresModeration,
+} from "./postgres-direct-moderation.js";
 
 const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -1216,6 +1222,10 @@ export function createPostgresApp({
       .get(business.id);
     const directWriteEnabled =
       canWritePaidAdvertising(config) && config.directWritePilot === true;
+    const directModerationEnabled =
+      directWriteEnabled &&
+      config.directModerationPilot === true &&
+      lifecycleRow?.status === "paused";
     res.json({
       id: business.id,
       version: business.version,
@@ -1256,7 +1266,7 @@ export function createPostgresApp({
         liveLaunch: directWriteEnabled,
         directWritePilot: directWriteEnabled,
         directArchivePilot: false,
-        directModerationPilot: false,
+        directModerationPilot: directModerationEnabled,
         directResumePilot: false,
         directBudgetPilot: false,
         directAbVariantPilot: false,
@@ -1403,6 +1413,118 @@ export function createPostgresApp({
           req.user.id,
           business.id,
           change.id,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/direct/:changeId/moderation-readiness",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await inspectPostgresModerationReadiness(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/direct/:changeId/moderation-actions",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await postgresModerationActions(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.changeId,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/moderate",
+    authenticated,
+    async (req, res) => {
+      if (
+        !canWritePaidAdvertising(config) ||
+        config.directWritePilot !== true ||
+        config.directModerationPilot !== true
+      )
+        throw new AppError(
+          409,
+          "Отправка на модерацию ещё не разрешена на этом сервере.",
+          "live_gate",
+        );
+      const input = z
+        .object({
+          advertiserConfirmed: z.literal(true),
+          siteConfirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await submitPostgresModeration(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          requestKey,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+          { enabled: true, ...input },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/moderation/:actionId/inspect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await inspectPostgresModerationAction(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          req.params.actionId,
           directFactory({
             accessToken: connection.credentials.access_token,
             login: change.plan.login,

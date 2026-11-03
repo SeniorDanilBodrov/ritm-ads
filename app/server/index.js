@@ -15,6 +15,7 @@ import { markInterruptedResumeActions } from "./direct-resume.js";
 import { markInterruptedBudgetActions } from "./direct-budget-action.js";
 import { markInterruptedAbActions } from "./direct-ab-action.js";
 import { markInterruptedAbDecisionActions } from "./direct-ab-decision.js";
+import { markInterruptedPostgresModerationActions } from "./postgres-direct-moderation.js";
 import {
   startCreativeRetentionWorker,
   startCreativeWorker,
@@ -67,6 +68,7 @@ const config = {
     Math.min(365, Number(process.env.CREATIVE_RETENTION_DAYS) || 0),
   ),
   directWritePilot: process.env.DIRECT_WRITE_PILOT_ENABLED === "true",
+  directModerationPilot: process.env.DIRECT_MODERATION_PILOT_ENABLED === "true",
   directArchivePilot: process.env.DIRECT_ARCHIVE_PILOT_ENABLED === "true",
   directAbVariantPilot: process.env.DIRECT_AB_VARIANT_PILOT_ENABLED === "true",
   directAbDecisionPilot:
@@ -157,6 +159,8 @@ if (!postgresPilot) {
   markInterruptedAbActions(db);
   markInterruptedAbDecisionActions(db);
   recoverOptimizerDispatches(db);
+} else {
+  await markInterruptedPostgresModerationActions(db);
 }
 const app = postgresPilot
   ? createPostgresApp({ db, config, key })

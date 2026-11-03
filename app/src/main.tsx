@@ -3695,6 +3695,7 @@ function HostedPlanReview({
   confirmPlan,
   executePlan,
   inspectExecution,
+  inspectControl,
   refresh,
 }: {
   ws: Workspace;
@@ -3712,6 +3713,7 @@ function HostedPlanReview({
     budget: number,
   ) => void;
   inspectExecution: (id: string) => void;
+  inspectControl: (id: string) => void;
   refresh: () => Promise<void>;
 }) {
   const plan = ws.state.aiPlan;
@@ -4212,6 +4214,8 @@ function HostedPlanReview({
                         changeId={directChange.id}
                         enabled={ws.capabilities.directModerationPilot}
                         clock={Date.now()}
+                        busy={busy}
+                        onCheckDecision={() => inspectControl(directChange.id)}
                       />
                     )}
 
@@ -4344,6 +4348,7 @@ function Campaigns({
         confirmPlan={confirmPlan}
         executePlan={executePlan}
         inspectExecution={inspectExecution}
+        inspectControl={inspectControl}
         refresh={refresh}
       />
     );
@@ -5039,11 +5044,15 @@ function ModerationCard({
   changeId,
   enabled,
   clock,
+  busy,
+  onCheckDecision,
 }: {
   businessId: string;
   changeId: string;
   enabled: boolean;
   clock: number;
+  busy: boolean;
+  onCheckDecision: () => void;
 }) {
   const [readiness, setReadiness] = useState<ModerationReadiness | null>(null);
   const [action, setAction] = useState<ModerationAction | null>(null);
@@ -5167,9 +5176,9 @@ function ModerationCard({
                 <p>
                   Войдите в тот же кабинет, который подключён к Ритму. Нажмите
                   на логин → «Данные рекламодателя», оставьте включённым «Я —
-                  конечный рекламодатель», проверьте тип, ИНН и ФИО или название,
-                  затем сохраните. Данные плательщика в другом разделе не
-                  подходят.
+                  конечный рекламодатель», проверьте тип, ИНН и ФИО или
+                  название, затем сохраните. Данные плательщика в другом разделе
+                  не подходят.
                 </p>
                 <a
                   href="https://direct.yandex.ru/"
@@ -5236,7 +5245,7 @@ function ModerationCard({
         <div className="direct-budget-preview-result" role="status">
           <strong>
             {action.status === "succeeded"
-              ? "Модерация подтверждена чтением Директа"
+              ? "Объявление отправлено на проверку"
               : action.status === "needs_reconciliation"
                 ? "Ответ требует сверки"
                 : action.status === "failed_no_write"
@@ -5244,9 +5253,21 @@ function ModerationCard({
                   : "Действие выполняется"}
           </strong>
           <small>
-            Показы не возобновлялись ·{" "}
+            {action.status === "succeeded"
+              ? "Яндекс принял объявление. Это ещё не означает, что оно одобрено. Показы не запущены · "
+              : "Показы не возобновлялись · "}
             {new Date(action.updatedAt).toLocaleString("ru-RU")}
           </small>
+          {action.status === "succeeded" && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={pending || busy}
+              onClick={onCheckDecision}
+            >
+              Проверить решение Яндекса
+            </button>
+          )}
           {action.status === "needs_reconciliation" && (
             <button
               type="button"
@@ -6875,6 +6896,8 @@ function DirectPlanBuilder({
                     changeId={change.id}
                     enabled={ws.capabilities.directModerationPilot}
                     clock={clock}
+                    busy={busy}
+                    onCheckDecision={() => inspectControl(change.id)}
                   />
                 </div>
               )}

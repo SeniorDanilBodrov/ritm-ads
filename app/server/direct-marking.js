@@ -16,17 +16,29 @@ export function summarizeDirectMarking(response, now = Date.now()) {
   const hasName = Boolean(
     String(advertiser.ErirAttributes?.Organization?.Name || "").trim(),
   );
+  const supportedOrganizationTypes = [
+    "LEGAL",
+    "INDIVIDUAL",
+    "PHYSICAL",
+    "FOREIGN_LEGAL",
+    "FOREIGN_PHYSICAL",
+  ];
+  const organizationNameRequired = [
+    "LEGAL",
+    "INDIVIDUAL",
+    "FOREIGN_LEGAL",
+  ].includes(organizationType);
   const findings = [];
   if (clientType !== "CLIENT")
     findings.push(
       "Для агентского кабинета нужно отдельно проверить рекламодателя и договор в Директе.",
     );
   if (!hasTaxId) findings.push("В Директе не найден ИНН рекламодателя.");
-  if (!hasName)
+  if (organizationNameRequired && !hasName)
     findings.push("В Директе не найдено имя или название рекламодателя.");
-  if (!["LEGAL", "INDIVIDUAL"].includes(organizationType))
+  if (!supportedOrganizationTypes.includes(organizationType))
     findings.push(
-      "Этот тип рекламодателя требует ручной проверки обязательных полей в Директе.",
+      "Директ не вернул тип рекламодателя. Проверьте основные данные в кабинете.",
     );
   return {
     checkedAt: new Date(now).toISOString(),

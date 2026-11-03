@@ -5004,6 +5004,10 @@ type ModerationReadiness = {
   adIds: (number | string)[];
   status: "blocked" | "technical_ready";
   blockers: string[];
+  marking: {
+    basicFieldsPresent: boolean;
+    findings: string[];
+  };
 };
 type ModerationAction = {
   id: string;
@@ -5021,7 +5025,7 @@ const moderationBlockerText: Record<string, string> = {
   period_ended: "Бюджетный период уже закончился.",
   website_changed: "Страница для клиентов отличается от страницы кампании.",
   advertiser_data_incomplete:
-    "Основные данные рекламодателя в Директе не найдены.",
+    "Директ пока не вернул все обязательные данные рекламодателя.",
   ads_not_draft: "Не все объявления находятся в статусе черновика.",
   ad_content_changed:
     "Заголовок, текст или ссылка объявления изменились в Директе.",
@@ -5151,6 +5155,21 @@ function ModerationCard({
               ))}
             </ul>
           )}
+          {readiness.blockers.includes("advertiser_data_incomplete") &&
+            readiness.marking.findings.length > 0 && (
+              <div className="direct-moderation-guidance">
+                <b>Что проверить в Директе</b>
+                <ul>
+                  {readiness.marking.findings.map((finding) => (
+                    <li key={finding}>{finding}</li>
+                  ))}
+                </ul>
+                <small>
+                  Если вы только что сохранили данные, подождите несколько минут
+                  и нажмите «Проверить готовность к модерации» ещё раз.
+                </small>
+              </div>
+            )}
           <small>
             Данные рекламодателя, страницу для клиентов и тексты нужно проверить
             лично до отправки.

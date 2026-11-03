@@ -2805,6 +2805,18 @@ textarea.resize-none {
   padding-left: 20px;
 }
 
+.direct-moderation-guidance {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.direct-moderation-guidance small {
+  color: var(--ink-soft);
+}
+
 .direct-budget-confirm {
   display: grid;
   justify-items: start;

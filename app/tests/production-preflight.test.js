@@ -63,6 +63,18 @@ test("production preflight accepts a hosted PostgreSQL URL without local databas
   }
 });
 
+test("production preflight accepts Render's managed HTTPS address", () => {
+  const env = safeEnv("data");
+  delete env.APP_ORIGIN;
+  env.RENDER_EXTERNAL_URL = "https://ritm-ads.onrender.com";
+  assert.equal(
+    inspectProductionConfig(env, { strict: true }).find(
+      (check) => check.id === "app_origin",
+    ).level,
+    "pass",
+  );
+});
+
 test("production preflight blocks unsafe secrets, memory database and write flags", () => {
   const checks = inspectProductionConfig(
     {

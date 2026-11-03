@@ -21,12 +21,11 @@
 
 1. В Render выберите **New → Blueprint** и подключите GitHub-репозиторий. Файл
    `render.yaml` создаст Web Service.
-2. После первого деплоя скопируйте его HTTPS адрес, например
-   `https://ritm-ads.onrender.com`.
+2. Render автоматически передаёт приложению свой HTTPS-адрес. При подключении
+   собственного домена добавьте `APP_ORIGIN=https://<ваш-домен>`.
 3. В Environment добавьте секреты — значения в Git не попадают:
 
    ```text
-   APP_ORIGIN=https://<ваш-адрес-на-render>
    DATABASE_URL=<строка Neon PostgreSQL>
    TOKEN_ENCRYPTION_KEY=<новый base64-ключ>
    GOOGLE_CLIENT_ID=<id приложения>

@@ -22,7 +22,7 @@ const paired = (env, first, second) =>
 
 export function inspectProductionConfig(env, { strict = false, live = false } = {}) {
   const checks = [];
-  const origin = env.APP_ORIGIN || "";
+  const origin = env.APP_ORIGIN || env.RENDER_EXTERNAL_URL || "";
   const port = Number(env.PORT || 4310);
   const databasePath = env.DATABASE_PATH || "";
   const databaseUrl = env.DATABASE_URL || "";

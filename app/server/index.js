@@ -28,7 +28,10 @@ if (process.env.YANDEX_SANDBOX === "true")
 const config = {
   production,
   port: Number(process.env.PORT || 4310),
-  origin: process.env.APP_ORIGIN || "http://localhost:4310",
+  origin:
+    process.env.APP_ORIGIN ||
+    process.env.RENDER_EXTERNAL_URL ||
+    "http://localhost:4310",
   demo: process.env.DEMO_MODE !== "false",
   liveAdsEnabled: process.env.LIVE_ADS_ENABLED === "true",
   autopilotEnabled: process.env.AUTOPILOT_ENABLED === "true",

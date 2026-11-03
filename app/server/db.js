@@ -3,18 +3,55 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PostgresSyncDatabase } from "./postgres-sync.js";
+import { PostgresDatabase } from "./postgres-async.js";
 
 export const SCHEMA_VERSION = 31;
 
 export function openDatabase(filename) {
   const postgres = /^postgres(?:ql)?:\/\//i.test(filename);
+  if (postgres)
+    throw new Error("Для PostgreSQL используйте openDatabaseAsync.");
   if (!postgres && filename !== ":memory:")
     mkdirSync(dirname(filename), { recursive: true });
-  const db = postgres
-    ? new PostgresSyncDatabase(filename, {
-        ssl: process.env.POSTGRES_SSL !== "false",
-      })
-    : new DatabaseSync(filename);
+  return initializeDatabase(new DatabaseSync(filename));
+}
+
+export async function openDatabaseAsync(filename) {
+  if (!/^postgres(?:ql)?:\/\//i.test(filename)) return openDatabase(filename);
+  if (process.env.POSTGRES_ASYNC_PILOT === "true")
+    return PostgresDatabase.connect(filename, {
+      ssl: process.env.POSTGRES_SSL !== "false",
+    });
+  return initializePostgresDatabase(
+    await PostgresSyncDatabase.connect(filename, {
+      ssl: process.env.POSTGRES_SSL !== "false",
+    }),
+  );
+}
+
+// PostgreSQL is provisioned by scripts/migrate-postgres.js over Neon's direct
+// connection. The request path stays intentionally short: the application
+// must never attempt to replay SQLite migrations through a pooled connection
+// while a visitor is waiting for a page.
+function initializePostgresDatabase(db) {
+  const schema = db
+    .prepare("SELECT to_regclass('public.schema_version') AS table_name")
+    .get();
+  if (!schema?.table_name)
+    throw new Error(
+      "База PostgreSQL не подготовлена. Выполните npm run db:migrate:postgres по прямому DATABASE_URL_UNPOOLED.",
+    );
+  const version = db
+    .prepare("SELECT MAX(version) AS version FROM schema_version")
+    .get()?.version;
+  if (Number(version) !== SCHEMA_VERSION)
+    throw new Error(
+      `Версия схемы PostgreSQL ${version ?? "не определена"}; ожидается ${SCHEMA_VERSION}. Выполните npm run db:migrate:postgres.`,
+    );
+  return db;
+}
+
+function initializeDatabase(db) {
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
     INSERT OR IGNORE INTO schema_version VALUES(1);

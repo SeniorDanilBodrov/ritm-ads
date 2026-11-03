@@ -14,6 +14,10 @@
     "db:backup": "node --env-file-if-exists=.env scripts/backup-db.js",
     "db:verify": "node scripts/verify-backup.js",
     "db:restore": "node scripts/restore-db.js",
+    "db:verify:postgres": "node --env-file-if-exists=.env scripts/verify-postgres.js",
+    "db:migrate:postgres": "node --env-file-if-exists=.env scripts/migrate-postgres.js",
+    "db:verify:postgres-async": "node --env-file-if-exists=.env scripts/verify-postgres-async.js",
+    "acceptance:postgres-pilot": "node --env-file-if-exists=.env scripts/acceptance-postgres-pilot.js",
     "ops:check": "node --env-file-if-exists=.env scripts/check-operations.js",
     "ops:load": "node scripts/load-smoke.js",
     "local-image:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local-image-api.ps1",
@@ -29,6 +33,7 @@
     "check": "npm test && npm run build"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "jose": "^6.1.0",
@@ -37,6 +42,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "sharp": "^0.35.5",
+    "ws": "^8.22.1",
     "zod": "^4.1.0"
   },
   "devDependencies": {

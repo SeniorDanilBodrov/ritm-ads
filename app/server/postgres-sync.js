@@ -47,21 +47,46 @@ export function translatePostgresSql(sql) {
   return cleaned.replace(/\?/g, () => `$${++index}`);
 }
 
+function statements(sql) {
+  return sql
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export class PostgresSyncDatabase {
   constructor(databaseUrl, { ssl = true } = {}) {
     this.worker = new Worker(new URL("./postgres-sync-worker.js", import.meta.url), {
       workerData: { databaseUrl, ssl },
     });
     this.closed = false;
+    this.ready = new Promise((resolve, reject) => {
+      const fail = (error) => reject(error instanceof Error ? error : new Error(String(error)));
+      this.worker.once("error", fail);
+      this.worker.on("message", (message) => {
+        if (message?.type !== "ready") return;
+        this.worker.off("error", fail);
+        if (message.startupError) reject(new Error(`PostgreSQL недоступен: ${message.startupError}`));
+        else resolve();
+      });
+    });
+  }
+
+  static async connect(databaseUrl, options) {
+    const db = new PostgresSyncDatabase(databaseUrl, options);
+    await db.ready;
+    return db;
   }
 
   request(sql, parameters = [], { close = false } = {}) {
     if (this.closed && !close) throw new Error("Соединение PostgreSQL закрыто.");
+    const translated = close ? "" : translatePostgresSql(sql);
+    if (!close && !translated) return { rows: [], changes: 0 };
     const buffer = new SharedArrayBuffer(RESPONSE_BYTES + 8);
     const header = new Int32Array(buffer, 0, 2);
     this.worker.postMessage({
       buffer,
-      sql: close ? "" : translatePostgresSql(sql),
+      sql: translated,
       parameters,
       close,
     });
@@ -80,7 +105,7 @@ export class PostgresSyncDatabase {
   }
 
   exec(sql) {
-    this.request(sql);
+    for (const item of statements(sql)) this.request(item);
   }
 
   prepare(sql) {

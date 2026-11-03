@@ -33,9 +33,20 @@ function stringRows(rows = []) {
   );
 }
 
-await client.connect();
+const connected = client.connect().then(
+  () => null,
+  (error) => (error instanceof Error ? error.message : String(error)),
+);
+connected.then((startupError) =>
+  parentPort.postMessage({ type: "ready", startupError }),
+);
 
 parentPort.on("message", async ({ buffer, sql, parameters = [], close }) => {
+  const startupError = await connected;
+  if (startupError) {
+    write(buffer, { ok: false, message: `PostgreSQL недоступен: ${startupError}` });
+    return;
+  }
   if (close) {
     await client.end();
     write(buffer, { ok: true });

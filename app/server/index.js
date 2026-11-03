@@ -1,6 +1,8 @@
-import { openDatabase } from "./db.js";
+import { openDatabaseAsync } from "./db.js";
 import { decrypt, encryptionKey, isPilotOrigin } from "./security.js";
 import { createApp } from "./app.js";
+import { createPostgresApp } from "./app-postgres.js";
+import { startPostgresReportWorker } from "./postgres-reports.js";
 import { startShadowWorker } from "./worker.js";
 import { startReportWorker } from "./reports.js";
 import { startDirectWorker } from "./direct.js";
@@ -128,8 +130,10 @@ if (
     "REQUIRE_POSTGRES=true требует DATABASE_URL. Временная SQLite недопустима для этого окружения.",
   );
 const key = encryptionKey(process.env.TOKEN_ENCRYPTION_KEY, production),
-  db = openDatabase(databaseTarget);
+  db = await openDatabaseAsync(databaseTarget),
+  postgresPilot = db.isAsync === true;
 config.openAiImageCredential = (businessId) => {
+  if (postgresPilot) return null;
   const row = db
     .prepare(
       "SELECT encrypted FROM connections WHERE business_id=? AND provider='openai-image'",
@@ -142,43 +146,47 @@ config.openAiImageCredential = (businessId) => {
     return null;
   }
 };
-markInterruptedDirectExecutions(db);
-markInterruptedLifecycleActions(db);
-markInterruptedArchiveActions(db);
-markInterruptedModerationActions(db);
-markInterruptedResumeActions(db);
-markInterruptedBudgetActions(db);
-markInterruptedAbActions(db);
-markInterruptedAbDecisionActions(db);
-recoverOptimizerDispatches(db);
-const app = createApp({ db, config, key });
-const stopWorker = startShadowWorker(db);
-const stopReports = startReportWorker(db, key, config);
-const stopDirect = startDirectWorker(db);
-const stopCreatives = startCreativeWorker(db, config);
-const stopCreativeRetention = startCreativeRetentionWorker(db, config);
-const stopLiveData = startLiveDataWorker(db, key, config);
-const stopOperationsMonitor = startOperationsMonitor(db, {
-  webhookUrl: config.operationsAlertWebhookUrl,
-  bearerToken: config.operationsAlertBearer,
-  intervalMs: config.operationsAlertIntervalMs,
-});
+if (!postgresPilot) {
+  markInterruptedDirectExecutions(db);
+  markInterruptedLifecycleActions(db);
+  markInterruptedArchiveActions(db);
+  markInterruptedModerationActions(db);
+  markInterruptedResumeActions(db);
+  markInterruptedBudgetActions(db);
+  markInterruptedAbActions(db);
+  markInterruptedAbDecisionActions(db);
+  recoverOptimizerDispatches(db);
+}
+const app = postgresPilot ? createPostgresApp({ db, config, key }) : createApp({ db, config, key });
+const stopWorker = postgresPilot ? async () => {} : startShadowWorker(db);
+const stopReports = postgresPilot ? startPostgresReportWorker(db, { key }) : startReportWorker(db, key, config);
+const stopDirect = postgresPilot ? async () => {} : startDirectWorker(db);
+const stopCreatives = postgresPilot ? async () => {} : startCreativeWorker(db, config);
+const stopCreativeRetention = postgresPilot ? async () => {} : startCreativeRetentionWorker(db, config);
+const stopLiveData = postgresPilot ? async () => {} : startLiveDataWorker(db, key, config);
+const stopOperationsMonitor = postgresPilot
+  ? async () => {}
+  : startOperationsMonitor(db, {
+      webhookUrl: config.operationsAlertWebhookUrl,
+      bearerToken: config.operationsAlertBearer,
+      intervalMs: config.operationsAlertIntervalMs,
+    });
 const server = app.listen(config.port, process.env.HOST || "127.0.0.1", () =>
   console.log(
     `Ритм: ${config.origin} | демонстрация ${config.demo ? "включена" : "выключена"} | платные действия ${canWritePaidAdvertising(config) ? "разрешены" : "заблокированы"} | автопилот ${canRunAutopilot(config) ? "включён" : "выключен"}`,
   ),
 );
 // Shadow analysis never advances simulated time or changes advertising objects.
-const cleanup = setInterval(() => {
+const cleanup = postgresPilot ? null : setInterval(() => {
   const now = Date.now();
   db.prepare("DELETE FROM sessions WHERE expires_at<?").run(now);
   db.prepare("DELETE FROM oauth_states WHERE expires_at<?").run(now);
 }, 3600000);
-cleanup.unref();
+cleanup?.unref();
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () =>
     server.close(async () => {
-      clearInterval(cleanup);
+      if (cleanup) clearInterval(cleanup);
       await stopLiveData();
       await stopWorker();
       await stopReports();
@@ -186,7 +194,7 @@ for (const signal of ["SIGINT", "SIGTERM"])
       await stopCreatives();
       await stopCreativeRetention();
       await stopOperationsMonitor();
-      db.close();
+      await db.close();
       process.exit(0);
     }),
   );

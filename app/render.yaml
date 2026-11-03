@@ -33,3 +33,7 @@ services:
         value: "true"
       - key: REQUIRE_POSTGRES
         value: "true"
+      # Do not enable before PostgreSQL acceptance coverage includes reports,
+      # background workers and all Direct safety checks.
+      - key: POSTGRES_ASYNC_PILOT
+        value: "false"

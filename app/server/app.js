@@ -260,7 +260,7 @@ async function exportReportXlsx(report) {
   return workbook.xlsx.writeBuffer();
 }
 
-const businessSchema = z
+export const businessSchema = z
   .object({
     name: text,
     category: text,
@@ -299,7 +299,7 @@ const businessSchema = z
     message: "Дата окончания раньше начала",
   });
 
-function withStartingTargetCpa(input) {
+export function withStartingTargetCpa(input) {
   if (input.targetCpa) return input;
   // Start conservatively from the total limit and refine it only after
   // confirmed conversion data arrives. The value is stored in kopecks.
@@ -309,7 +309,7 @@ function withStartingTargetCpa(input) {
   };
 }
 
-function attachAdvertisingPlan(state, generated) {
+export function attachAdvertisingPlan(state, generated) {
   state.aiPlan = {
     ...generated,
     createdAt: new Date().toISOString(),

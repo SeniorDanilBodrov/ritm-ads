@@ -157,7 +157,7 @@ export async function inspectDirectControl(
         String(item.CampaignId) !== String(campaignId) ||
         !ids.adgroup.some((id) => String(id) === String(item.AdGroupId)) ||
         item.Status !== "ACCEPTED" ||
-        item.State !== "ON",
+        ["SUSPENDED", "OFF_BY_MONITORING", "ARCHIVED"].includes(item.State),
     )
   )
     blockers.push("ads_not_ready");

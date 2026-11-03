@@ -382,3 +382,94 @@ test("PostgreSQL control review persists the read-only Yandex decision", async (
   assert.equal(reads, 1);
   data.sqlite.close();
 });
+
+test("accepted ad stays launch-ready while its held campaign keeps it OFF", async () => {
+  const data = fixture();
+  const reportJobId = randomUUID();
+  data.sqlite
+    .prepare(
+      "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload,error) VALUES(?,?,'report_sync','succeeded',0,1,'{}',NULL)",
+    )
+    .run(reportJobId, data.businessId);
+  data.sqlite
+    .prepare(
+      `INSERT INTO report_snapshots
+       (id,business_id,job_id,scope,source,login,date_from,date_to,currency,include_vat,received_at,request_id,raw_hash,raw_tsv,rows_json,totals_json,previous_id,comparison_json)
+       VALUES(?,?,?,'campaign','yandex','test-login','2026-11-05','2026-11-05','RUB',1,'2026-11-05T08:55:00.000Z',NULL,'hash','header',?,'{}',NULL,'{}')`,
+    )
+    .run(
+      randomUUID(),
+      data.businessId,
+      reportJobId,
+      JSON.stringify([{ CampaignId: "77", Date: "2026-11-05", spent: 0 }]),
+    );
+  const client = {
+    campaignBudgetById: async () => ({
+      Campaigns: [
+        {
+          Id: 77,
+          State: "OFF",
+          Status: "ACCEPTED",
+          StatusPayment: "ALLOWED",
+          TextCampaign: {
+            BiddingStrategy: {
+              Search: {
+                BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                WbMaximumClicks: {
+                  CustomPeriodBudget: {
+                    SpendLimit: data.plan.budget * 10_000,
+                    StartDate: data.plan.periodStart,
+                    EndDate: data.plan.periodEnd,
+                    AutoContinue: "NO",
+                  },
+                },
+              },
+              Network: { BiddingStrategyType: "SERVING_OFF" },
+            },
+          },
+        },
+      ],
+    }),
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77 }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "OFF",
+        },
+      ],
+    }),
+    keywordsByIds: async () => ({
+      Keywords: [
+        {
+          Id: 111,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "SUSPENDED",
+        },
+      ],
+    }),
+  };
+  const result = await inspectPostgresDirectControl(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    Date.parse("2026-11-05T09:00:00.000Z"),
+  );
+  assert.equal(result.blockers.includes("ads_not_ready"), false);
+  assert.equal(result.blockers.includes("ads_under_review"), false);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.status, "technical_ready");
+  assert.equal(result.budget.spentKopecks, 0);
+  data.sqlite.close();
+});

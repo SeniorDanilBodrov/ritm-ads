@@ -132,6 +132,46 @@ function periodBudget(remote) {
   };
 }
 
+async function spendEvidence(db, businessId, login, campaignId, plan, now) {
+  const row = await db
+    .prepare(
+      `SELECT date_from,date_to,received_at,rows_json
+       FROM report_snapshots
+       WHERE business_id=? AND source='yandex' AND login=?
+       ORDER BY received_at DESC,id DESC LIMIT 1`,
+    )
+    .get(businessId, login);
+  if (!row) return null;
+  const receivedAt = Date.parse(row.received_at);
+  const through = [plan.periodEnd, moscowDate(now)].sort()[0];
+  if (
+    !Number.isFinite(receivedAt) ||
+    receivedAt > now ||
+    now - receivedAt > 48 * 3_600_000 ||
+    row.date_from > plan.periodStart ||
+    row.date_to < through
+  )
+    return null;
+  const rows = JSON.parse(row.rows_json);
+  const spentKopecks = rows
+    .filter(
+      (item) =>
+        String(item.CampaignId) === String(campaignId) &&
+        item.Date >= plan.periodStart &&
+        item.Date <= plan.periodEnd,
+    )
+    .reduce((sum, item) => {
+      if (!Number.isSafeInteger(item.spent) || item.spent < 0)
+        throw new AppError(502, "Расход отчёта не прошёл проверку.");
+      return sum + item.spent;
+    }, 0);
+  return {
+    spentKopecks,
+    receivedAt: row.received_at,
+    dateTo: row.date_to,
+  };
+}
+
 export async function postgresControlReviews(db, userId, businessId) {
   await ownedBusiness(db, userId, businessId);
   const rows = await db
@@ -194,6 +234,14 @@ export async function inspectPostgresDirectControl(
     throw new AppError(502, "Директ не вернул полный состав кампании.");
   const remote = campaigns[0];
   const budget = periodBudget(remote);
+  const spend = await spendEvidence(
+    db,
+    businessId,
+    bundle.plan.login,
+    bundle.campaignId,
+    bundle.plan,
+    now,
+  );
   const blockers = [];
   const date = moscowDate(now);
   if (date < bundle.plan.periodStart) blockers.push("period_not_started");
@@ -242,7 +290,7 @@ export async function inspectPostgresDirectControl(
           (groupId) => String(groupId) === String(ad.AdGroupId),
         ) ||
         ad.Status !== "ACCEPTED" ||
-        ad.State !== "ON",
+        ["SUSPENDED", "OFF_BY_MONITORING", "ARCHIVED"].includes(ad.State),
     )
   )
     blockers.push("ads_not_ready");
@@ -258,7 +306,9 @@ export async function inspectPostgresDirectControl(
     )
   )
     blockers.push("keywords_not_ready");
-  blockers.push("spend_not_verified");
+  if (!spend) blockers.push("spend_not_verified");
+  if (spend && spend.spentKopecks >= bundle.plan.budget)
+    blockers.push("budget_exhausted");
   const result = {
     id: randomUUID(),
     changeId,
@@ -268,9 +318,9 @@ export async function inspectPostgresDirectControl(
     blockers: [...new Set(blockers)],
     budget: {
       limitKopecks: budget.limitKopecks,
-      spentKopecks: null,
-      reportReceivedAt: null,
-      reportDateTo: null,
+      spentKopecks: spend?.spentKopecks ?? null,
+      reportReceivedAt: spend?.receivedAt ?? null,
+      reportDateTo: spend?.dateTo ?? null,
     },
     remote: {
       state: remote.State,

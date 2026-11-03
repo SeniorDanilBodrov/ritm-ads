@@ -4233,8 +4233,6 @@ function HostedPlanReview({
                         review={ws.controlReviews?.find(
                           (item) => item.changeId === directChange.id,
                         )}
-                        busy={busy}
-                        onInspect={() => inspectControl(directChange.id)}
                       />
                     )}
 
@@ -4592,15 +4590,7 @@ const controlBlockers: Record<string, string> = {
   keywords_not_ready: "Ключевые фразы не готовы к показам.",
 };
 
-function DirectControlCard({
-  review,
-  busy,
-  onInspect,
-}: {
-  review?: DirectControlReview;
-  busy: boolean;
-  onInspect: () => Promise<boolean> | boolean | void;
-}) {
+function DirectControlCard({ review }: { review?: DirectControlReview }) {
   const moderationPending = Boolean(
     review?.blockers.some((code) =>
       ["campaign_under_review", "ads_under_review"].includes(code),
@@ -4700,18 +4690,6 @@ function DirectControlCard({
           ))}
         </ul>
       </details>
-      <button
-        type="button"
-        className="secondary"
-        disabled={busy}
-        onClick={onInspect}
-      >
-        {busy
-          ? "Проверяем решение…"
-          : moderationUnresolved
-            ? "Проверить решение Яндекса"
-            : "Проверить готовность в Директе"}
-      </button>
     </div>
   );
 }
@@ -6984,8 +6962,6 @@ function DirectPlanBuilder({
                   review={ws.controlReviews?.find(
                     (item) => item.changeId === change.id,
                   )}
-                  busy={busy}
-                  onInspect={() => inspectControl(change.id)}
                 />
               )}
               {change.execution?.status === "succeeded" && (

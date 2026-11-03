@@ -79,8 +79,8 @@ test("PostgreSQL creative flow encrypts, queues, stores and serves an approved i
     .prepare("INSERT INTO connections VALUES(?,?,?,?)")
     .run(
       businessId,
-      "openai-image",
-      encrypt({ apiKey }, key, `${businessId}:openai-image`),
+      "kie-image",
+      encrypt({ apiKey }, key, `${businessId}:kie-image`),
       JSON.stringify({ purpose: "image_generation" }),
     );
 
@@ -90,7 +90,7 @@ test("PostgreSQL creative flow encrypts, queues, stores and serves an approved i
     businessId,
     randomUUID(),
     input,
-    { model: "gpt-image-2.5-flare", dailyLimit: 3 },
+    { model: "gpt-image-2-5-flare-text-to-image", dailyLimit: 3 },
   );
   assert.equal(queued.status, "pending");
   assert.equal(JSON.stringify(queued).includes(apiKey), false);
@@ -108,14 +108,36 @@ test("PostgreSQL creative flow encrypts, queues, stores and serves an approved i
   const result = await runPostgresCreativeCycle(db, {
     key,
     config: {
-      openAiImageModel: "gpt-image-2.5-flare",
-      openAiImageQuality: "medium",
+      kieImageModel: "gpt-image-2-5-flare-text-to-image",
     },
-    fetcher: async (_url, options) => {
-      assert.match(options.headers.Authorization, /^Bearer test-key-/);
+    waiter: async () => {},
+    fetcher: async (url, options = {}) => {
+      if (String(url).endsWith("/jobs/createTask")) {
+        assert.match(options.headers.Authorization, /^Bearer test-key-/);
+        return {
+          ok: true,
+          json: async () => ({ code: 200, data: { taskId: "task-test" } }),
+        };
+      }
+      if (String(url).includes("/jobs/recordInfo")) {
+        assert.match(options.headers.Authorization, /^Bearer test-key-/);
+        return {
+          ok: true,
+          json: async () => ({
+            code: 200,
+            data: {
+              state: "success",
+              resultJson: JSON.stringify({
+                resultUrls: ["https://result.kie.ai/generated.jpg"],
+              }),
+            },
+          }),
+        };
+      }
       return {
         ok: true,
-        json: async () => ({ data: [{ b64_json: source.toString("base64") }] }),
+        headers: { get: () => String(source.length) },
+        arrayBuffer: async () => source,
       };
     },
   });

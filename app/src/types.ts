@@ -250,7 +250,7 @@ export type Workspace = {
     analyst: boolean;
     creativeImages: boolean;
     creativeImageSetup: boolean;
-    creativeImageProvider: "openai" | "local" | null;
+    creativeImageProvider: "kie" | "local" | null;
   };
   reports: ReportSnapshot[];
   reportJobs: {

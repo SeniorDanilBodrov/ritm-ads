@@ -294,6 +294,7 @@ export function createPostgresApp({
       mode: "postgres-pilot",
       liveLaunch: false,
       creativeImages: Boolean(config.encryptionConfigured),
+      imageProvider: "kie",
     });
   });
   app.get("/api/ready", async (_req, res) => {
@@ -1186,8 +1187,8 @@ export function createPostgresApp({
       provider: row.provider,
       ...JSON.parse(row.metadata),
     }));
-    const openAiImages = connections.some(
-      (connection) => connection.provider === "openai-image",
+    const kieImages = connections.some(
+      (connection) => connection.provider === "kie-image",
     );
     res.json({
       id: business.id,
@@ -1229,18 +1230,18 @@ export function createPostgresApp({
         analyst: remoteAiEnabled(config),
         creativeImages: true,
         creativeImageSetup: Boolean(config.encryptionConfigured),
-        creativeImageProvider: openAiImages ? "openai" : null,
+        creativeImageProvider: kieImages ? "kie" : null,
       },
     });
   });
   app.put(
-    "/api/businesses/:id/image-provider/openai",
+    "/api/businesses/:id/image-provider/kie",
     authenticated,
     async (req, res) => {
       if (!config.encryptionConfigured)
         throw new AppError(
           409,
-          "Для ключа OpenAI нужен постоянный ключ шифрования сервера.",
+          "Для ключа Kie.ai нужен постоянный ключ шифрования сервера.",
           "encryption_not_configured",
         );
       const apiKey = z
@@ -1252,19 +1253,24 @@ export function createPostgresApp({
       await db.transaction(async (tx) => {
         await tx
           .prepare(
+            "DELETE FROM connections WHERE business_id=? AND provider='openai-image'",
+          )
+          .run(business.id);
+        await tx
+          .prepare(
             `INSERT INTO connections(business_id,provider,encrypted,metadata)
              VALUES(?,?,?,?)
              ON CONFLICT(business_id,provider) DO UPDATE SET encrypted=excluded.encrypted,metadata=excluded.metadata`,
           )
           .run(
             business.id,
-            "openai-image",
-            encrypt({ apiKey }, key, `${business.id}:openai-image`),
+            "kie-image",
+            encrypt({ apiKey }, key, `${business.id}:kie-image`),
             JSON.stringify({
               connectedAt,
               sandbox: false,
               clients: [],
-              model: config.openAiImageModel,
+              model: config.kieImageModel,
               purpose: "image_generation",
             }),
           );
@@ -1273,31 +1279,31 @@ export function createPostgresApp({
           title: "Подключена генерация изображений",
           reason:
             "Ключ сохранён на сервере. Каждый новый вариант создаётся только после вашего действия.",
-          rule: "creative/openai-gpt-image-2.5@1",
+          rule: "creative/kie-gpt-image-2.5@1",
         });
       });
-      res.json({ connected: true, model: config.openAiImageModel });
+      res.json({ connected: true, model: config.kieImageModel });
     },
   );
   app.delete(
-    "/api/businesses/:id/image-provider/openai",
+    "/api/businesses/:id/image-provider/kie",
     authenticated,
     async (req, res) => {
       const business = await requireBusiness(db, req.user.id, req.params.id);
       await db.transaction(async (tx) => {
         const result = await tx
           .prepare(
-            "DELETE FROM connections WHERE business_id=? AND provider='openai-image'",
+            "DELETE FROM connections WHERE business_id=? AND provider='kie-image'",
           )
           .run(business.id);
         if (!result.changes)
-          throw new AppError(404, "Генерация OpenAI не подключена.");
+          throw new AppError(404, "Генерация Kie.ai не подключена.");
         await event(tx, business.id, {
           kind: "creative_provider_disconnected",
           title: "Генерация изображений отключена",
           reason:
             "Новые изображения больше не создаются. Уже сохранённые варианты останутся на проверке.",
-          rule: "creative/openai-gpt-image-2.5@1",
+          rule: "creative/kie-gpt-image-2.5@1",
         });
       });
       res.json({ connected: false });
@@ -1308,12 +1314,12 @@ export function createPostgresApp({
     authenticated,
     async (req, res) => {
       const business = await requireBusiness(db, req.user.id, req.params.id);
-      const openAi = await db
+      const kie = await db
         .prepare(
-          "SELECT 1 FROM connections WHERE business_id=? AND provider='openai-image'",
+          "SELECT 1 FROM connections WHERE business_id=? AND provider='kie-image'",
         )
         .get(business.id);
-      if (!openAi)
+      if (!kie)
         throw new AppError(
           409,
           "Сначала подключите генерацию изображений.",
@@ -1327,7 +1333,7 @@ export function createPostgresApp({
           idempotencyKey(req),
           req.body,
           {
-            model: config.openAiImageModel,
+            model: config.kieImageModel,
             dailyLimit: config.creativeDailyLimit,
           },
         ),

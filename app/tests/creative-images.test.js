@@ -7,7 +7,7 @@ import {
   approveCreativeImage,
   LocalCreativePromptEnhancer,
   LocalImageClient,
-  OpenAIImageClient,
+  KieImageClient,
   creativeImages,
   enqueueCreativeImage,
   prepareAdvertisingAsset,
@@ -180,15 +180,44 @@ test("local OpenVINO adapter enables offline loading for a Windows model path", 
   assert.equal(payload.use_offline_model, true);
 });
 
-test("OpenAI GPT Image adapter keeps the key server-side and sends a privacy-safe request", async () => {
-  let request;
-  const client = new OpenAIImageClient({
-    apiKey: "sk-test-not-a-real-key-1234567890",
+test("Kie.ai GPT Image 2.5 adapter creates, polls and downloads one task", async () => {
+  const requests = [];
+  let polls = 0;
+  const client = new KieImageClient({
+    apiKey: "test-kie-key-not-a-real-secret-1234567890",
+    waiter: async () => {},
     fetcher: async (url, options) => {
-      request = { url, options };
+      requests.push({ url: String(url), options });
+      if (String(url).endsWith("/jobs/createTask"))
+        return {
+          ok: true,
+          json: async () => ({
+            code: 200,
+            data: { taskId: "task-image-25" },
+          }),
+        };
+      if (String(url).includes("/jobs/recordInfo")) {
+        polls += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            code: 200,
+            data:
+              polls === 1
+                ? { state: "generating" }
+                : {
+                    state: "success",
+                    resultJson: JSON.stringify({
+                      resultUrls: ["https://result.kie.ai/image.jpg"],
+                    }),
+                  },
+          }),
+        };
+      }
       return {
         ok: true,
-        json: async () => ({ data: [{ b64_json: jpeg.toString("base64") }] }),
+        headers: { get: () => String(jpeg.length) },
+        arrayBuffer: async () => jpeg,
       };
     },
   });
@@ -196,19 +225,19 @@ test("OpenAI GPT Image adapter keeps the key server-side and sends a privacy-saf
     prompt: "Photorealistic local nail salon, one client hand, natural light",
     width: 1024,
     height: 768,
-    safetyIdentifier: "f".repeat(64),
   });
-  assert.equal(request.url, "https://api.openai.com/v1/images/generations");
+  assert.equal(requests[0].url, "https://api.kie.ai/api/v1/jobs/createTask");
   assert.equal(
-    request.options.headers.Authorization,
-    "Bearer sk-test-not-a-real-key-1234567890",
+    requests[0].options.headers.Authorization,
+    "Bearer test-kie-key-not-a-real-secret-1234567890",
   );
-  const payload = JSON.parse(request.options.body);
-  assert.equal(payload.model, "gpt-image-2.5-flare");
-  assert.equal(payload.size, "1024x768");
-  assert.equal(payload.output_format, "jpeg");
-  assert.equal(payload.safety_identifier, "f".repeat(64));
-  assert.equal(result.provider, "openai");
+  const payload = JSON.parse(requests[0].options.body);
+  assert.equal(payload.model, "gpt-image-2-5-flare-text-to-image");
+  assert.equal(payload.input.aspect_ratio, "4:3");
+  assert.equal(payload.input.resolution, "1K");
+  assert.equal(payload.input.background, "opaque");
+  assert.equal(polls, 2);
+  assert.equal(result.provider, "kie-ai");
   assert.equal(result.mimeType, "image/jpeg");
 });
 

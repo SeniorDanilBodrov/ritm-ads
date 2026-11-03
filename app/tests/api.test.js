@@ -1188,35 +1188,35 @@ test("business website is optional", async () => {
   assert.equal(current.body.state.website, "");
 });
 
-test("OpenAI image key is encrypted, never returned and enables prompt-free variants", async () => {
+test("Kie.ai image key is encrypted, never returned and enables prompt-free variants", async () => {
   const { cookie, ws } = await demo();
   const previousEncryption = config.encryptionConfigured,
-    previousModel = config.openAiImageModel;
+    previousModel = config.kieImageModel;
   config.encryptionConfigured = true;
-  config.openAiImageModel = "gpt-image-2.5-flare";
+  config.kieImageModel = "gpt-image-2-5-flare-text-to-image";
   try {
-    const saved = await send(`/api/businesses/${ws.id}/image-provider/openai`, {
+    const saved = await send(`/api/businesses/${ws.id}/image-provider/kie`, {
       cookie,
       method: "PUT",
-      body: { apiKey: "sk-test-not-a-real-key-1234567890" },
+      body: { apiKey: "test-kie-key-not-a-real-secret-1234567890" },
     });
     assert.equal(saved.status, 200);
     const stored = db
       .prepare(
-        "SELECT encrypted,metadata FROM connections WHERE business_id=? AND provider='openai-image'",
+        "SELECT encrypted,metadata FROM connections WHERE business_id=? AND provider='kie-image'",
       )
       .get(ws.id);
-    assert.doesNotMatch(stored.encrypted, /sk-test-not-a-real-key/);
-    assert.doesNotMatch(stored.metadata, /sk-test-not-a-real-key/);
+    assert.doesNotMatch(stored.encrypted, /test-kie-key/);
+    assert.doesNotMatch(stored.metadata, /test-kie-key/);
     const current = await send(`/api/workspace?businessId=${ws.id}`, {
       cookie,
     });
     assert.equal(current.body.capabilities.creativeImages, true);
-    assert.equal(current.body.capabilities.creativeImageProvider, "openai");
+    assert.equal(current.body.capabilities.creativeImageProvider, "kie");
     const connection = current.body.connections.find(
-      (item) => item.provider === "openai-image",
+      (item) => item.provider === "kie-image",
     );
-    assert.equal(connection.model, "gpt-image-2.5-flare");
+    assert.equal(connection.model, "gpt-image-2-5-flare-text-to-image");
     assert.deepEqual(connection.clients, []);
     assert.equal(connection.apiKey, undefined);
     const queued = await send(`/api/businesses/${ws.id}/creative-images`, {
@@ -1232,11 +1232,11 @@ test("OpenAI image key is encrypted, never returned and enables prompt-free vari
       },
     });
     assert.equal(queued.status, 202);
-    assert.equal(queued.body.provider, "openai");
+    assert.equal(queued.body.provider, "kie");
     assert.equal(queued.body.prompt, "Вариант по профилю бизнеса");
   } finally {
     config.encryptionConfigured = previousEncryption;
-    config.openAiImageModel = previousModel;
+    config.kieImageModel = previousModel;
   }
 });
 

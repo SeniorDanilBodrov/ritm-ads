@@ -1787,32 +1787,32 @@ function App() {
                       setToast("Изображение поставлено в очередь");
                     })
                   }
-                  connectOpenAi={(apiKey) =>
+                  connectKie={(apiKey) =>
                     perform(async () => {
                       await api(
-                        `/businesses/${ws.id}/image-provider/openai`,
+                        `/businesses/${ws.id}/image-provider/kie`,
                         { apiKey },
                         "PUT",
                       );
                       await load(ws.id);
-                      setToast("Генерация OpenAI подключена");
+                      setToast("Генерация Kie.ai подключена");
                     })
                   }
-                  disconnectOpenAi={() =>
+                  disconnectKie={() =>
                     setConfirmation({
-                      title: "Отключить генерацию OpenAI?",
+                      title: "Отключить генерацию Kie.ai?",
                       text: "Ключ удалится с этого сервера. Новые варианты больше не будут создаваться, а уже сохранённые останутся на проверке.",
                       actionLabel: "Отключить",
                       intent: "danger",
                       action: () =>
                         perform(async () => {
                           await api(
-                            `/businesses/${ws.id}/image-provider/openai`,
+                            `/businesses/${ws.id}/image-provider/kie`,
                             {},
                             "DELETE",
                           );
                           await load(ws.id);
-                          setToast("Генерация OpenAI отключена");
+                          setToast("Генерация Kie.ai отключена");
                         }),
                     })
                   }
@@ -7453,8 +7453,8 @@ function Creatives({
   busy,
   approve,
   generateImage,
-  connectOpenAi,
-  disconnectOpenAi,
+  connectKie,
+  disconnectKie,
   approveImage,
   removeImage,
   refresh,
@@ -7471,8 +7471,8 @@ function Creatives({
     audience: string;
     brandPlacement: "none" | "bottom-left" | "bottom-right";
   }) => Promise<void>;
-  connectOpenAi: (apiKey: string) => Promise<void>;
-  disconnectOpenAi: () => void;
+  connectKie: (apiKey: string) => Promise<void>;
+  disconnectKie: () => void;
   approveImage: (id: string) => void;
   removeImage: (id: string) => void;
   refresh: () => Promise<void>;
@@ -7491,7 +7491,7 @@ function Creatives({
     [hasCostConsent, setHasCostConsent] = useState(false),
     [apiKey, setApiKey] = useState(""),
     [setupError, setSetupError] = useState("");
-  const openAiConnected = ws.capabilities.creativeImageProvider === "openai";
+  const kieConnected = ws.capabilities.creativeImageProvider === "kie";
   const hasPendingImages = ws.creativeImages.some((image) =>
     ["pending", "running"].includes(image.status),
   );
@@ -7541,7 +7541,7 @@ function Creatives({
             списаний
           </div>
         </div>
-        {openAiConnected ? (
+        {kieConnected ? (
           <form
             noValidate
             className="creative-generator-form"
@@ -7560,9 +7560,9 @@ function Creatives({
           >
             <div className="creative-provider-status">
               <span>
-                <i aria-hidden="true" /> OpenAI подключён
+                <i aria-hidden="true" /> Kie.ai подключён · GPT Image 2.5
               </span>
-              <button type="button" onClick={disconnectOpenAi} disabled={busy}>
+              <button type="button" onClick={disconnectKie} disabled={busy}>
                 Отключить
               </button>
             </div>
@@ -7733,7 +7733,7 @@ function Creatives({
             </fieldset>
             <button
               className="primary"
-              disabled={busy || !hasCostConsent || !openAiConnected}
+              disabled={busy || !hasCostConsent || !kieConnected}
             >
               {busy ? (
                 <LoaderCircle className="spin" size={17} />
@@ -7749,7 +7749,7 @@ function Creatives({
                 onChange={(event) => setHasCostConsent(event.target.checked)}
               />
               <span>
-                Понимаю: OpenAI спишет кредиты за новый вариант. В рекламу он не
+                Понимаю: Kie.ai спишет кредиты за новый вариант. В рекламу он не
                 попадёт без моей проверки.
               </span>
             </label>
@@ -7766,11 +7766,11 @@ function Creatives({
               event.preventDefault();
               const value = apiKey.trim();
               if (value.length < 16) {
-                setSetupError("Вставьте полный API-ключ OpenAI.");
+                setSetupError("Вставьте полный API-ключ Kie.ai.");
                 return;
               }
               setSetupError("");
-              void connectOpenAi(value);
+              void connectKie(value);
             }}
           >
             <span
@@ -7780,17 +7780,18 @@ function Creatives({
               <Images size={22} />
             </span>
             <div>
-              <h3>Подключите генерацию OpenAI</h3>
+              <h3>Подключите Kie.ai · GPT Image 2.5</h3>
               <p>
                 Вставьте API-ключ один раз. Рита сама составит описание кадра по
-                профилю бизнеса, промпты писать не нужно.
+                профилю бизнеса и отправит его в GPT Image 2.5. Промпты писать
+                не нужно.
               </p>
               {ws.capabilities.creativeImageSetup ? (
                 <>
-                  <label htmlFor="openai-image-key">
-                    API-ключ OpenAI
+                  <label htmlFor="kie-image-key">
+                    API-ключ Kie.ai
                     <input
-                      id="openai-image-key"
+                      id="kie-image-key"
                       type="password"
                       autoComplete="off"
                       spellCheck={false}
@@ -7799,15 +7800,15 @@ function Creatives({
                         setApiKey(event.target.value);
                         if (setupError) setSetupError("");
                       }}
-                      aria-describedby="openai-image-key-help openai-image-key-error"
+                      aria-describedby="kie-image-key-help kie-image-key-error"
                     />
                   </label>
-                  <small id="openai-image-key-help">
+                  <small id="kie-image-key-help">
                     Ключ хранится на сервере в зашифрованном виде и больше не
                     показывается в браузере.
                   </small>
                   <small
-                    id="openai-image-key-error"
+                    id="kie-image-key-error"
                     className="field-error"
                     role="alert"
                   >
@@ -7818,10 +7819,10 @@ function Creatives({
                       className="primary"
                       disabled={busy || apiKey.trim().length < 16}
                     >
-                      Подключить OpenAI
+                      Подключить Kie.ai
                     </button>
                     <a
-                      href="https://platform.openai.com/api-keys"
+                      href="https://kie.ai/api-key"
                       target="_blank"
                       rel="noreferrer"
                     >

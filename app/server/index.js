@@ -55,10 +55,8 @@ const config = {
   localImageApiToken: process.env.LOCAL_IMAGE_API_TOKEN,
   localImageModel:
     process.env.LOCAL_IMAGE_MODEL || "OpenVINO/stable-diffusion-v1-5-int8-ov",
-  // GPT Image 2.5 Flare is the default for a single ad-photo workflow: fast,
-  // high quality and deliberately never called until the owner asks for one.
-  openAiImageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",
-  openAiImageQuality: process.env.OPENAI_IMAGE_QUALITY || "medium",
+  kieImageModel:
+    process.env.KIE_IMAGE_MODEL || "gpt-image-2-5-flare-text-to-image",
   creativeDailyLimit: Math.max(
     1,
     Math.min(10, Number(process.env.CREATIVE_DAILY_LIMIT) || 3),
@@ -133,17 +131,17 @@ if (
 const key = encryptionKey(process.env.TOKEN_ENCRYPTION_KEY, production),
   db = await openDatabaseAsync(databaseTarget),
   postgresPilot = db.isAsync === true;
-config.openAiImageCredential = (businessId) => {
+config.kieImageCredential = (businessId) => {
   if (postgresPilot) return null;
   const row = db
     .prepare(
-      "SELECT encrypted FROM connections WHERE business_id=? AND provider='openai-image'",
+      "SELECT encrypted FROM connections WHERE business_id=? AND provider='kie-image'",
     )
     .get(businessId);
   if (!row) return null;
   try {
     return (
-      decrypt(row.encrypted, key, businessId + ":openai-image").apiKey || null
+      decrypt(row.encrypted, key, businessId + ":kie-image").apiKey || null
     );
   } catch {
     return null;

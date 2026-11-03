@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "./db.js";
 import {
   CreativeProviderError,
-  OpenAIImageClient,
+  KieImageClient,
   advertisingFormats,
   creativeBrandName,
   creativeImagePrompt,
@@ -133,7 +133,7 @@ export async function enqueuePostgresCreativeImage(
       .prepare(
         "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload) VALUES(?,?,'creative_generation','pending',?,0,?)",
       )
-      .run(id, business.id, now, JSON.stringify({ model, provider: "openai" }));
+      .run(id, business.id, now, JSON.stringify({ model, provider: "kie" }));
     await tx
       .prepare(
         `INSERT INTO creative_assets(
@@ -144,7 +144,7 @@ export async function enqueuePostgresCreativeImage(
         id,
         business.id,
         idempotencyKey,
-        "openai",
+        "kie",
         model,
         prompt,
         input.prompt,
@@ -164,7 +164,7 @@ export async function enqueuePostgresCreativeImage(
       title: "Изображение поставлено в очередь",
       reason:
         "Рита подготовит один вариант по данным о бизнесе. Он не попадёт в рекламу без вашей проверки.",
-      rule: "creative/openai-gpt-image-2.5@1",
+      rule: "creative/kie-gpt-image-2.5@1",
       jobId: id,
     });
     return creativeImageView({
@@ -181,7 +181,7 @@ export async function enqueuePostgresCreativeImage(
       brand_placement: input.brandPlacement,
       company_name: companyName,
       seed,
-      provider: "openai",
+      provider: "kie",
       model,
       error: null,
       created_at: at,
@@ -226,7 +226,7 @@ async function claimCreativeJob(db, now) {
 
 export async function runPostgresCreativeCycle(
   db,
-  { key, config, now = Date.now(), fetcher = fetch },
+  { key, config, now = Date.now(), fetcher = fetch, waiter },
 ) {
   const job = await claimCreativeJob(db, now);
   if (!job) return { status: "idle" };
@@ -243,7 +243,7 @@ export async function runPostgresCreativeCycle(
   try {
     const connection = await db
       .prepare(
-        "SELECT encrypted FROM connections WHERE business_id=? AND provider='openai-image'",
+        "SELECT encrypted FROM connections WHERE business_id=? AND provider='kie-image'",
       )
       .get(asset.business_id);
     if (!connection)
@@ -256,7 +256,7 @@ export async function runPostgresCreativeCycle(
       apiKey = decrypt(
         connection.encrypted,
         key,
-        `${asset.business_id}:openai-image`,
+        `${asset.business_id}:kie-image`,
       ).apiKey;
     } catch {
       throw new CreativeProviderError(
@@ -264,11 +264,11 @@ export async function runPostgresCreativeCycle(
         false,
       );
     }
-    const client = new OpenAIImageClient({
+    const client = new KieImageClient({
       apiKey,
-      model: config.openAiImageModel,
-      quality: config.openAiImageQuality,
+      model: config.kieImageModel,
       fetcher,
+      ...(waiter ? { waiter } : {}),
     });
     const format =
       advertisingFormats[asset.format] || advertisingFormats.standard;
@@ -313,7 +313,7 @@ export async function runPostgresCreativeCycle(
           JSON.stringify({
             provider: generated.provider,
             model: generated.model,
-            license: "OpenAI API terms",
+            license: "Kie.ai API terms",
             generatedAt: updatedAt,
             width: generated.width,
             height: generated.height,
@@ -333,7 +333,7 @@ export async function runPostgresCreativeCycle(
         title: "Изображение готово к проверке",
         reason:
           "Вариант сохранён. До ручного подтверждения он не используется в рекламе.",
-        rule: "creative/openai-gpt-image-2.5@1",
+        rule: "creative/kie-gpt-image-2.5@1",
         jobId: job.id,
       });
       return { id: job.id, status: "succeeded", sha256: digest };

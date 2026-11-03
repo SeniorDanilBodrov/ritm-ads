@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AppError, event, requireBusiness, transaction } from "./db.js";
 
 const MODEL = "OpenVINO/stable-diffusion-v1-5-int8-ov";
-export const OPENAI_IMAGE_MODEL = "gpt-image-2.5-flare";
+export const KIE_IMAGE_MODEL = "gpt-image-2-5-flare-text-to-image";
 const MAX_BYTES = 12 * 1024 * 1024;
 const DIRECT_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_ATTEMPTS = 3;
@@ -285,60 +285,46 @@ export class LocalImageClient {
   }
 }
 
-export class OpenAIImageClient {
+function kieAspectRatio(width, height) {
+  const ratio = width / height;
+  if (Math.abs(ratio - 1) < 0.08) return "1:1";
+  if (ratio >= 1.6) return "16:9";
+  if (ratio > 1) return "4:3";
+  if (ratio <= 0.62) return "9:16";
+  return "3:4";
+}
+
+const wait = (milliseconds) =>
+  new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
+
+export class KieImageClient {
   constructor({
     apiKey,
-    model = OPENAI_IMAGE_MODEL,
-    quality = "medium",
+    model = KIE_IMAGE_MODEL,
     fetcher = fetch,
+    waiter = wait,
+    maxPolls = 36,
   }) {
     if (typeof apiKey !== "string" || apiKey.trim().length < 16)
-      throw new Error("Ключ OpenAI не настроен.");
-    if (
-      !/^(gpt-image-2\.5-(?:flare|sunburst)|chatgpt-image-latest)$/.test(model)
-    )
-      throw new Error("Неподдерживаемая модель OpenAI для изображений.");
-    if (!new Set(["low", "medium", "high", "xhigh", "max"]).has(quality))
-      throw new Error("Неподдерживаемое качество изображения OpenAI.");
-    Object.assign(this, { apiKey: apiKey.trim(), model, quality, fetcher });
+      throw new Error("Ключ Kie.ai не настроен.");
+    if (!/^gpt-image-2-5-(?:flare|sunburst)-text-to-image$/.test(model))
+      throw new Error("Неподдерживаемая модель Kie.ai для изображений.");
+    Object.assign(this, {
+      apiKey: apiKey.trim(),
+      model,
+      fetcher,
+      waiter,
+      maxPolls,
+    });
   }
 
-  async generate({
-    prompt,
-    width = 1024,
-    height = 768,
-    safetyIdentifier = "",
-  }) {
+  async request(url, options, action) {
     let response;
     try {
-      response = await this.fetcher(
-        "https://api.openai.com/v1/images/generations",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: this.model,
-            prompt,
-            n: 1,
-            size: `${width}x${height}`,
-            quality: this.quality,
-            background: "opaque",
-            moderation: "auto",
-            output_format: "jpeg",
-            output_compression: 90,
-            ...(safetyIdentifier
-              ? { safety_identifier: safetyIdentifier }
-              : {}),
-          }),
-          signal: AbortSignal.timeout(3 * 60_000),
-        },
-      );
+      response = await this.fetcher(url, options);
     } catch {
       throw new CreativeProviderError(
-        "OpenAI не ответил вовремя. Попробуйте ещё раз.",
+        `Kie.ai не ответил при ${action}. Попробуйте ещё раз.`,
         true,
       );
     }
@@ -346,23 +332,119 @@ export class OpenAIImageClient {
       const retryable = response.status === 429 || response.status >= 500;
       const message =
         response.status === 401 || response.status === 403
-          ? "OpenAI не принял ключ. Проверьте его в настройке генератора."
+          ? "Kie.ai не принял ключ. Проверьте его в настройке генератора."
           : response.status === 429
-            ? "OpenAI временно ограничил генерацию. Попробуйте позже."
-            : "OpenAI временно не создал изображение.";
+            ? "Kie.ai временно ограничил запросы. Попробуйте позже."
+            : `Kie.ai не ответил при ${action}.`;
       throw new CreativeProviderError(message, retryable, response.status);
     }
+    return response;
+  }
+
+  async json(url, options, action) {
+    const response = await this.request(url, options, action);
     let data;
     try {
       data = await response.json();
     } catch {
-      throw new CreativeProviderError("OpenAI вернул неполный ответ.", true);
+      throw new CreativeProviderError("Kie.ai вернул неполный ответ.", true);
     }
-    if (!data?.data?.[0]?.b64_json)
-      throw new CreativeProviderError("OpenAI не вернул изображение.", true);
+    if (Number(data?.code) !== 200) {
+      const code = Number(data?.code) || null;
+      throw new CreativeProviderError(
+        code === 401
+          ? "Kie.ai не принял ключ. Проверьте его в настройке генератора."
+          : code === 429
+            ? "Kie.ai временно ограничил запросы. Попробуйте позже."
+            : `Kie.ai не выполнил ${action}.`,
+        code === 429 || (code !== null && code >= 500),
+        code,
+      );
+    }
+    return data;
+  }
+
+  async generate({ prompt, width = 1024, height = 768 }) {
+    const headers = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    const created = await this.json(
+      "https://api.kie.ai/api/v1/jobs/createTask",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: this.model,
+          input: {
+            prompt,
+            aspect_ratio: kieAspectRatio(width, height),
+            resolution: "1K",
+            background: "opaque",
+          },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      },
+      "создании задачи",
+    );
+    const taskId = String(created?.data?.taskId || "");
+    if (!taskId)
+      throw new CreativeProviderError("Kie.ai не вернул номер задачи.", true);
+
+    let resultUrl = "";
+    for (let attempt = 0; attempt < this.maxPolls; attempt += 1) {
+      await this.waiter(Math.min(10_000, 2_000 + attempt * 500));
+      const record = await this.json(
+        `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`,
+        {
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          signal: AbortSignal.timeout(30_000),
+        },
+        "проверке задачи",
+      );
+      const state = String(record?.data?.state || "").toLowerCase();
+      if (state === "fail")
+        throw new CreativeProviderError(
+          "Kie.ai не создал изображение. Проверьте баланс и журнал задач.",
+          false,
+        );
+      if (state !== "success") continue;
+      try {
+        const result = JSON.parse(record.data.resultJson || "{}");
+        resultUrl = String(result.resultUrls?.[0] || "");
+      } catch {
+        resultUrl = "";
+      }
+      break;
+    }
+    if (!resultUrl)
+      throw new CreativeProviderError(
+        "Kie.ai ещё не завершил изображение. Ритм повторит проверку.",
+        true,
+      );
+    let resultAddress;
+    try {
+      resultAddress = new URL(resultUrl);
+    } catch {
+      throw new CreativeProviderError("Kie.ai вернул неверную ссылку.", true);
+    }
+    if (resultAddress.protocol !== "https:")
+      throw new CreativeProviderError("Kie.ai вернул небезопасную ссылку.");
+    const response = await this.request(
+      resultAddress,
+      { signal: AbortSignal.timeout(60_000) },
+      "загрузке изображения",
+    );
+    const declaredSize = Number(response.headers?.get?.("content-length") || 0);
+    if (declaredSize > MAX_BYTES)
+      throw new CreativeProviderError("Размер изображения недопустим.");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > MAX_BYTES)
+      throw new CreativeProviderError("Размер изображения недопустим.");
     return {
-      ...decodeImage(data.data[0].b64_json),
-      provider: "openai",
+      buffer,
+      ...imageType(buffer),
+      provider: "kie-ai",
       model: this.model,
     };
   }
@@ -734,12 +816,12 @@ export function enqueueCreativeImage(
       kind: "creative_generation",
       title: "Изображение поставлено в очередь",
       reason:
-        provider === "openai"
+        provider === "kie"
           ? "Рита подготовит один вариант по данным о бизнесе. Он не попадёт в рекламу без вашей проверки."
           : "Генератор подготовит один вариант по данным о бизнесе. Он не попадёт в рекламу без вашей проверки.",
       rule:
-        provider === "openai"
-          ? "creative/openai-gpt-image-2.5@1"
+        provider === "kie"
+          ? "creative/kie-gpt-image-2.5@1"
           : "creative/local-sd15-openvino@1",
       jobId: id,
     });
@@ -889,8 +971,8 @@ export async function runCreativeCycle(
           provider: generated.provider,
           model: generated.model,
           license:
-            generated.provider === "openai"
-              ? "OpenAI API terms"
+            generated.provider === "kie-ai"
+              ? "Kie.ai API terms"
               : "CreativeML-OpenRAIL-M",
           generatedAt: updatedAt,
           width: generated.width,
@@ -913,8 +995,8 @@ export async function runCreativeCycle(
         reason:
           "Ассет сохранен. До ручного подтверждения он не используется в рекламе.",
         rule:
-          generated.provider === "openai"
-            ? "creative/openai-gpt-image-2.5@1"
+          generated.provider === "kie-ai"
+            ? "creative/kie-gpt-image-2.5@1"
             : "creative/local-sd15-openvino@1",
         jobId: job.id,
       });
@@ -1135,7 +1217,7 @@ export function startCreativeWorker(db, config) {
             model: config.aiModel,
           })
         : null;
-  if (!localClient && !config.openAiImageCredential) return async () => {};
+  if (!localClient && !config.kieImageCredential) return async () => {};
   let pending = null,
     stopped = false;
   const tick = () => {
@@ -1151,13 +1233,12 @@ export function startCreativeWorker(db, config) {
         } catch {
           payload = {};
         }
-        if (payload.provider === "openai") {
-          const apiKey = config.openAiImageCredential(asset.business_id);
+        if (payload.provider === "kie") {
+          const apiKey = config.kieImageCredential(asset.business_id);
           return apiKey
-            ? new OpenAIImageClient({
+            ? new KieImageClient({
                 apiKey,
-                model: config.openAiImageModel,
-                quality: config.openAiImageQuality,
+                model: config.kieImageModel,
               })
             : null;
         }

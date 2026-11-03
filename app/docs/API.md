@@ -30,8 +30,8 @@
 | GET /api/businesses/:id/provider/counters                 | Список счетчиков Метрики                                |
 | GET /api/businesses/:id/provider/goals?counterId=ID       | Цели выбранного счетчика                                |
 | GET /api/businesses/:id/provider/metrica-stats            | Визиты и достижения сохраненной цели за период          |
-| PUT /api/businesses/:id/image-provider/openai             | Сохранить зашифрованный ключ OpenAI для этого бизнеса   |
-| DELETE /api/businesses/:id/image-provider/openai          | Отключить новые генерации OpenAI                        |
+| PUT /api/businesses/:id/image-provider/kie                | Сохранить зашифрованный ключ Kie.ai для этого бизнеса   |
+| DELETE /api/businesses/:id/image-provider/kie             | Отключить новые генерации Kie.ai                        |
 | POST /api/businesses/:id/creative-images                  | Поставить генерацию изображения в очередь               |
 | POST /api/businesses/:id/creative-images/:assetId/approve | Согласовать готовый визуал вручную                      |
 | GET /api/businesses/:id/creative-images/:assetId/file     | Получить готовое изображение владельца бизнеса          |
@@ -59,7 +59,7 @@
 }
 ```
 
-`goal`: `leads | trust | offer`; `hook`: `outcome | human | perspective`; `style`: `editorial | local | detail`; `format`: `standard` (4:3), `square` (1:1), `wide` (16:9) или `vertical` (3:4); `brandPlacement`: `bottom-left | bottom-right | none`. `hook` задаёт визуальный крючок: результат, живой момент или сильный ракурс. Название берётся из профиля бизнеса на момент постановки задачи и наносится после генерации, поэтому модель не получает поручение рисовать буквы. Сервер дополняет prompt данными бизнеса, вызывает подключённый OpenAI или локальный FastSDCPU/OpenVINO API и готовит непрозрачный JPEG до 4 МБ. Ответ workspace показывает пользовательское описание, цель, крючок, формат, размеры, использованное название и статус, но не раскрывает ключ или внутреннее место хранения. Старые клиенты получают `hook=outcome` и сохраняют text-free поведение `brandPlacement=none`.
+`goal`: `leads | trust | offer`; `hook`: `outcome | human | perspective`; `style`: `editorial | local | detail`; `format`: `standard` (4:3), `square` (1:1), `wide` (16:9) или `vertical` (3:4); `brandPlacement`: `bottom-left | bottom-right | none`. `hook` задаёт визуальный крючок: результат, живой момент или сильный ракурс. Название берётся из профиля бизнеса на момент постановки задачи и наносится после генерации, поэтому модель не получает поручение рисовать буквы. Сервер дополняет prompt данными бизнеса, создаёт задачу GPT Image 2.5 через Kie.ai и готовит непрозрачный JPEG до 4 МБ. Ответ workspace показывает пользовательское описание, цель, крючок, формат, размеры, использованное название и статус, но не раскрывает ключ или внутреннее место хранения. Старые клиенты получают `hook=outcome` и сохраняют text-free поведение `brandPlacement=none`.
 
 ```json
 {

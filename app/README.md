@@ -103,8 +103,7 @@ python -m unittest discover -s ai -p 'test_*.py' -v
 | LOCAL_IMAGE_API_URL                     | FastSDCPU API: `http://127.0.0.1:8000` для локального Node, `http://host.docker.internal:8000` для Docker или защищённый HTTPS endpoint                                |
 | LOCAL_IMAGE_API_TOKEN                   | Необязательный Bearer-токен для облачного HTTPS-прокси; локальному FastSDCPU не требуется                                                                              |
 | LOCAL_IMAGE_MODEL                       | По умолчанию `OpenVINO/stable-diffusion-v1-5-int8-ov`                                                                                                                  |
-| OPENAI_IMAGE_MODEL                      | Модель для генерации по ключу владельца бизнеса, по умолчанию `gpt-image-2.5-flare`                                                                                    |
-| OPENAI_IMAGE_QUALITY                    | Качество OpenAI: `low`, `medium`, `high`, `xhigh` или `max`; по умолчанию `medium`                                                                                     |
+| KIE_IMAGE_MODEL                         | Модель Kie.ai по ключу владельца бизнеса, по умолчанию `gpt-image-2-5-flare-text-to-image`                                                                             |
 | CREATIVE_DAILY_LIMIT                    | Лимит запросов генерации на бизнес за 24 часа, по умолчанию 3                                                                                                          |
 | ASSET_STORAGE_PATH                      | Каталог готовых изображений, по умолчанию `./data/creative-assets`                                                                                                     |
 | CREATIVE_RETENTION_DAYS                 | `0` отключает автоочистку; положительное значение удаляет только старые завершённые несогласованные варианты                                                           |
@@ -146,8 +145,8 @@ npm run production:preflight:live
 - `server/app.js`: JSON API, валидация Zod, принадлежность бизнеса, session cookie, Origin и custom-header защита операций записи.
 - `server/oauth.js`, `providers.js`, `security.js`: OAuth, прямые HTTP-клиенты, отзыв токена, отчеты и шифрование.
 - `server/direct.js`, `server/direct-execution.js`, `server/direct-lifecycle.js`, `server/direct-budget.js`, `server/direct-budget-action.js`, `server/portfolio-reallocation.js`, `server/direct-ab.js`, `server/direct-ab-action.js`, `server/direct-ab-decision.js`: схема реального плана, dry-run, одноразовое создание выключенной кампании, проверяемая остановка, лимиты портфеля, перенос остатка между двумя активными кампаниями с read-back, безопасное создание варианта Б и компенсирующее A/B-действие.
-- `server/creative-images.js`: клиенты OpenAI и локального Stable Diffusion 1.5 INT8/OpenVINO, рекламные форматы Direct и подготовка JPEG.
-- `server/postgres-creatives.js`: очередь OpenAI для Neon, зашифрованный ключ владельца бизнеса, хранение результата в PostgreSQL и ручное согласование.
+- `server/creative-images.js`: клиенты Kie.ai и локального Stable Diffusion 1.5 INT8/OpenVINO, рекламные форматы Direct и подготовка JPEG.
+- `server/postgres-creatives.js`: очередь Kie.ai для Neon, зашифрованный ключ владельца бизнеса, хранение результата в PostgreSQL и ручное согласование.
 - `server/operations-monitor.js`: обезличенные HTTPS webhook-оповещения только при смене операционного состояния.
 - `server/reports.js`: долговечная очередь отчётов Direct, строгая нормализация TSV, снимки источника и сверка исправлений.
 - `server/advisor.js`, `ai/advisor.py`: ограниченный read-only Python-процесс; baseline и адаптер локальной LLM с валидацией.

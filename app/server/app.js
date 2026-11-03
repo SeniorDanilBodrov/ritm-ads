@@ -622,20 +622,20 @@ export function createApp({
           generated.inputHash !==
           hash(
             JSON.stringify({
-          name: business.state.name,
-          category: business.state.category,
-          city: business.state.city,
-          service: business.state.service,
-          benefit: business.state.benefit,
-          price:
+              name: business.state.name,
+              category: business.state.category,
+              city: business.state.city,
+              service: business.state.service,
+              benefit: business.state.benefit,
+              price:
                 Number.isInteger(business.state.price) &&
                 business.state.price > 0
-              ? business.state.price
-              : null,
-          website: business.state.website || null,
-          budgetRubles: Math.round(business.state.budget / 100),
-          periodStart: business.state.periodStart,
-          periodEnd: business.state.periodEnd,
+                  ? business.state.price
+                  : null,
+              website: business.state.website || null,
+              budgetRubles: Math.round(business.state.budget / 100),
+              periodStart: business.state.periodStart,
+              periodEnd: business.state.periodEnd,
             }),
           )
         )
@@ -757,15 +757,13 @@ export function createApp({
         analyst: !!process.env.PYTHON_EXECUTABLE,
         creativeImages: !!(
           (config.creativeImagesEnabled && config.localImageApiUrl) ||
-          connections.some(
-            (connection) => connection.provider === "openai-image",
-          )
+          connections.some((connection) => connection.provider === "kie-image")
         ),
         creativeImageSetup: !!config.encryptionConfigured,
         creativeImageProvider: connections.some(
-          (connection) => connection.provider === "openai-image",
+          (connection) => connection.provider === "kie-image",
         )
-          ? "openai"
+          ? "kie"
           : config.creativeImagesEnabled && config.localImageApiUrl
             ? "local"
             : null,
@@ -841,15 +839,15 @@ export function createApp({
       res
         .status(201)
         .json(
-        createAudienceExperiment(
-          db,
-          req.user.id,
-          req.params.id,
-          req.params.changeId,
-          requestKey,
-          req.body,
-        ),
-      );
+          createAudienceExperiment(
+            db,
+            req.user.id,
+            req.params.id,
+            req.params.changeId,
+            requestKey,
+            req.body,
+          ),
+        );
     },
   );
   app.post(
@@ -1170,22 +1168,22 @@ export function createApp({
         },
       );
       const saved = saveDirectPreflight(
-          db,
-          req.user.id,
-          business.id,
-          change.id,
-          requestKey,
-          report,
-        );
+        db,
+        req.user.id,
+        business.id,
+        change.id,
+        requestKey,
+        report,
+      );
       transitionAdLifecycle(
         db,
         business.id,
         saved.ready ? "ready" : "blocked",
         {
-        changeId: change.id,
-        reason: saved.ready
-          ? "План и подключение проверены. Можно создать выключенный черновик."
-          : "Проверка нашла условия, которые нужно исправить до создания черновика.",
+          changeId: change.id,
+          reason: saved.ready
+            ? "План и подключение проверены. Можно создать выключенный черновик."
+            : "Проверка нашла условия, которые нужно исправить до создания черновика.",
         },
       );
       res.json(saved);
@@ -2261,13 +2259,13 @@ export function createApp({
     },
   );
   app.put(
-    "/api/businesses/:id/image-provider/openai",
+    "/api/businesses/:id/image-provider/kie",
     authenticated,
     (req, res) => {
       if (!config.encryptionConfigured)
         throw new AppError(
           409,
-          "Для ключа OpenAI нужен постоянный ключ шифрования сервера.",
+          "Для ключа Kie.ai нужен постоянный ключ шифрования сервера.",
           "encryption_not_configured",
         );
       const apiKey = z
@@ -2278,18 +2276,21 @@ export function createApp({
         connectedAt = new Date().toISOString();
       transaction(db, () => {
         db.prepare(
+          "DELETE FROM connections WHERE business_id=? AND provider='openai-image'",
+        ).run(business.id);
+        db.prepare(
           `INSERT INTO connections(business_id,provider,encrypted,metadata)
            VALUES(?,?,?,?)
            ON CONFLICT(business_id,provider) DO UPDATE SET encrypted=excluded.encrypted,metadata=excluded.metadata`,
         ).run(
           business.id,
-          "openai-image",
-          encrypt({ apiKey }, key, business.id + ":openai-image"),
+          "kie-image",
+          encrypt({ apiKey }, key, business.id + ":kie-image"),
           JSON.stringify({
             connectedAt,
             sandbox: false,
             clients: [],
-            model: config.openAiImageModel,
+            model: config.kieImageModel,
             purpose: "image_generation",
           }),
         );
@@ -2298,41 +2299,41 @@ export function createApp({
           title: "Подключена генерация изображений",
           reason:
             "Ключ сохранён на сервере. Каждый новый вариант создаётся только после вашего действия.",
-          rule: "creative/openai-gpt-image-2.5@1",
+          rule: "creative/kie-gpt-image-2.5@1",
         });
       });
-      res.json({ connected: true, model: config.openAiImageModel });
+      res.json({ connected: true, model: config.kieImageModel });
     },
   );
   app.delete(
-    "/api/businesses/:id/image-provider/openai",
+    "/api/businesses/:id/image-provider/kie",
     authenticated,
     (req, res) => {
       const business = requireBusiness(db, req.user.id, req.params.id),
         result = db
           .prepare(
-            "DELETE FROM connections WHERE business_id=? AND provider='openai-image'",
+            "DELETE FROM connections WHERE business_id=? AND provider='kie-image'",
           )
           .run(business.id);
       if (!result.changes)
-        throw new AppError(404, "Генерация OpenAI не подключена.");
+        throw new AppError(404, "Генерация Kie.ai не подключена.");
       event(db, business.id, {
         kind: "creative_provider_disconnected",
         title: "Генерация изображений отключена",
         reason:
           "Новые изображения больше не создаются. Уже сохранённые варианты останутся на проверке.",
-        rule: "creative/openai-gpt-image-2.5@1",
+        rule: "creative/kie-gpt-image-2.5@1",
       });
       res.json({ connected: false });
     },
   );
   app.post("/api/businesses/:id/creative-images", authenticated, (req, res) => {
-    const openAi = db
+    const kie = db
       .prepare(
-        "SELECT 1 FROM connections WHERE business_id=? AND provider='openai-image'",
+        "SELECT 1 FROM connections WHERE business_id=? AND provider='kie-image'",
       )
       .get(req.params.id);
-    if (!openAi && (!config.creativeImagesEnabled || !config.localImageApiUrl))
+    if (!kie && (!config.creativeImagesEnabled || !config.localImageApiUrl))
       throw new AppError(
         409,
         "Сначала подключите генерацию изображений.",
@@ -2340,19 +2341,19 @@ export function createApp({
       );
     const requestKey = z.string().uuid().parse(req.headers["idempotency-key"]);
     res.status(202).json(
-        enqueueCreativeImage(
-          db,
-          req.user.id,
-          req.params.id,
-          requestKey,
-          req.body,
-          {
-            dailyLimit: config.creativeDailyLimit,
-            provider: openAi ? "openai" : "local-openvino",
-            model: openAi ? config.openAiImageModel : config.localImageModel,
-          },
-        ),
-      );
+      enqueueCreativeImage(
+        db,
+        req.user.id,
+        req.params.id,
+        requestKey,
+        req.body,
+        {
+          dailyLimit: config.creativeDailyLimit,
+          provider: kie ? "kie" : "local-openvino",
+          model: kie ? config.kieImageModel : config.localImageModel,
+        },
+      ),
+    );
   });
   app.post(
     "/api/businesses/:id/creative-images/:assetId/approve",
@@ -2799,8 +2800,8 @@ export function createApp({
             const budget = money.parse(p.budget),
               target =
                 p.targetCpa === undefined
-                ? withStartingTargetCpa({ budget }).targetCpa
-                : money.parse(p.targetCpa);
+                  ? withStartingTargetCpa({ budget }).targetCpa
+                  : money.parse(p.targetCpa);
             const before = { budget: s.budget, targetCpa: s.targetCpa };
             s.budget = budget;
             s.targetCpa = target;

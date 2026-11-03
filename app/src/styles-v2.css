@@ -3205,8 +3205,10 @@ textarea.resize-none {
 
 .creative-cost-consent {
   display: flex !important;
+  flex-direction: row !important;
   align-items: flex-start;
   gap: 9px;
+  margin: 0;
   color: var(--ink-soft) !important;
   font-weight: 500 !important;
   line-height: 1.45;

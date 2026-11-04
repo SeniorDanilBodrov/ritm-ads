@@ -17,6 +17,205 @@ async function openDemo(page: Page) {
   ).toBeVisible();
 }
 
+async function mockApprovedAdPreview(page: Page) {
+  const approvedAt = "2026-11-04T10:00:00.000Z";
+  const image = encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+      <rect width="800" height="500" fill="#dce9df"/>
+      <circle cx="610" cy="125" r="92" fill="#99b7a0"/>
+      <path d="M0 420C190 315 332 480 520 345S720 260 800 300V500H0Z" fill="#4f755d"/>
+    </svg>
+  `);
+
+  await page.route("**/api/workspace?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.capabilities.postgresPilot = true;
+    data.state.website = "https://forma.example";
+    data.state.postgresPilot = { planConfirmedAt: approvedAt };
+    data.connections = [
+      ...data.connections.filter(
+        (connection: { provider: string }) => connection.provider !== "yandex",
+      ),
+      {
+        provider: "yandex",
+        connectedAt: approvedAt,
+        sandbox: false,
+        validation: "verified",
+        clients: [{ Login: "e2e-direct", ClientId: 101, Currency: "RUB" }],
+      },
+    ];
+    data.state.aiPlan = {
+      provider: "fallback",
+      model: "e2e-plan",
+      promptVersion: "e2e-v1",
+      inputHash: "approved-materials-e2e",
+      validation: { status: "passed", schema: "e2e" },
+      corrections: [],
+      createdAt: approvedAt,
+      version: "1",
+      plan: {
+        summary:
+          "Покажем рекламу людям в Екатеринбурге, которым нужен маникюр с покрытием.",
+        audiences: [
+          { name: "Ищут маникюр рядом", need: "Записаться на удобное время" },
+        ],
+        channels: ["search"],
+        keywords: ["маникюр с покрытием екатеринбург"],
+        negativeKeywords: [],
+        ads: [],
+        budgetAllocation: [{ channel: "search", percent: 100 }],
+        abHypotheses: [],
+        assumptions: [],
+        warnings: [],
+      },
+    };
+    data.state.creatives = [
+      {
+        id: "creative-1",
+        angle: "Близость",
+        title: "Маникюр с покрытием рядом с домом",
+        text: "Бережный уход и удобная запись на подходящее время.",
+        status: "approved",
+        kind: "text",
+        color: "sage",
+      },
+      {
+        id: "creative-2",
+        angle: "Забота",
+        title: "Время для себя в студии «Форма»",
+        text: "Спокойный маникюр с покрытием в Екатеринбурге.",
+        status: "approved",
+        kind: "text",
+        color: "sand",
+      },
+      {
+        id: "creative-3",
+        angle: "Запись",
+        title: "Выберите удобное время для маникюра",
+        text: "Онлайн-запись и бережный уход без лишней спешки.",
+        status: "approved",
+        kind: "text",
+        color: "mist",
+      },
+    ];
+    data.creativeImages = [
+      {
+        id: "image-1",
+        status: "succeeded",
+        attempts: 1,
+        prompt: "Спокойная студия маникюра",
+        style: "local",
+        goal: "leads",
+        hook: "human",
+        format: "wide",
+        audience: "Жители Екатеринбурга",
+        companyName: "Форма",
+        brandPlacement: "bottom-right",
+        seed: 42,
+        provider: "kie",
+        model: "gpt-image-1",
+        mimeType: "image/png",
+        byteSize: 2048,
+        sha256: "e2e-approved-image",
+        approvedAt,
+        error: null,
+        createdAt: approvedAt,
+        updatedAt: approvedAt,
+        imageUrl: `data:image/svg+xml,${image}`,
+        width: 1080,
+        height: 1080,
+        ratio: "1:1",
+        directUploads: [
+          {
+            login:
+              data.connections.find(
+                (connection: { provider: string }) =>
+                  connection.provider === "yandex",
+              )?.clients?.[0]?.Login || "demo-direct",
+            imageType: "REGULAR",
+            verifiedAt: approvedAt,
+          },
+        ],
+      },
+    ];
+    data.directChanges = [
+      {
+        id: "direct-change-1",
+        mode: "dry_run",
+        status: "completed",
+        attempts: 1,
+        availableAt: 0,
+        plan: {
+          channel: "search",
+          login: data.connections.find(
+            (connection: { provider: string }) =>
+              connection.provider === "yandex",
+          )?.clients?.[0]?.Login,
+          campaignName: "Форма · Поиск",
+          website: data.state.website,
+          audience: "Ищут маникюр рядом",
+          regionIds: [54],
+          budget: data.state.budget,
+          targetCpa: data.state.targetCpa,
+          periodStart: data.state.periodStart,
+          periodEnd: data.state.periodEnd,
+          creativeAssetId: "image-1",
+          ads: data.state.creatives.map(
+            (creative: { title: string; text: string }) => ({
+              title: creative.title.slice(0, 56),
+              text: creative.text.slice(0, 81),
+              href: data.state.website,
+            }),
+          ),
+          keywords: ["маникюр с покрытием екатеринбург"],
+          negativeKeywords: [],
+        },
+        commands: [],
+        summary: {
+          campaigns: 1,
+          adGroups: 1,
+          ads: 3,
+          keywords: 1,
+          externalCalls: 5,
+        },
+        reconciliation: null,
+        error: null,
+        createdAt: approvedAt,
+        updatedAt: approvedAt,
+        execution: {
+          status: "succeeded",
+          inflightKey: null,
+          suspendVerified: true,
+          calls: [],
+          errorCode: null,
+          updatedAt: approvedAt,
+          reconciliation: {
+            status: "matched",
+            checkedAt: approvedAt,
+            unresolvedStep: null,
+          },
+        },
+      },
+    ];
+    await route.fulfill({ response, json: data });
+  });
+
+  await page.route("**/api/businesses/*/launch-readiness", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ready: true,
+        status: "ready_for_review",
+        title: "План готов к проверке",
+        detail: "Материалы согласованы.",
+        blockers: [],
+      }),
+    });
+  });
+}
+
 test("главный демо-маршрут открывает итоги, график и дерево рекламы", async ({
   page,
 }) => {
@@ -119,4 +318,46 @@ test("мобильное меню ведёт к бизнесу, странице
   await expect(
     page.getByRole("heading", { name: "План и запуск" }),
   ).toBeVisible();
+});
+
+test("согласованные текст и изображение заменяют пустую рамку готовым объявлением", async ({
+  page,
+}) => {
+  await openDemo(page);
+  await mockApprovedAdPreview(page);
+  await page.reload();
+
+  await page
+    .getByRole("button", { name: "План и запуск", exact: true })
+    .first()
+    .click();
+
+  const preview = page.getByRole("region", {
+    name: /Готовое объявление перед модерацией|Так будет выглядеть ваша реклама/,
+  });
+  await expect(preview).toBeVisible();
+  await expect(
+    preview.getByRole("img", { name: /Согласованное изображение/ }),
+  ).toBeVisible();
+  await expect(
+    preview.getByRole("heading", {
+      name: "Маникюр с покрытием рядом с домом",
+    }),
+  ).toBeVisible();
+  await expect(preview).toContainText(
+    "Бережный уход и удобная запись на подходящее время.",
+  );
+  await expect(preview).toContainText("https://forma.example");
+  await expect(preview).toContainText("Объявление добавлено в Яндекс Директ");
+  await expect(preview).toContainText("Показы не идут");
+  await expect(
+    page.getByText("Выберите изображение для рекламы", { exact: true }),
+  ).toHaveCount(0);
+  await expect(preview).toContainText("Фото загружено");
+
+  const layout = await preview.evaluate((element) => ({
+    right: element.getBoundingClientRect().right,
+    viewport: document.documentElement.clientWidth,
+  }));
+  expect(layout.right).toBeLessThanOrEqual(layout.viewport + 1);
 });

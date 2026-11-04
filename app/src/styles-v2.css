@@ -1969,57 +1969,160 @@ tbody tr:hover {
   line-height: 1.45;
 }
 
-.hosted-moderation-content {
-  padding: 16px;
-  display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.7fr);
-  gap: 16px;
-}
-
-.hosted-moderation-content figure {
-  align-self: start;
+.hosted-ad-preview {
+  margin: 16px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.3fr);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
   background: var(--surface-soft);
 }
 
-.hosted-moderation-content figure img {
+.hosted-ad-direct-state {
+  margin: 16px 16px 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.hosted-ad-direct-state.complete {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 38%, var(--line));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.hosted-ad-direct-state.partial {
+  color: var(--warning);
+}
+
+.hosted-ad-direct-state > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hosted-ad-direct-state b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.hosted-ad-direct-state small {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hosted-ad-preview-image {
+  min-height: 260px;
+  background: var(--surface-muted);
+}
+
+.hosted-ad-preview-image img {
   width: 100%;
+  height: 100%;
   display: block;
-  aspect-ratio: 1;
   object-fit: cover;
 }
 
-.hosted-moderation-content figcaption {
-  padding: 10px 12px;
-  display: grid;
-  gap: 2px;
+.hosted-ad-preview-copy {
+  min-width: 0;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid var(--line);
 }
 
-.hosted-moderation-content figcaption b {
-  color: var(--ink);
-  font-size: 12px;
-}
-
-.hosted-moderation-content figcaption span {
+.hosted-ad-source {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
-.hosted-moderation-copy {
+.hosted-ad-source span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
+.hosted-ad-source b {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hosted-ad-preview-copy h5 {
+  max-width: 24ch;
+  color: var(--ink);
+  font-family: "Aptos Display", "Segoe UI Variable Display", sans-serif;
+  font-size: clamp(22px, 2.4vw, 32px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.hosted-ad-preview-copy p {
+  max-width: 52ch;
+  margin-top: 13px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hosted-ad-destination {
+  margin-top: 22px;
+  overflow-wrap: anywhere;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hosted-ad-alternatives {
+  margin: 0 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.hosted-ad-alternatives summary {
+  padding: 12px 14px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hosted-ad-alternatives summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.hosted-ad-alternatives > div {
+  padding: 0 12px 12px;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.hosted-moderation-copy article {
+.hosted-ad-alternatives article {
+  min-width: 0;
   padding: 11px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-soft);
+  border-top: 1px solid var(--line);
 }
 
-.hosted-moderation-copy article > span {
+.hosted-ad-alternatives article > span {
   color: var(--success);
   font-size: 10px;
   font-weight: 750;
@@ -2027,14 +2130,14 @@ tbody tr:hover {
   letter-spacing: 0.05em;
 }
 
-.hosted-moderation-copy h5 {
-  margin-top: 4px;
+.hosted-ad-alternatives h5 {
+  margin-top: 5px;
   color: var(--ink);
   font-size: 13px;
   line-height: 1.35;
 }
 
-.hosted-moderation-copy p {
+.hosted-ad-alternatives p {
   margin-top: 4px;
   color: var(--ink-soft);
   font-size: 11px;
@@ -2044,7 +2147,7 @@ tbody tr:hover {
 .hosted-moderation-facts {
   padding: 0 16px 16px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2065,6 +2168,33 @@ tbody tr:hover {
   color: var(--ink);
   font-size: 11px;
   font-weight: 650;
+  line-height: 1.45;
+}
+
+.hosted-ad-preview-next {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.hosted-ad-preview-next > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hosted-ad-preview-next b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.hosted-ad-preview-next small {
+  color: var(--muted);
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -7467,13 +7597,34 @@ textarea::placeholder {
     align-self: flex-start;
   }
 
-  .hosted-moderation-content,
+  .hosted-ad-preview,
   .hosted-moderation-facts {
     grid-template-columns: 1fr;
   }
 
-  .hosted-moderation-content figure {
-    width: min(300px, 100%);
+  .hosted-ad-preview-image {
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+  }
+
+  .hosted-ad-preview-copy {
+    padding: 20px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .hosted-ad-alternatives > div {
+    grid-template-columns: 1fr;
+  }
+
+  .hosted-ad-preview-next {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hosted-ad-preview-next > button {
+    width: 100%;
+    justify-content: center;
   }
 
   .hosted-image-choice,

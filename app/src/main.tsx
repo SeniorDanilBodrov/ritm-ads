@@ -3863,6 +3863,9 @@ function HostedPlanReview({
   const approvedTexts = ws.state.creatives.filter(
     (item) => item.status === "approved",
   );
+  const approvedImages = ws.creativeImages.filter(
+    (image) => image.approvedAt && image.imageUrl,
+  );
   const yandex = ws.connections.find((item) => item.provider === "yandex");
   const directLogin = yandex?.clients?.[0]?.Login || "";
   const directReadyImages = ws.creativeImages.filter(
@@ -3877,6 +3880,14 @@ function HostedPlanReview({
     directReadyImages.find((image) => image.id === creativeAssetId) ||
     directReadyImages[0] ||
     null;
+  const previewCreativeImage =
+    selectedCreativeImage || approvedImages[0] || null;
+  const previewText = approvedTexts[0] || null;
+  const previewImageIsInDirect = Boolean(
+    previewCreativeImage?.directUploads.some(
+      (upload) => upload.login === directLogin,
+    ),
+  );
   useEffect(() => {
     if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
     setCreativeAssetId(directReadyImages[0]?.id || "");
@@ -3951,6 +3962,16 @@ function HostedPlanReview({
       });
     return candidates.slice(0, 1);
   });
+  const createdDirections = directChanges.filter(
+    (item) => item.execution?.status === "succeeded",
+  );
+  const allDirectionsCreated =
+    directChanges.length >= expectedChannelCount &&
+    createdDirections.length === expectedChannelCount;
+  const latestCreatedAt = createdDirections
+    .map((item) => item.execution?.updatedAt || "")
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
   const nextIncompleteChange = directChanges.find(
     (item) => item.execution?.status !== "succeeded",
   );
@@ -4283,13 +4304,17 @@ function HostedPlanReview({
                 <div>
                   <h3>
                     {directReadyImages.length
-                      ? "Изображение готово для рекламы"
-                      : "Теперь подготовьте изображения"}
+                      ? "Изображение готово для Директа"
+                      : approvedImages.length
+                        ? "Изображение согласовано"
+                        : "Теперь подготовьте изображения"}
                   </h3>
                   <p>
                     {directReadyImages.length
                       ? "Согласованный вариант добавлен в выбранный кабинет Директа."
-                      : "Рита предложит сюжеты по вашему описанию. Вы сами выберете, какие варианты можно использовать в рекламе."}
+                      : approvedImages.length
+                        ? "Ниже уже собрана реклама с выбранной фотографией и текстом. Осталось добавить изображение в Директ."
+                        : "Рита предложит сюжеты по вашему описанию. Вы сами выберете, какие варианты можно использовать в рекламе."}
                   </p>
                   <small>
                     После подготовки материалов останется отдельный запуск в
@@ -4305,7 +4330,9 @@ function HostedPlanReview({
                   <Images size={16} />
                   {directReadyImages.length
                     ? "Проверить изображения"
-                    : "Подготовить изображения"}
+                    : approvedImages.length
+                      ? "Открыть изображения"
+                      : "Подготовить изображения"}
                 </button>
               </div>
               <div className="hosted-direct-stage">
@@ -4328,55 +4355,104 @@ function HostedPlanReview({
                   </div>
                 </div>
 
-                {approvedTexts.length >= 3 && selectedCreativeImage && (
+                {previewText && previewCreativeImage && (
                   <section
                     className="hosted-moderation-preview"
                     aria-labelledby="moderation-preview-title"
                   >
                     <header>
                       <div>
-                        <span className="eyebrow">ИТОГОВАЯ ПРОВЕРКА</span>
                         <h4 id="moderation-preview-title">
-                          Что уйдёт на модерацию Яндекса
+                          {approvedTexts.length >= 3 && previewImageIsInDirect
+                            ? "Готовое объявление перед модерацией"
+                            : "Так будет выглядеть ваша реклама"}
                         </h4>
                         <p>
-                          Фактические материалы запуска, а не декоративный
-                          макет.
+                          Согласованные фотография и текст собраны в одном
+                          месте. В Директ ничего не отправляется автоматически.
                         </p>
                       </div>
-                      <Badge tone="green">Материалы выбраны</Badge>
+                      <Badge
+                        tone={previewImageIsInDirect ? "green" : "neutral"}
+                      >
+                        {previewImageIsInDirect
+                          ? "Фото загружено"
+                          : "Материалы согласованы"}
+                      </Badge>
                     </header>
-                    <div className="hosted-moderation-content">
-                      <figure>
-                        {selectedCreativeImage.imageUrl && (
-                          <img
-                            src={selectedCreativeImage.imageUrl}
-                            alt={`Выбранное изображение для рекламы «${ws.state.name}»`}
-                          />
-                        )}
-                        <figcaption>
-                          <b>Изображение</b>
-                          <span>
-                            {selectedCreativeImage.width &&
-                            selectedCreativeImage.height
-                              ? `${selectedCreativeImage.width} × ${selectedCreativeImage.height}`
-                              : "Готовый файл"}
-                            {selectedCreativeImage.brandPlacement === "none"
-                              ? " · без надписи"
-                              : ` · название ${selectedCreativeImage.brandPlacement === "bottom-left" ? "слева" : "справа"}`}
-                          </span>
-                        </figcaption>
-                      </figure>
-                      <div className="hosted-moderation-copy">
-                        {approvedTexts.slice(0, 3).map((item, index) => (
-                          <article key={item.id}>
-                            <span>Вариант {index + 1}</span>
-                            <h5>{item.title.slice(0, 56)}</h5>
-                            <p>{item.text.slice(0, 81)}</p>
-                          </article>
-                        ))}
+                    <div
+                      className={`hosted-ad-direct-state ${
+                        allDirectionsCreated
+                          ? "complete"
+                          : createdDirections.length
+                            ? "partial"
+                            : "pending"
+                      }`}
+                      role="status"
+                    >
+                      {createdDirections.length ? (
+                        <CheckCircle2 size={18} />
+                      ) : (
+                        <Clock3 size={18} />
+                      )}
+                      <div>
+                        <b>
+                          {allDirectionsCreated
+                            ? "Объявление добавлено в Яндекс Директ"
+                            : createdDirections.length
+                              ? "Часть рекламы уже в Яндекс Директе"
+                              : "Объявление ещё не добавлено в Директ"}
+                        </b>
+                        <small>
+                          {allDirectionsCreated
+                            ? `Создана выключенная кампания${
+                                latestCreatedAt
+                                  ? ` ${new Date(latestCreatedAt).toLocaleString("ru-RU")}`
+                                  : ""
+                              }. Показы не идут. Отправка на модерацию выполняется отдельной кнопкой ниже.`
+                            : createdDirections.length
+                              ? `${createdDirections.length} из ${expectedChannelCount} направлений созданы выключенными. Показы не идут.`
+                              : "Сейчас материалы сохранены только в Ритме. Завершите шаги ниже, чтобы создать выключенную кампанию."}
+                        </small>
                       </div>
                     </div>
+                    <div className="hosted-ad-preview">
+                      <figure className="hosted-ad-preview-image">
+                        <img
+                          src={previewCreativeImage.imageUrl || ""}
+                          alt={`Согласованное изображение для рекламы «${ws.state.name}»`}
+                        />
+                      </figure>
+                      <div className="hosted-ad-preview-copy">
+                        <div className="hosted-ad-source">
+                          <span>Реклама</span>
+                          <b>{ws.state.name}</b>
+                        </div>
+                        <h5>{previewText.title.slice(0, 56)}</h5>
+                        <p>{previewText.text.slice(0, 81)}</p>
+                        <span className="hosted-ad-destination">
+                          {ws.state.website}
+                        </span>
+                      </div>
+                    </div>
+                    {approvedTexts.length > 1 && (
+                      <details className="hosted-ad-alternatives">
+                        <summary>
+                          Ещё {approvedTexts.length - 1} согласованн
+                          {approvedTexts.length - 1 === 1 ? "ый" : "ых"} вариант
+                          {approvedTexts.length - 1 === 1 ? "" : "а"} текста
+                        </summary>
+                        <div>
+                          {approvedTexts.slice(1, 3).map((item, index) => (
+                            <article key={item.id}>
+                              <span>Вариант {index + 2}</span>
+                              <h5>{item.title.slice(0, 56)}</h5>
+                              <p>{item.text.slice(0, 81)}</p>
+                            </article>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                     <dl className="hosted-moderation-facts">
                       <div>
                         <dt>Страница</dt>
@@ -4385,12 +4461,44 @@ function HostedPlanReview({
                       <div>
                         <dt>Как соберётся</dt>
                         <dd>
-                          {useNetwork
-                            ? "3 поисковых объявления и 1 адаптивное объявление в Рекламной сети"
-                            : "3 отдельных объявления в поиске"}
+                          {approvedTexts.length < 3
+                            ? `${approvedTexts.length} из 3 вариантов текста согласовано`
+                            : useNetwork
+                              ? "3 поисковых объявления и 1 адаптивное объявление в Рекламной сети"
+                              : "3 отдельных объявления в поиске"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Изображение</dt>
+                        <dd>
+                          {previewCreativeImage.width &&
+                          previewCreativeImage.height
+                            ? `${previewCreativeImage.width} × ${previewCreativeImage.height}`
+                            : "Готовый файл"}
+                          {previewCreativeImage.brandPlacement === "none"
+                            ? " · без названия"
+                            : ` · название ${previewCreativeImage.brandPlacement === "bottom-left" ? "слева" : "справа"}`}
                         </dd>
                       </div>
                     </dl>
+                    {!previewImageIsInDirect && (
+                      <footer className="hosted-ad-preview-next">
+                        <div>
+                          <b>Осталось добавить фотографию в Директ</b>
+                          <small>
+                            Материалы уже согласованы. Загрузка не запускает
+                            показы и не отправляет объявление на модерацию.
+                          </small>
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => navigate("creatives")}
+                        >
+                          Добавить в Директ <ArrowRight size={15} />
+                        </button>
+                      </footer>
+                    )}
                   </section>
                 )}
 
@@ -4412,7 +4520,7 @@ function HostedPlanReview({
                       Перейти к текстам <ArrowRight size={15} />
                     </button>
                   </div>
-                ) : directReadyImages.length === 0 ? (
+                ) : approvedImages.length === 0 ? (
                   <div className="hosted-direct-action">
                     <div>
                       <b>Выберите изображение для рекламы</b>
@@ -4429,7 +4537,7 @@ function HostedPlanReview({
                       Подготовить изображение <ArrowRight size={15} />
                     </button>
                   </div>
-                ) : !regionId ? (
+                ) : directReadyImages.length === 0 ? null : !regionId ? (
                   <div className="inline-error" role="alert">
                     Для города «{ws.state.city}» пока не найден точный регион
                     Директа. Добавьте выбор региона перед подготовкой кампании.

@@ -102,25 +102,33 @@ Neon Function: RITM_WORKER_TOKEN
 RITM_WORKER_URL=https://<домен>/api/internal/autopilot/tick
 ```
 
-Создайте schedule-trigger с интервалом не реже минуты. Cron только будит
+Production-конфигурация использует функцию `autopilotcron` и schedule-trigger
+`ritm-autopilot-every-15-min` с выражением `*/15 * * * *`. Cron только будит
 очереди. Он не обходит `LIVE_ADS_ENABLED`, `AUTOPILOT_ENABLED` и pilot-флаги.
+
+Проверяйте не только наличие trigger, но и реальную доставку:
+
+```sh
+neon triggers list --branch main --output json
+neon logs query --branch main --source function --since 30m
+```
 
 Проверка ручным `curl` с неверным токеном должна вернуть 401. Действующий токен
 не печатайте в логи или переписку.
 
 ## 5. Флаги внешних записей
 
-| Флаг | Что разрешает |
-| --- | --- |
-| `LIVE_ADS_ENABLED` | Общий production-gate. Требует HTTPS, production и постоянный ключ шифрования |
-| `DIRECT_WRITE_PILOT_ENABLED` | Создание выключенной кампании, группы, фраз и объявлений |
-| `DIRECT_IMAGE_UPLOAD_PILOT_ENABLED` | Загрузку согласованного изображения в библиотеку Директа |
-| `DIRECT_MODERATION_PILOT_ENABLED` | Отправку сверенных объявлений на модерацию |
-| `DIRECT_RESUME_PILOT_ENABLED` | Одноразовый запуск показов после всех проверок |
-| `AUTOPILOT_ENABLED` | Budget Guard, остановку неэффективного направления и применение подготовленного перераспределения |
-| `DIRECT_AB_VARIANT_PILOT_ENABLED` | Создание варианта Б в сверенной выключенной группе |
-| `DIRECT_AB_DECISION_PILOT_ENABLED` | Применение финального A/B-решения |
-| `DIRECT_ARCHIVE_PILOT_ENABLED` | Отдельную необратимую архивацию |
+| Флаг                                | Что разрешает                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `LIVE_ADS_ENABLED`                  | Общий production-gate. Требует HTTPS, production и постоянный ключ шифрования                     |
+| `DIRECT_WRITE_PILOT_ENABLED`        | Создание выключенной кампании, группы, фраз и объявлений                                          |
+| `DIRECT_IMAGE_UPLOAD_PILOT_ENABLED` | Загрузку согласованного изображения в библиотеку Директа                                          |
+| `DIRECT_MODERATION_PILOT_ENABLED`   | Отправку сверенных объявлений на модерацию                                                        |
+| `DIRECT_RESUME_PILOT_ENABLED`       | Одноразовый запуск показов после всех проверок                                                    |
+| `AUTOPILOT_ENABLED`                 | Budget Guard, остановку неэффективного направления и применение подготовленного перераспределения |
+| `DIRECT_AB_VARIANT_PILOT_ENABLED`   | Создание варианта Б в сверенной выключенной группе                                                |
+| `DIRECT_AB_DECISION_PILOT_ENABLED`  | Применение финального A/B-решения                                                                 |
+| `DIRECT_ARCHIVE_PILOT_ENABLED`      | Отдельную необратимую архивацию                                                                   |
 
 `render.yaml` не включает платный запуск. Меняйте флаги по одному и только после
 прохождения соответствующего шага из [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md).

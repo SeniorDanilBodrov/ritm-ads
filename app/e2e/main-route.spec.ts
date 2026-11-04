@@ -19,7 +19,10 @@ async function openDemo(page: Page) {
 
 async function mockApprovedAdPreview(
   page: Page,
-  { inDirect = true }: { inDirect?: boolean } = {},
+  {
+    inDirect = true,
+    duplicateBlocked = false,
+  }: { inDirect?: boolean; duplicateBlocked?: boolean } = {},
 ) {
   const approvedAt = "2026-11-04T10:00:00.000Z";
   const image = encodeURIComponent(`
@@ -204,6 +207,20 @@ async function mockApprovedAdPreview(
         },
       },
     ];
+    if (duplicateBlocked) {
+      data.directChanges[0].execution = null;
+      data.directChanges[0].preflight = {
+        ready: false,
+        findings: [
+          {
+            severity: "blocker",
+            code: "duplicate_campaign",
+            message:
+              "В рекламном кабинете уже есть кампания с таким названием.",
+          },
+        ],
+      };
+    }
     await route.fulfill({ response, json: data });
   });
 
@@ -415,4 +432,38 @@ test("кнопка в готовом объявлении добавляет и�
   await expect(
     page.getByText("Изображение добавлено в Директ. Показы не запущены."),
   ).toBeVisible();
+});
+
+test("обновлённый план с фотографией не повторяет имя старого черновика", async ({
+  page,
+}) => {
+  await openDemo(page);
+  await mockApprovedAdPreview(page, { duplicateBlocked: true });
+
+  let preparedPlan: Record<string, unknown> | null = null;
+  await page.route("**/api/businesses/*/direct/dry-run", async (route) => {
+    preparedPlan = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "succeeded" }),
+    });
+  });
+  await page.reload();
+
+  await page
+    .getByRole("button", { name: "План и запуск", exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByText("В рекламном кабинете уже есть кампания с таким названием."),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Подготовить именно эти материалы" })
+    .click();
+
+  await expect.poll(() => preparedPlan).not.toBeNull();
+  const campaignName = String(preparedPlan?.campaignName || "");
+  expect(campaignName).toMatch(/ · Поиск · фото /);
+  expect(campaignName).not.toBe("Студия «Форма» · Поиск");
 });

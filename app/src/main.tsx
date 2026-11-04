@@ -62,6 +62,7 @@ import type {
   Business,
   Change,
   Campaign,
+  DirectChange,
   DirectPlan,
   DirectNetworkPlan,
   AnyDirectPlan,
@@ -3897,6 +3898,22 @@ function HostedPlanReview({
       `ritm:direct-image:${ws.id}:${previewCreativeImage.id}:${directLogin}`,
     ),
   );
+  const searchCampaignName = versionedCampaignName(
+    `${ws.state.name} · Поиск`,
+    creativeAssetId,
+  );
+  const networkCampaignName = versionedCampaignName(
+    `${ws.state.name} · Рекламная сеть`,
+    creativeAssetId,
+  );
+  const isSupersededDuplicate = (item: DirectChange, expectedName: string) =>
+    item.execution?.status !== "succeeded" &&
+    item.plan?.campaignName !== expectedName &&
+    Boolean(
+      item.preflight?.findings.some(
+        (finding) => finding.code === "duplicate_campaign",
+      ),
+    );
   useEffect(() => {
     if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
     setCreativeAssetId(directReadyImages[0]?.id || "");
@@ -3922,6 +3939,7 @@ function HostedPlanReview({
     if (item.plan.channel === "network")
       return (
         useNetwork &&
+        !isSupersededDuplicate(item, networkCampaignName) &&
         item.plan.budget === networkBudget &&
         item.plan.creativeAssetId === creativeAssetId &&
         item.plan.ads.every(
@@ -3939,6 +3957,7 @@ function HostedPlanReview({
         )
       );
     return (
+      !isSupersededDuplicate(item, searchCampaignName) &&
       item.plan.budget === searchBudget &&
       (creativeAssetId
         ? item.plan.creativeAssetId === creativeAssetId
@@ -4017,7 +4036,7 @@ function HostedPlanReview({
     setLocalError("");
     const searchPlan: DirectPlan = {
       login: yandex.clients[0].Login,
-      campaignName: `${ws.state.name} · Поиск`.slice(0, 255),
+      campaignName: searchCampaignName,
       website: ws.state.website,
       audience: plan.plan.audiences.map((item) => item.name).join("; "),
       regionIds: [regionId],
@@ -4039,7 +4058,7 @@ function HostedPlanReview({
     const networkPlan: DirectNetworkPlan = {
       channel: "network",
       login: yandex.clients[0].Login,
-      campaignName: `${ws.state.name} · Рекламная сеть`.slice(0, 255),
+      campaignName: networkCampaignName,
       website: ws.state.website,
       audience: plan.plan.audiences.map((item) => item.name).join("; "),
       regionIds: [regionId],
@@ -5325,6 +5344,13 @@ const daysBetween = (start: string, end: string) =>
   (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) /
     86_400_000 +
   1;
+
+function versionedCampaignName(base: string, creativeAssetId: string) {
+  if (!creativeAssetId) return base.slice(0, 255);
+  const revision = creativeAssetId.replace(/[^a-z0-9]/gi, "").slice(0, 8);
+  const suffix = ` · фото ${revision || "новое"}`;
+  return `${base.slice(0, 255 - suffix.length)}${suffix}`;
+}
 
 function nextCampaignPeriod(previousStart = "", previousEnd = "") {
   const savedLength = daysBetween(previousStart, previousEnd);

@@ -90,7 +90,7 @@ test("PostgreSQL creative flow encrypts, queues, stores and serves an approved i
     businessId,
     randomUUID(),
     input,
-    { model: "gpt-image-2-5-flare-text-to-image", dailyLimit: 3 },
+    { model: "gpt-image-2-5-flare-text-to-image" },
   );
   assert.equal(queued.status, "pending");
   assert.equal(JSON.stringify(queued).includes(apiKey), false);

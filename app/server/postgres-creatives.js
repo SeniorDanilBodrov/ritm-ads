@@ -76,7 +76,7 @@ export async function enqueuePostgresCreativeImage(
   businessId,
   idempotencyKey,
   rawInput,
-  { model, dailyLimit = 3, now = Date.now() },
+  { model, now = Date.now() },
 ) {
   const input = creativeImageSchema.parse(rawInput);
   return db.transaction(async (tx) => {
@@ -111,19 +111,6 @@ export async function enqueuePostgresCreativeImage(
         );
       return creativeImageView(existing);
     }
-
-    const since = new Date(now - 86_400_000).toISOString();
-    const count = await tx
-      .prepare(
-        "SELECT count(*) AS n FROM creative_assets WHERE business_id=? AND created_at>=?",
-      )
-      .get(business.id, since);
-    if (Number(count?.n || 0) >= dailyLimit)
-      throw new AppError(
-        429,
-        `Дневной лимит генерации: ${dailyLimit}. Попробуйте позже.`,
-        "creative_daily_limit",
-      );
 
     const id = randomUUID();
     const at = new Date(now).toISOString();

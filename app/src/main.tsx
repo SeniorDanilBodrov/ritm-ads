@@ -8881,9 +8881,6 @@ function Creatives({
                 попадёт без моей проверки.
               </span>
             </label>
-            <small className="muted">
-              Не более трёх вариантов на бизнес за 24 часа.
-            </small>
           </form>
         ) : (
           <form

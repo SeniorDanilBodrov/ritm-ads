@@ -2220,7 +2220,6 @@ export function createApp({
         requestKey,
         req.body,
         {
-          dailyLimit: config.creativeDailyLimit,
           provider: kie ? "kie" : "local-openvino",
           model: kie ? config.kieImageModel : config.localImageModel,
         },

@@ -67,10 +67,6 @@ const config = {
     process.env.LOCAL_IMAGE_MODEL || "OpenVINO/stable-diffusion-v1-5-int8-ov",
   kieImageModel:
     process.env.KIE_IMAGE_MODEL || "gpt-image-2-5-flare-text-to-image",
-  creativeDailyLimit: Math.max(
-    1,
-    Math.min(10, Number(process.env.CREATIVE_DAILY_LIMIT) || 3),
-  ),
   assetStoragePath: process.env.ASSET_STORAGE_PATH || "./data/creative-assets",
   creativeRetentionDays: Math.max(
     0,

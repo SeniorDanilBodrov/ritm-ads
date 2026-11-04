@@ -288,18 +288,12 @@ test("local Qwen enhancer turns a Russian brief into a bounded English photo pro
   assert.equal(request.body.think, false);
 });
 
-test("creative queue is idempotent, isolated and rate limited", () => {
+test("creative queue is idempotent, isolated and has no daily generation cap", () => {
   const { db, userId, businessId } = liveDb(),
     now = Date.UTC(2026, 9, 28, 12),
     key = randomUUID(),
-    first = enqueueCreativeImage(db, userId, businessId, key, input, {
-      dailyLimit: 2,
-      now,
-    }),
-    again = enqueueCreativeImage(db, userId, businessId, key, input, {
-      dailyLimit: 2,
-      now,
-    });
+    first = enqueueCreativeImage(db, userId, businessId, key, input, { now }),
+    again = enqueueCreativeImage(db, userId, businessId, key, input, { now });
   assert.equal(first.id, again.id);
   assert.equal(db.prepare("SELECT count(*) AS n FROM jobs").get().n, 1);
   const compiledPrompt = db
@@ -317,21 +311,24 @@ test("creative queue is idempotent, isolated and rate limited", () => {
         businessId,
         key,
         { ...input, seed: 43 },
-        { dailyLimit: 2, now },
+        { now },
       ),
     /другого изображения/,
   );
-  enqueueCreativeImage(db, userId, businessId, randomUUID(), input, {
-    dailyLimit: 2,
-    now,
-  });
-  assert.throws(
-    () =>
-      enqueueCreativeImage(db, userId, businessId, randomUUID(), input, {
-        dailyLimit: 2,
-        now,
-      }),
-    /Дневной лимит/,
+  for (let index = 0; index < 5; index += 1)
+    enqueueCreativeImage(
+      db,
+      userId,
+      businessId,
+      randomUUID(),
+      { ...input, seed: 100 + index },
+      { now },
+    );
+  assert.equal(
+    db
+      .prepare("SELECT count(*) AS n FROM creative_assets WHERE business_id=?")
+      .get(businessId).n,
+    6,
   );
   assert.deepEqual(creativeImages(db, randomUUID()), []);
   db.close();

@@ -738,12 +738,7 @@ export function enqueueCreativeImage(
   businessId,
   idempotencyKey,
   rawInput,
-  {
-    provider = "local-openvino",
-    model = MODEL,
-    dailyLimit = 3,
-    now = Date.now(),
-  } = {},
+  { provider = "local-openvino", model = MODEL, now = Date.now() } = {},
 ) {
   const input = creativeImageSchema.parse(rawInput);
   return transaction(db, () => {
@@ -778,18 +773,6 @@ export function enqueueCreativeImage(
         );
       return creativeImageView(existing);
     }
-    const since = new Date(now - 86_400_000).toISOString(),
-      used = db
-        .prepare(
-          "SELECT count(*) AS n FROM creative_assets WHERE business_id=? AND created_at>=?",
-        )
-        .get(business.id, since).n;
-    if (used >= dailyLimit)
-      throw new AppError(
-        429,
-        `Дневной лимит генерации: ${dailyLimit}. Попробуйте позже.`,
-        "creative_daily_limit",
-      );
     const id = randomUUID(),
       at = new Date(now).toISOString(),
       seed = input.seed ?? Math.floor(Math.random() * 2_147_483_648),

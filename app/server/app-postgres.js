@@ -2210,7 +2210,6 @@ export function createPostgresApp({
           req.body,
           {
             model: config.kieImageModel,
-            dailyLimit: config.creativeDailyLimit,
           },
         ),
       );

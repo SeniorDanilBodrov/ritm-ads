@@ -91,7 +91,10 @@ async function campaignBundle(
   if (row.connection_id !== currentConnectionId)
     throw new AppError(409, "Кабинет изменился после создания кампании.");
   const plan = JSON.parse(row.plan_json);
-  if (Number.isSafeInteger(Number(row.limit_kopecks)) && Number(row.limit_kopecks) > 0)
+  if (
+    Number.isSafeInteger(Number(row.limit_kopecks)) &&
+    Number(row.limit_kopecks) > 0
+  )
     plan.budget = Number(row.limit_kopecks);
   const calls = JSON.parse(row.calls_json);
   const ids = Object.fromEntries(calls.map((item) => [item.key, item.ids]));
@@ -99,11 +102,12 @@ async function campaignBundle(
   const adIds = ids.ads || [];
   const keywordIds = ids.keywords || [];
   const groupIds = ids.adgroup || [];
+  const network = plan.channel === "network";
   if (
     !Number.isSafeInteger(campaignId) ||
     campaignId <= 0 ||
     !adIds.length ||
-    !keywordIds.length ||
+    (!network && !keywordIds.length) ||
     !groupIds.length
   )
     throw new AppError(409, "Не все ID кампании подтверждены.");
@@ -114,6 +118,7 @@ async function campaignBundle(
     adIds,
     keywordIds,
     groupIds,
+    network,
     expectedAds: plan.ads.map((ad, index) => ({
       ...ad,
       adId: adIds[index],
@@ -121,11 +126,12 @@ async function campaignBundle(
   };
 }
 
-function periodBudget(remote) {
+function periodBudget(remote, network = false) {
   const strategy =
     remote.UnifiedCampaign?.BiddingStrategy ||
     remote.TextCampaign?.BiddingStrategy;
-  const period = strategy?.Search?.WbMaximumClicks?.CustomPeriodBudget;
+  const placement = network ? strategy?.Network : strategy?.Search;
+  const period = placement?.WbMaximumClicks?.CustomPeriodBudget;
   const micros = period?.SpendLimit;
   return {
     strategy,
@@ -137,12 +143,36 @@ function periodBudget(remote) {
   };
 }
 
+function strategyMatchesPlan(strategy, network) {
+  if (network)
+    return (
+      strategy?.Search?.BiddingStrategyType === "SERVING_OFF" &&
+      strategy?.Network?.BiddingStrategyType === "WB_MAXIMUM_CLICKS" &&
+      strategy?.Network?.PlacementTypes?.Network === "YES" &&
+      strategy?.Network?.PlacementTypes?.Maps === "NO"
+    );
+  return (
+    strategy?.Search?.BiddingStrategyType === "WB_MAXIMUM_CLICKS" &&
+    strategy?.Network?.BiddingStrategyType === "SERVING_OFF"
+  );
+}
+
+function responsiveImageHashes(ad) {
+  const values =
+    ad?.ResponsiveAd?.AdImages || ad?.ResponsiveAd?.AdImageHashes || [];
+  return values
+    .map((item) =>
+      typeof item === "string" ? item : item?.AdImageHash || item?.Hash,
+    )
+    .filter(Boolean);
+}
+
 async function spendEvidence(db, businessId, login, campaignId, plan, now) {
   const row = await db
     .prepare(
       `SELECT date_from,date_to,received_at,rows_json
        FROM report_snapshots
-       WHERE business_id=? AND source='yandex' AND login=?
+       WHERE business_id=? AND scope='campaign' AND source='yandex' AND login=?
        ORDER BY received_at DESC,id DESC LIMIT 1`,
     )
     .get(businessId, login);
@@ -223,7 +253,9 @@ export async function inspectPostgresDirectControl(
       client.campaignBudgetById(bundle.campaignId),
       client.adGroupsByIds(bundle.groupIds),
       client.adsByIds(bundle.adIds),
-      client.keywordsByIds(bundle.keywordIds),
+      bundle.keywordIds.length
+        ? client.keywordsByIds(bundle.keywordIds)
+        : Promise.resolve({ Keywords: [] }),
     ]);
   const campaigns = campaignResult?.Campaigns;
   const groups = groupsResult?.AdGroups;
@@ -238,7 +270,7 @@ export async function inspectPostgresDirectControl(
   )
     throw new AppError(502, "Директ не вернул полный состав кампании.");
   const remote = campaigns[0];
-  const budget = periodBudget(remote);
+  const budget = periodBudget(remote, bundle.network);
   const spend = await spendEvidence(
     db,
     businessId,
@@ -249,6 +281,14 @@ export async function inspectPostgresDirectControl(
   );
   const blockers = [];
   const date = moscowDate(now);
+  const expectedCampaignType = bundle.network
+    ? "UNIFIED_CAMPAIGN"
+    : "TEXT_CAMPAIGN";
+  const expectedGroupType = bundle.network
+    ? "UNIFIED_AD_GROUP"
+    : "TEXT_AD_GROUP";
+  if (remote.Type !== expectedCampaignType || remote.Currency !== "RUB")
+    blockers.push("campaign_contract_changed");
   if (date < bundle.plan.periodStart) blockers.push("period_not_started");
   if (date > bundle.plan.periodEnd) blockers.push("period_ended");
   try {
@@ -262,8 +302,7 @@ export async function inspectPostgresDirectControl(
     blockers.push("website_changed");
   }
   if (
-    budget.strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
-    budget.strategy?.Network?.BiddingStrategyType !== "SERVING_OFF" ||
+    !strategyMatchesPlan(budget.strategy, bundle.network) ||
     budget.limitKopecks !== bundle.plan.budget ||
     budget.period?.StartDate !== bundle.plan.periodStart ||
     budget.period?.EndDate !== bundle.plan.periodEnd ||
@@ -279,7 +318,9 @@ export async function inspectPostgresDirectControl(
     blockers.push("payment_not_confirmed");
   if (
     groups.some(
-      (group) => String(group.CampaignId) !== String(bundle.campaignId),
+      (group) =>
+        String(group.CampaignId) !== String(bundle.campaignId) ||
+        (group.Type && group.Type !== expectedGroupType),
     )
   )
     blockers.push("group_mismatch");
@@ -300,6 +341,7 @@ export async function inspectPostgresDirectControl(
   )
     blockers.push("ads_not_ready");
   if (
+    bundle.keywordIds.length &&
     keywords.some(
       (keyword) =>
         String(keyword.CampaignId) !== String(bundle.campaignId) ||
@@ -439,25 +481,38 @@ export async function inspectPostgresModerationReadiness(
     changeId,
     currentConnectionId,
   );
-  const [campaignResult, adsResult, keywordsResult, markingResponse] =
-    await Promise.all([
-      client.campaignBudgetById(bundle.campaignId),
-      client.adsByIds(bundle.adIds),
-      client.keywordsByIds(bundle.keywordIds),
-      client.advertiserMarkingDetails(),
-    ]);
+  const [
+    campaignResult,
+    groupsResult,
+    adsResult,
+    keywordsResult,
+    markingResponse,
+  ] = await Promise.all([
+    client.campaignBudgetById(bundle.campaignId),
+    bundle.network
+      ? client.adGroupsByIds(bundle.groupIds)
+      : Promise.resolve({ AdGroups: [] }),
+    client.adsByIds(bundle.adIds),
+    bundle.keywordIds.length
+      ? client.keywordsByIds(bundle.keywordIds)
+      : Promise.resolve({ Keywords: [] }),
+    client.advertiserMarkingDetails(),
+  ]);
   const campaigns = campaignResult?.Campaigns;
+  const groups = groupsResult?.AdGroups;
   const ads = adsResult?.Ads;
   const keywords = keywordsResult?.Keywords;
   if (!sameIds([bundle.campaignId], campaigns))
     throw new AppError(502, "Директ не вернул созданную кампанию.");
+  if (bundle.network && !sameIds(bundle.groupIds, groups))
+    throw new AppError(502, "Директ не вернул группу сетевой кампании.");
   if (!sameIds(bundle.adIds, ads) || !sameIds(bundle.keywordIds, keywords))
     throw new AppError(
       502,
       "Директ не вернул полный состав объявлений и фраз.",
     );
   const remote = campaigns[0];
-  const budget = periodBudget(remote);
+  const budget = periodBudget(remote, bundle.network);
   const marking = summarizeDirectMarking(markingResponse, now);
   const blockers = [];
   if (!(
@@ -466,16 +521,24 @@ export async function inspectPostgresModerationReadiness(
   ))
     blockers.push("campaign_not_held");
   if (
-    !["TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN"].includes(remote.Type) ||
+    remote.Type !== (bundle.network ? "UNIFIED_CAMPAIGN" : "TEXT_CAMPAIGN") ||
     remote.Currency !== "RUB" ||
-    budget.strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
-    budget.strategy?.Network?.BiddingStrategyType !== "SERVING_OFF" ||
+    !strategyMatchesPlan(budget.strategy, bundle.network) ||
     budget.limitKopecks !== bundle.plan.budget ||
     budget.period?.StartDate !== bundle.plan.periodStart ||
     budget.period?.EndDate !== bundle.plan.periodEnd ||
     budget.period?.AutoContinue !== "NO"
   )
     blockers.push("budget_drift");
+  if (
+    bundle.network &&
+    groups.some(
+      (group) =>
+        String(group.CampaignId) !== String(bundle.campaignId) ||
+        group.Type !== "UNIFIED_AD_GROUP",
+    )
+  )
+    blockers.push("group_contract_changed");
   if (bundle.plan.periodEnd < moscowDate(now)) blockers.push("period_ended");
   try {
     if (
@@ -509,19 +572,26 @@ export async function inspectPostgresModerationReadiness(
         ad.ResponsiveAd?.Texts?.map((item) => item.Text) ||
         (ad.TextAd ? [ad.TextAd.Text] : []);
       const href = ad.ResponsiveAd?.Href || ad.TextAd?.Href;
-      const expectedTitles = planned
-        ? [planned.title, planned.title.replace(/\s*·\s*/g, ", ")]
-        : [];
+      const expectedTitles =
+        planned?.titles ||
+        (planned
+          ? [planned.title, planned.title.replace(/\s*·\s*/g, ", ")]
+          : []);
+      const expectedTexts = planned?.texts || (planned ? [planned.text] : []);
+      const expectedHashes = planned?.adImageHashes || [];
+      const remoteHashes = responsiveImageHashes(ad);
       return (
         !planned ||
-        !titles.some((title) => expectedTitles.includes(title)) ||
-        !texts.includes(planned.text) ||
+        !expectedTitles.every((title) => titles.includes(title)) ||
+        !expectedTexts.every((text) => texts.includes(text)) ||
+        !expectedHashes.every((hash) => remoteHashes.includes(hash)) ||
         href !== planned.href
       );
     })
   )
     blockers.push("ad_content_changed");
   if (
+    bundle.keywordIds.length &&
     keywords.some(
       (item) =>
         String(item.CampaignId) !== String(bundle.campaignId) ||

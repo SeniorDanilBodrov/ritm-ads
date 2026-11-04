@@ -389,7 +389,7 @@ export class DirectClient {
       SelectionCriteria: { AdGroupIds: [directId(id)] },
       FieldNames: ["Id", "AdGroupId", "State", "Status", "Type"],
       TextAdFieldNames: ["Title", "Title2", "Text", "Href", "AdImageHash"],
-      ResponsiveAdFieldNames: ["Titles", "Texts", "Href"],
+      ResponsiveAdFieldNames: ["Titles", "Texts", "Href", "AdImages"],
     });
   }
   keywordsByAdGroupId(id) {
@@ -405,7 +405,7 @@ export class DirectClient {
       SelectionCriteria: { Ids: ids.map(directId) },
       FieldNames: ["Id", "CampaignId", "AdGroupId", "State", "Status", "Type"],
       TextAdFieldNames: ["Title", "Title2", "Text", "Href", "AdImageHash"],
-      ResponsiveAdFieldNames: ["Titles", "Texts", "Href"],
+      ResponsiveAdFieldNames: ["Titles", "Texts", "Href", "AdImages"],
     });
   }
   moderateAds(ids) {

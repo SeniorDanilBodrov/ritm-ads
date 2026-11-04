@@ -21,6 +21,8 @@ export const unifiedNetworkPlanSchema = z
     periodStart: isoDate,
     periodEnd: isoDate,
     counterId: z.string().regex(/^\d+$/).optional(),
+    goalId: z.string().regex(/^\d+$/).optional(),
+    creativeAssetId: z.string().uuid().optional(),
     ads: z
       .array(
         z

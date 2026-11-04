@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertPostgresNetworkReach,
   assertPostgresSearchReach,
   assertSupportedYandexChannel,
 } from "../server/postgres-direct-reach.js";
@@ -41,10 +42,35 @@ test("PostgreSQL reach requires three distinct ads and phrases", () => {
   );
 });
 
-test("network placement stays fail-closed until it has an independent cap", () => {
+test("network reach requires varied responsive copy and an approved image", () => {
+  assert.deepEqual(
+    assertPostgresNetworkReach({
+      regionIds: [54],
+      ads: [
+        {
+          titles: ["Маникюр рядом", "Бережное покрытие", "Время для себя"],
+          texts: [
+            "Выберите удобное время онлайн",
+            "Маникюр с вниманием к деталям",
+            "Запишитесь в студию в Екатеринбурге",
+          ],
+          adImageHashes: ["image_hash"],
+        },
+      ],
+    }),
+    {
+      channel: "network",
+      titles: 3,
+      texts: 3,
+      images: 1,
+      regions: 1,
+      ready: true,
+    },
+  );
   assert.equal(assertSupportedYandexChannel("search"), "search");
+  assert.equal(assertSupportedYandexChannel("network"), "network");
   assert.throws(
-    () => assertSupportedYandexChannel("network"),
-    (error) => error?.code === "network_channel_not_ready",
+    () => assertSupportedYandexChannel("video"),
+    (error) => error?.code === "channel_unsupported",
   );
 });

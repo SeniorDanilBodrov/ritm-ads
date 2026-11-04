@@ -33,11 +33,7 @@ export function assertPostgresSearchReach(plan) {
       "reach_keywords_missing",
     );
   if (!uniqueRegions.size)
-    throw new AppError(
-      409,
-      "Не выбран регион показа.",
-      "reach_region_missing",
-    );
+    throw new AppError(409, "Не выбран регион показа.", "reach_region_missing");
   return {
     channel: "search",
     ads: uniqueAds.size,
@@ -47,15 +43,51 @@ export function assertPostgresSearchReach(plan) {
   };
 }
 
-// Network traffic has materially different inventory and must not silently
-// share a search-only strategy. This explicit guard keeps the budget closed
-// until a separate network campaign and its own read-back are implemented.
-export function assertSupportedYandexChannel(channel) {
-  if (channel !== "search")
+export function assertPostgresNetworkReach(plan) {
+  if (!plan || typeof plan !== "object")
+    throw new AppError(400, "План охвата не найден.", "reach_plan_missing");
+  const ads = Array.isArray(plan.ads) ? plan.ads : [];
+  const regions = Array.isArray(plan.regionIds) ? plan.regionIds : [];
+  const titles = new Set(
+    ads.flatMap((ad) => (ad?.titles || []).map(normalize)).filter(Boolean),
+  );
+  const texts = new Set(
+    ads.flatMap((ad) => (ad?.texts || []).map(normalize)).filter(Boolean),
+  );
+  const images = new Set(
+    ads.flatMap((ad) => ad?.adImageHashes || []).filter(Boolean),
+  );
+  const uniqueRegions = new Set(regions.filter(Number.isSafeInteger));
+  if (titles.size < 3 || texts.size < 3)
     throw new AppError(
       409,
-      "Показы в сетях требуют отдельной кампании и отдельного лимита. Этот канал пока не подготовлен к безопасному запуску.",
-      "network_channel_not_ready",
+      "Для Рекламной сети согласуйте минимум три заголовка и три текста.",
+      "reach_ads_missing",
+    );
+  if (!images.size)
+    throw new AppError(
+      409,
+      "Для Рекламной сети выберите согласованное изображение.",
+      "reach_images_missing",
+    );
+  if (!uniqueRegions.size)
+    throw new AppError(409, "Не выбран регион показа.", "reach_region_missing");
+  return {
+    channel: "network",
+    titles: titles.size,
+    texts: texts.size,
+    images: images.size,
+    regions: uniqueRegions.size,
+    ready: true,
+  };
+}
+
+export function assertSupportedYandexChannel(channel) {
+  if (!["search", "network"].includes(channel))
+    throw new AppError(
+      400,
+      "Неизвестный рекламный канал.",
+      "channel_unsupported",
     );
   return channel;
 }

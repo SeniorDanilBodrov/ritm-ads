@@ -6,6 +6,7 @@ import {
   unifiedNetworkPlanSchema,
 } from "../server/direct-unified-network.js";
 import { executeDirectCommands } from "../server/direct.js";
+import { evaluateDirectPreflight } from "../server/direct.js";
 
 function plan() {
   return {
@@ -229,4 +230,38 @@ test("network read-back verifies the responsive image hashes", async () => {
   const result = await reconcileUnifiedNetworkObjects(client, calls, input);
   assert.equal(result.status, "matched");
   assert.equal(result.matched, true);
+});
+
+test("network preflight verifies its independent cap and disabled search", () => {
+  const input = { ...plan(), goalId: "991" };
+  const built = buildUnifiedNetworkCommands(input);
+  const report = evaluateDirectPreflight(
+    {
+      state: {
+        mode: "live",
+        landingMode: "website",
+        website: input.website,
+        counterId: input.counterId,
+        goalId: input.goalId,
+      },
+    },
+    {
+      id: "network-change",
+      mode: "dry_run",
+      status: "succeeded",
+      plan: built.plan,
+      commands: built.commands,
+      reconciliation: { status: "prepared" },
+    },
+    {
+      clients: [{ Login: input.login, Currency: "RUB", ClientId: 12 }],
+      campaigns: [],
+      connectionId: "connection",
+      now: Date.parse("2026-11-05T00:00:00Z"),
+    },
+  );
+  assert.equal(report.ready, true);
+  assert.equal(report.plan.channel, "network");
+  assert.equal(report.plan.keywords, 0);
+  assert.deepEqual(report.findings, []);
 });

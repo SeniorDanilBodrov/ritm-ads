@@ -7,6 +7,11 @@ import {
   reconcileDirectObjects,
 } from "./direct.js";
 import { reconcileUnifiedNetworkObjects } from "./direct-unified-network.js";
+import {
+  assertPostgresNetworkReach,
+  assertPostgresSearchReach,
+} from "./postgres-direct-reach.js";
+import { buildUnifiedNetworkCommands } from "./direct-unified-network.js";
 import { approvedDirectImageHash } from "./postgres-direct-images.js";
 
 const fingerprint = (value) =>
@@ -272,23 +277,44 @@ export async function preparePostgresDirectPlan(
         "Согласуйте хотя бы один текст объявления.",
         "creative_not_approved",
       );
-    if (
-      !input?.ads?.length ||
-      input.ads.some(
-        (ad) =>
-          !approved.some(
-            (creative) =>
-              creative.title.slice(0, 56) === ad.title &&
-              creative.text.slice(0, 81) === ad.text,
-          ),
-      )
-    )
+    const network = input?.channel === "network";
+    const approvedTitles = new Set(
+      approved.map((creative) => creative.title.slice(0, 56)),
+    );
+    const approvedTexts = new Set(
+      approved.map((creative) => creative.text.slice(0, 81)),
+    );
+    const creativesChanged = network
+      ? !input?.ads?.length ||
+        input.ads.some(
+          (ad) =>
+            !ad?.titles?.length ||
+            !ad?.texts?.length ||
+            ad.titles.some((title) => !approvedTitles.has(title)) ||
+            ad.texts.some((text) => !approvedTexts.has(text)),
+        )
+      : !input?.ads?.length ||
+        input.ads.some(
+          (ad) =>
+            !approved.some(
+              (creative) =>
+                creative.title.slice(0, 56) === ad.title &&
+                creative.text.slice(0, 81) === ad.text,
+            ),
+        );
+    if (creativesChanged)
       throw new AppError(
         409,
         "В плане можно использовать только согласованные тексты.",
         "creative_changed",
       );
     let resolvedInput = input;
+    if (network && !input?.creativeAssetId)
+      throw new AppError(
+        409,
+        "Для Рекламной сети выберите согласованное изображение.",
+        "creative_image_missing",
+      );
     if (input?.creativeAssetId) {
       if (!directContext?.connectionId)
         throw new AppError(
@@ -304,12 +330,24 @@ export async function preparePostgresDirectPlan(
         directContext.connectionId,
         input.login,
       );
-      resolvedInput = {
-        ...input,
-        ads: input.ads.map((ad) => ({ ...ad, adImageHash })),
-      };
+      resolvedInput = network
+        ? {
+            ...input,
+            ads: input.ads.map((ad) => ({
+              ...ad,
+              adImageHashes: [adImageHash],
+            })),
+          }
+        : {
+            ...input,
+            ads: input.ads.map((ad) => ({ ...ad, adImageHash })),
+          };
     }
-    const built = buildDirectCommands(resolvedInput);
+    if (network) assertPostgresNetworkReach(resolvedInput);
+    else assertPostgresSearchReach(resolvedInput);
+    const built = network
+      ? buildUnifiedNetworkCommands(resolvedInput)
+      : buildDirectCommands(resolvedInput);
     const existing = await tx
       .prepare(
         `SELECT dc.*,j.status,j.attempts,j.available_at,j.error
@@ -373,7 +411,9 @@ export async function preparePostgresDirectPlan(
     await addEvent(tx, business.id, {
       kind: "direct_plan",
       title: "Подготовлен план кампании",
-      reason: `${built.summary.ads} объявлений и ${built.summary.keywords} фраз. В Директе ничего не менялось.`,
+      reason: network
+        ? `${built.summary.ads} комбинаторных объявлений для Рекламной сети. В Директе ничего не менялось.`
+        : `${built.summary.ads} объявлений и ${built.summary.keywords} фраз. В Директе ничего не менялось.`,
       rule: built.schema,
       jobId: id,
     });

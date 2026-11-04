@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { AppError, event, requireBusiness, transaction } from "./db.js";
+import {
+  buildUnifiedNetworkCommands,
+  unifiedNetworkPlanSchema,
+} from "./direct-unified-network.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const phrase = z.string().trim().min(2).max(4096);
@@ -664,8 +668,13 @@ export function evaluateDirectPreflight(
     findings.push({ severity: "blocker", code, message });
   const warn = (code, message) =>
     findings.push({ severity: "warning", code, message });
-  const plan = directPlanSchema.parse(change.plan);
-  const rebuilt = buildDirectCommands(plan);
+  const network = change.plan?.channel === "network";
+  const plan = network
+    ? unifiedNetworkPlanSchema.parse(change.plan)
+    : directPlanSchema.parse(change.plan);
+  const rebuilt = network
+    ? buildUnifiedNetworkCommands(plan)
+    : buildDirectCommands(plan);
   const commands = change.commands || [];
   if (
     change.mode !== "dry_run" ||
@@ -746,19 +755,42 @@ export function evaluateDirectPreflight(
       "business_website_mismatch",
       "Сайт плана отличается от сайта в профиле бизнеса.",
     );
-  const strategy =
-    commands[0]?.params?.Campaigns?.[0]?.TextCampaign?.BiddingStrategy;
-  const spend = strategy?.Search?.WbMaximumClicks;
+  const campaign = commands[0]?.params?.Campaigns?.[0];
+  const strategy = network
+    ? campaign?.UnifiedCampaign?.BiddingStrategy
+    : campaign?.TextCampaign?.BiddingStrategy;
+  const spend = network
+    ? strategy?.Network?.WbMaximumClicks
+    : strategy?.Search?.WbMaximumClicks;
   const periodBudget = spend?.CustomPeriodBudget;
-  if (strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS")
+  if (
+    strategy?.Search?.BiddingStrategyType !==
+    (network ? "SERVING_OFF" : "WB_MAXIMUM_CLICKS")
+  )
     block(
       "strategy_changed",
-      "Поисковая стратегия отличается от проверенного шаблона.",
+      network
+        ? "Поиск должен быть выключен в кампании Рекламной сети."
+        : "Поисковая стратегия отличается от проверенного шаблона.",
     );
-  if (strategy?.Network?.BiddingStrategyType !== "SERVING_OFF")
+  if (
+    strategy?.Network?.BiddingStrategyType !==
+    (network ? "WB_MAXIMUM_CLICKS" : "SERVING_OFF")
+  )
     block(
       "network_enabled",
-      "Показы в сетях в подготовленной команде не отключены.",
+      network
+        ? "Стратегия Рекламной сети отличается от проверенного шаблона."
+        : "Показы в сетях в подготовленной команде не отключены.",
+    );
+  if (
+    network &&
+    (strategy?.Network?.PlacementTypes?.Network !== "YES" ||
+      strategy?.Network?.PlacementTypes?.Maps !== "NO")
+  )
+    block(
+      "network_placement_changed",
+      "Кампания Рекламной сети должна показываться в сетях, но не в Картах.",
     );
   if (
     !periodBudget ||
@@ -807,7 +839,8 @@ export function evaluateDirectPreflight(
       budget: plan.budget,
       regionIds: plan.regionIds,
       ads: plan.ads.length,
-      keywords: plan.keywords.length,
+      keywords: network ? 0 : plan.keywords.length,
+      channel: network ? "network" : "search",
     },
     remote: { campaignCount: campaigns.length, readCalls, writeCalls: 0 },
   };

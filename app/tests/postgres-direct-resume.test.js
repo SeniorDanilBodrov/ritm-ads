@@ -143,9 +143,66 @@ function fixture() {
   return { sqlite, db, userId, businessId, changeId, connectionId, plan };
 }
 
+function networkFixture() {
+  const data = fixture();
+  data.plan = {
+    channel: "network",
+    login: "test-login",
+    campaignName: "Форма · РСЯ",
+    website: "https://forma.example/",
+    audience: "Женщины, которые ищут маникюр рядом",
+    regionIds: [54],
+    budget: 12_000,
+    periodStart: "2026-11-05",
+    periodEnd: "2026-11-18",
+    creativeAssetId: randomUUID(),
+    ads: [
+      {
+        titles: [
+          "Маникюр с покрытием рядом",
+          "Бережный уход за ногтями",
+          "Удобная запись в студию",
+        ],
+        texts: [
+          "Аккуратное покрытие и бережный уход в студии «Форма».",
+          "Выберите удобное время и запишитесь на маникюр онлайн.",
+          "Студия маникюра в Екатеринбурге рядом с вами.",
+        ],
+        href: "https://forma.example/",
+        adImageHashes: ["approved_image_hash-1"],
+      },
+    ],
+  };
+  data.sqlite
+    .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+    .run(JSON.stringify(data.plan), data.changeId);
+  data.sqlite
+    .prepare("UPDATE direct_executions SET calls_json=? WHERE change_id=?")
+    .run(
+      JSON.stringify([
+        { key: "campaign", ids: [77] },
+        { key: "suspend", ids: [77], holdState: "OFF_DRAFT" },
+        { key: "adgroup", ids: [88] },
+        { key: "ads", ids: [99] },
+      ]),
+      data.changeId,
+    );
+  data.sqlite.prepare("UPDATE businesses SET state=? WHERE id=?").run(
+    JSON.stringify({
+      mode: "live",
+      name: "Форма",
+      website: data.plan.website,
+      budget: 30_000,
+    }),
+    data.businessId,
+  );
+  return data;
+}
+
 function directClient(data, { ambiguous = false } = {}) {
   let state = "OFF";
   let writes = 0;
+  const network = data.plan.channel === "network";
   return {
     get writes() {
       return writes;
@@ -160,29 +217,57 @@ function directClient(data, { ambiguous = false } = {}) {
           State: state,
           Status: "ACCEPTED",
           StatusPayment: "ALLOWED",
-          Type: "TEXT_CAMPAIGN",
+          Type: network ? "UNIFIED_CAMPAIGN" : "TEXT_CAMPAIGN",
           Currency: "RUB",
-          TextCampaign: {
-            BiddingStrategy: {
-              Search: {
-                BiddingStrategyType: "WB_MAXIMUM_CLICKS",
-                WbMaximumClicks: {
-                  CustomPeriodBudget: {
-                    SpendLimit: data.plan.budget * 10_000,
-                    StartDate: data.plan.periodStart,
-                    EndDate: data.plan.periodEnd,
-                    AutoContinue: "NO",
+          ...(network
+            ? {
+                UnifiedCampaign: {
+                  BiddingStrategy: {
+                    Search: { BiddingStrategyType: "SERVING_OFF" },
+                    Network: {
+                      BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                      PlacementTypes: { Network: "YES", Maps: "NO" },
+                      WbMaximumClicks: {
+                        CustomPeriodBudget: {
+                          SpendLimit: data.plan.budget * 10_000,
+                          StartDate: data.plan.periodStart,
+                          EndDate: data.plan.periodEnd,
+                          AutoContinue: "NO",
+                        },
+                      },
+                    },
                   },
                 },
-              },
-              Network: { BiddingStrategyType: "SERVING_OFF" },
-            },
-          },
+              }
+            : {
+                TextCampaign: {
+                  BiddingStrategy: {
+                    Search: {
+                      BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                      WbMaximumClicks: {
+                        CustomPeriodBudget: {
+                          SpendLimit: data.plan.budget * 10_000,
+                          StartDate: data.plan.periodStart,
+                          EndDate: data.plan.periodEnd,
+                          AutoContinue: "NO",
+                        },
+                      },
+                    },
+                    Network: { BiddingStrategyType: "SERVING_OFF" },
+                  },
+                },
+              }),
         },
       ],
     }),
     adGroupsByIds: async () => ({
-      AdGroups: [{ Id: 88, CampaignId: 77 }],
+      AdGroups: [
+        {
+          Id: 88,
+          CampaignId: 77,
+          Type: network ? "UNIFIED_AD_GROUP" : "TEXT_AD_GROUP",
+        },
+      ],
     }),
     adsByIds: async () => ({
       Ads: [
@@ -195,17 +280,21 @@ function directClient(data, { ambiguous = false } = {}) {
         },
       ],
     }),
-    keywordsByIds: async () => ({
-      Keywords: [
-        {
-          Id: 111,
-          CampaignId: 77,
-          AdGroupId: 88,
-          Status: "ACCEPTED",
-          State: "ON",
-        },
-      ],
-    }),
+    keywordsByIds: async () => {
+      if (network)
+        throw new Error("network campaign must not request keywords");
+      return {
+        Keywords: [
+          {
+            Id: 111,
+            CampaignId: 77,
+            AdGroupId: 88,
+            Status: "ACCEPTED",
+            State: "ON",
+          },
+        ],
+      };
+    },
     advertiserMarkingDetails: async () => ({
       Clients: [
         {
@@ -274,14 +363,35 @@ test("PostgreSQL launch resumes one verified campaign once", async () => {
   assert.equal(replay.id, result.id);
   assert.equal(client.writes, 1);
   assert.equal(
-    (await postgresResumeActions(
-      data.db,
-      data.userId,
-      data.businessId,
-      data.changeId,
-    )).length,
+    (
+      await postgresResumeActions(
+        data.db,
+        data.userId,
+        data.businessId,
+        data.changeId,
+      )
+    ).length,
     1,
   );
+  data.sqlite.close();
+});
+
+test("PostgreSQL launch resumes a verified network campaign without keywords", async () => {
+  const data = networkFixture();
+  const client = directClient(data);
+  const result = await resumePostgresVerifiedCampaign(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    confirmations(data),
+  );
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.afterState, "ON");
+  assert.equal(client.writes, 1);
   data.sqlite.close();
 });
 
@@ -304,8 +414,9 @@ test("PostgreSQL launch requires every owner confirmation before a write", async
   );
   assert.equal(client.writes, 0);
   assert.equal(
-    data.sqlite.prepare("SELECT COUNT(*) AS count FROM direct_resume_actions").get()
-      .count,
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM direct_resume_actions")
+      .get().count,
     0,
   );
   data.sqlite.close();
@@ -375,13 +486,15 @@ test("interrupted PostgreSQL launches are fenced by their last durable state", a
   );
   assert.equal(await markInterruptedPostgresResumeActions(data.db), 2);
   assert.equal(
-    data.sqlite.prepare("SELECT status FROM direct_resume_actions WHERE id=?").get(first)
-      .status,
+    data.sqlite
+      .prepare("SELECT status FROM direct_resume_actions WHERE id=?")
+      .get(first).status,
     "failed_no_write",
   );
   assert.equal(
-    data.sqlite.prepare("SELECT status FROM direct_resume_actions WHERE id=?").get(second)
-      .status,
+    data.sqlite
+      .prepare("SELECT status FROM direct_resume_actions WHERE id=?")
+      .get(second).status,
     "needs_reconciliation",
   );
   data.sqlite.close();

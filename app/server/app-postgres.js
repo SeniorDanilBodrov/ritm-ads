@@ -85,7 +85,6 @@ import {
   postgresResumeActions,
   resumePostgresVerifiedCampaign,
 } from "./postgres-direct-resume.js";
-import { assertPostgresSearchReach } from "./postgres-direct-reach.js";
 import {
   applyPostgresDirectAbDecision,
   bindPostgresAudienceExperiment,
@@ -1640,7 +1639,6 @@ export function createPostgresApp({
         .string()
         .uuid()
         .parse(req.headers["idempotency-key"]);
-      assertPostgresSearchReach(req.body);
       let directContext = null;
       if (req.body?.creativeAssetId) {
         const business = await requireBusiness(db, req.user.id, req.params.id);

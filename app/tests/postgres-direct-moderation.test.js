@@ -125,6 +125,78 @@ function fixture() {
   return { sqlite, db, userId, businessId, changeId, connectionId, plan };
 }
 
+function networkFixture() {
+  const data = fixture();
+  data.plan = {
+    channel: "network",
+    login: "test-login",
+    campaignName: "Форма · РСЯ",
+    website: "https://forma.example/",
+    audience: "Женщины, которые ищут маникюр рядом",
+    regionIds: [54],
+    budget: 12_000,
+    periodStart: "2026-11-05",
+    periodEnd: "2026-11-18",
+    creativeAssetId: randomUUID(),
+    ads: [
+      {
+        titles: [
+          "Маникюр с покрытием рядом",
+          "Бережный уход за ногтями",
+          "Удобная запись в студию",
+        ],
+        texts: [
+          "Аккуратное покрытие и бережный уход в студии «Форма».",
+          "Выберите удобное время и запишитесь на маникюр онлайн.",
+          "Студия маникюра в Екатеринбурге рядом с вами.",
+        ],
+        href: "https://forma.example/",
+        adImageHashes: ["approved_image_hash-1"],
+      },
+    ],
+  };
+  data.sqlite
+    .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+    .run(JSON.stringify(data.plan), data.changeId);
+  data.sqlite
+    .prepare("UPDATE direct_executions SET calls_json=? WHERE change_id=?")
+    .run(
+      JSON.stringify([
+        { key: "campaign", ids: [77] },
+        { key: "adgroup", ids: [88] },
+        { key: "ads", ids: [99] },
+      ]),
+      data.changeId,
+    );
+  return data;
+}
+
+const networkCampaign = (plan, overrides = {}) => ({
+  Id: 77,
+  State: "OFF",
+  Status: "DRAFT",
+  Type: "UNIFIED_CAMPAIGN",
+  Currency: "RUB",
+  UnifiedCampaign: {
+    BiddingStrategy: {
+      Search: { BiddingStrategyType: "SERVING_OFF" },
+      Network: {
+        BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+        PlacementTypes: { Network: "YES", Maps: "NO" },
+        WbMaximumClicks: {
+          CustomPeriodBudget: {
+            SpendLimit: plan.budget * 10_000,
+            StartDate: plan.periodStart,
+            EndDate: plan.periodEnd,
+            AutoContinue: "NO",
+          },
+        },
+      },
+    },
+  },
+  ...overrides,
+});
+
 test("PostgreSQL moderation sends a verified draft once and keeps shows off", async () => {
   const data = fixture();
   let submitted = false;
@@ -285,6 +357,61 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
   data.sqlite.close();
 });
 
+test("network moderation verifies responsive copy and image without keywords", async () => {
+  const data = networkFixture();
+  let keywordReads = 0;
+  const client = {
+    campaignBudgetById: async () => ({
+      Campaigns: [networkCampaign(data.plan)],
+    }),
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77, Type: "UNIFIED_AD_GROUP" }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "DRAFT",
+          ResponsiveAd: {
+            Titles: data.plan.ads[0].titles.map((Title) => ({ Title })),
+            Texts: data.plan.ads[0].texts.map((Text) => ({ Text })),
+            Href: data.plan.ads[0].href,
+            AdImages: [{ AdImageHash: "approved_image_hash-1" }],
+          },
+        },
+      ],
+    }),
+    keywordsByIds: async () => {
+      keywordReads++;
+      throw new Error("network campaign must not request keywords");
+    },
+    advertiserMarkingDetails: async () => ({
+      Clients: [
+        {
+          Type: "CLIENT",
+          TinInfo: { TinType: "LEGAL", Tin: "test-value" },
+          ErirAttributes: { Organization: { Name: "test-value" } },
+        },
+      ],
+    }),
+  };
+  const readiness = await inspectPostgresModerationReadiness(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    client,
+    data.connectionId,
+    Date.parse("2026-11-04T10:00:00.000Z"),
+  );
+  assert.equal(readiness.status, "technical_ready");
+  assert.deepEqual(readiness.blockers, []);
+  assert.equal(keywordReads, 0);
+  data.sqlite.close();
+});
+
 test("PostgreSQL control review persists the read-only Yandex decision", async () => {
   const data = fixture();
   let reads = 0;
@@ -411,6 +538,8 @@ test("accepted ad stays launch-ready while its held campaign keeps it OFF", asyn
           State: "OFF",
           Status: "ACCEPTED",
           StatusPayment: "ALLOWED",
+          Type: "TEXT_CAMPAIGN",
+          Currency: "RUB",
           TextCampaign: {
             BiddingStrategy: {
               Search: {
@@ -471,5 +600,71 @@ test("accepted ad stays launch-ready while its held campaign keeps it OFF", asyn
   assert.deepEqual(result.blockers, []);
   assert.equal(result.status, "technical_ready");
   assert.equal(result.budget.spentKopecks, 0);
+  data.sqlite.close();
+});
+
+test("accepted network ad reaches launch readiness without keyword objects", async () => {
+  const data = networkFixture();
+  const reportJobId = randomUUID();
+  data.sqlite
+    .prepare(
+      "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload,error) VALUES(?,?,'report_sync','succeeded',0,1,'{}',NULL)",
+    )
+    .run(reportJobId, data.businessId);
+  data.sqlite
+    .prepare(
+      `INSERT INTO report_snapshots
+       (id,business_id,job_id,scope,source,login,date_from,date_to,currency,include_vat,received_at,request_id,raw_hash,raw_tsv,rows_json,totals_json,previous_id,comparison_json)
+       VALUES(?,?,?,'campaign','yandex','test-login','2026-11-05','2026-11-05','RUB',1,'2026-11-05T08:55:00.000Z',NULL,'network-hash','header',?,'{}',NULL,'{}')`,
+    )
+    .run(
+      randomUUID(),
+      data.businessId,
+      reportJobId,
+      JSON.stringify([{ CampaignId: "77", Date: "2026-11-05", spent: 0 }]),
+    );
+  let keywordReads = 0;
+  const client = {
+    campaignBudgetById: async () => ({
+      Campaigns: [
+        networkCampaign(data.plan, {
+          Status: "ACCEPTED",
+          StatusPayment: "ALLOWED",
+        }),
+      ],
+    }),
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77, Type: "UNIFIED_AD_GROUP" }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "OFF",
+        },
+      ],
+    }),
+    keywordsByIds: async () => {
+      keywordReads++;
+      throw new Error("network campaign must not request keywords");
+    },
+  };
+  const result = await inspectPostgresDirectControl(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    Date.parse("2026-11-05T09:00:00.000Z"),
+  );
+  assert.equal(result.status, "technical_ready");
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.remote.keywords, 0);
+  assert.equal(keywordReads, 0);
   data.sqlite.close();
 });

@@ -86,6 +86,54 @@ test("business owner can request an isolated AI advertising plan without Direct 
   assert.ok(current.body.events.some((item) => item.kind === "ai_plan"));
 });
 
+test("owner can edit a prepared text and must approve the changed version again", async () => {
+  const { cookie, ws } = await demo();
+  const path = `/api/businesses/${ws.id}/command`;
+  const creative = ws.state.creatives[0];
+  assert.equal(
+    (
+      await send(path, {
+        cookie,
+        body: { action: "approve", payload: { id: creative.id } },
+      })
+    ).status,
+    200,
+  );
+  const title = "Маникюр рядом с домом";
+  const text = "Бережное покрытие и запись на удобное время.";
+  const edited = await send(path, {
+    cookie,
+    body: {
+      action: "editCreative",
+      payload: { id: creative.id, title, text },
+    },
+  });
+  assert.equal(edited.status, 200);
+  let current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
+  const changed = current.body.state.creatives.find(
+    (item) => item.id === creative.id,
+  );
+  assert.equal(changed.title, title);
+  assert.equal(changed.text, text);
+  assert.equal(changed.status, "draft");
+  assert.equal(changed.version, "user/1");
+  assert.ok(current.body.events.some((item) => item.kind === "creative_edit"));
+  assert.equal(
+    (
+      await send(path, {
+        cookie,
+        body: { action: "approve", payload: { id: creative.id } },
+      })
+    ).status,
+    200,
+  );
+  current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
+  assert.equal(
+    current.body.state.creatives.find((item) => item.id === creative.id).status,
+    "approved",
+  );
+});
+
 test("onboarding needs a business description and a budget, not a target CPA", async () => {
   const { cookie } = await demo();
   const created = await send("/api/businesses", {

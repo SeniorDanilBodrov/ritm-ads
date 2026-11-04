@@ -8,6 +8,7 @@ import {
   inspectPostgresDirectImageUpload,
   uploadApprovedPostgresCreativeToDirect,
 } from "../server/postgres-direct-images.js";
+import { attachPostgresDirectImageHashes } from "../server/postgres-direct.js";
 
 class AsyncSqlite {
   constructor(database) {
@@ -171,6 +172,29 @@ test("approved Kie image is uploaded once, read back and attached to a Direct pl
     "hash_approved_1",
   );
   f.sqlite.close();
+});
+
+test("selected images are distributed across search ads and kept together for network", () => {
+  const input = {
+    ads: [
+      { title: "Вариант 1", text: "Текст 1" },
+      { title: "Вариант 2", text: "Текст 2" },
+      { title: "Вариант 3", text: "Текст 3" },
+    ],
+  };
+  const hashes = ["image_hash_1", "image_hash_2"];
+  assert.deepEqual(
+    attachPostgresDirectImageHashes(input, hashes, false).ads.map(
+      (ad) => ad.adImageHash,
+    ),
+    ["image_hash_1", "image_hash_2", "image_hash_1"],
+  );
+  assert.deepEqual(
+    attachPostgresDirectImageHashes(input, hashes, true).ads.map(
+      (ad) => ad.adImageHashes,
+    ),
+    [hashes, hashes, hashes],
+  );
 });
 
 test("ambiguous Direct image write is never replayed and can be reconciled by deterministic name", async () => {

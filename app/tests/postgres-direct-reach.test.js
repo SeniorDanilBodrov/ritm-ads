@@ -16,7 +16,7 @@ const plan = {
   ],
 };
 
-test("PostgreSQL reach requires three distinct ads and phrases", () => {
+test("PostgreSQL reach starts with one approved ad and keeps phrase coverage", () => {
   assert.deepEqual(assertPostgresSearchReach(plan), {
     channel: "search",
     ads: 3,
@@ -24,12 +24,15 @@ test("PostgreSQL reach requires three distinct ads and phrases", () => {
     regions: 1,
     ready: true,
   });
+  assert.deepEqual(assertPostgresSearchReach({ ...plan, ads: [plan.ads[0]] }), {
+    channel: "search",
+    ads: 1,
+    keywords: 3,
+    regions: 1,
+    ready: true,
+  });
   assert.throws(
-    () =>
-      assertPostgresSearchReach({
-        ...plan,
-        ads: [plan.ads[0], plan.ads[0], plan.ads[0]],
-      }),
+    () => assertPostgresSearchReach({ ...plan, ads: [] }),
     (error) => error?.code === "reach_ads_missing",
   );
   assert.throws(
@@ -42,7 +45,7 @@ test("PostgreSQL reach requires three distinct ads and phrases", () => {
   );
 });
 
-test("network reach requires varied responsive copy and an approved image", () => {
+test("network reach starts with one approved text and accepts several images", () => {
   assert.deepEqual(
     assertPostgresNetworkReach({
       regionIds: [54],
@@ -54,7 +57,7 @@ test("network reach requires varied responsive copy and an approved image", () =
             "Маникюр с вниманием к деталям",
             "Запишитесь в студию в Екатеринбурге",
           ],
-          adImageHashes: ["image_hash"],
+          adImageHashes: ["image_hash_1", "image_hash_2"],
         },
       ],
     }),
@@ -62,6 +65,26 @@ test("network reach requires varied responsive copy and an approved image", () =
       channel: "network",
       titles: 3,
       texts: 3,
+      images: 2,
+      regions: 1,
+      ready: true,
+    },
+  );
+  assert.deepEqual(
+    assertPostgresNetworkReach({
+      regionIds: [54],
+      ads: [
+        {
+          titles: ["Маникюр рядом"],
+          texts: ["Выберите удобное время онлайн"],
+          adImageHashes: ["image_hash"],
+        },
+      ],
+    }),
+    {
+      channel: "network",
+      titles: 1,
+      texts: 1,
       images: 1,
       regions: 1,
       ready: true,

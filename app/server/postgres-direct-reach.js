@@ -6,9 +6,6 @@ const normalize = (value) =>
     .toLocaleLowerCase("ru-RU")
     .replace(/\s+/gu, " ");
 
-// A broad-reach draft must contain genuinely different messages. Duplicating
-// one text under several remote IDs does not create useful coverage or an A/B
-// baseline and is therefore rejected before any Direct write.
 export function assertPostgresSearchReach(plan) {
   if (!plan || typeof plan !== "object")
     throw new AppError(400, "План охвата не найден.", "reach_plan_missing");
@@ -20,10 +17,10 @@ export function assertPostgresSearchReach(plan) {
   );
   const uniqueKeywords = new Set(keywords.map(normalize));
   const uniqueRegions = new Set(regions.filter(Number.isSafeInteger));
-  if (ads.length < 3 || uniqueAds.size < 3)
+  if (!ads.length || !uniqueAds.size)
     throw new AppError(
       409,
-      "Для широкого охвата согласуйте три разных объявления.",
+      "Согласуйте хотя бы один текст объявления.",
       "reach_ads_missing",
     );
   if (keywords.length < 3 || uniqueKeywords.size < 3)
@@ -58,10 +55,10 @@ export function assertPostgresNetworkReach(plan) {
     ads.flatMap((ad) => ad?.adImageHashes || []).filter(Boolean),
   );
   const uniqueRegions = new Set(regions.filter(Number.isSafeInteger));
-  if (titles.size < 3 || texts.size < 3)
+  if (!titles.size || !texts.size)
     throw new AppError(
       409,
-      "Для Рекламной сети согласуйте минимум три заголовка и три текста.",
+      "Для Рекламной сети согласуйте хотя бы один текст объявления.",
       "reach_ads_missing",
     );
   if (!images.size)

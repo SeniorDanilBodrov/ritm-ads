@@ -101,6 +101,12 @@ test("Direct dry-run builds ordered commands with references and no external cal
   );
 });
 
+test("Direct plan keeps a selection of up to five approved images", () => {
+  const creativeAssetIds = [randomUUID(), randomUUID(), randomUUID()];
+  const built = buildDirectCommands({ ...plan(), creativeAssetIds });
+  assert.deepEqual(built.plan.creativeAssetIds, creativeAssetIds);
+});
+
 test("Direct queue is idempotent and reconciles prepared dry-run commands", async () => {
   const { db, userId, businessId } = liveDb(),
     key = randomUUID(),

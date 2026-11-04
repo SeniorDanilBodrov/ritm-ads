@@ -502,7 +502,14 @@ export type DirectPlan = {
   counterId?: string;
   goalId?: string;
   creativeAssetId?: string;
-  ads: { title: string; title2?: string; text: string; href: string }[];
+  creativeAssetIds?: string[];
+  ads: {
+    title: string;
+    title2?: string;
+    text: string;
+    href: string;
+    adImageHash?: string;
+  }[];
   keywords: string[];
   negativeKeywords?: string[];
 };
@@ -518,7 +525,8 @@ export type DirectNetworkPlan = {
   periodEnd: string;
   counterId?: string;
   goalId?: string;
-  creativeAssetId: string;
+  creativeAssetId?: string;
+  creativeAssetIds?: string[];
   ads: {
     titles: string[];
     texts: string[];

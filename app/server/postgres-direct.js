@@ -356,6 +356,22 @@ export async function postgresDirectChanges(db, userId, businessId) {
   );
 }
 
+export function attachPostgresDirectImageHashes(input, imageHashes, network) {
+  if (!imageHashes.length) return input;
+  return network
+    ? {
+        ...input,
+        ads: input.ads.map((ad) => ({ ...ad, adImageHashes: imageHashes })),
+      }
+    : {
+        ...input,
+        ads: input.ads.map((ad, index) => ({
+          ...ad,
+          adImageHash: imageHashes[index % imageHashes.length],
+        })),
+      };
+}
+
 export async function preparePostgresDirectPlan(
   db,
   userId,
@@ -415,39 +431,46 @@ export async function preparePostgresDirectPlan(
         "creative_changed",
       );
     let resolvedInput = input;
-    if (network && !input?.creativeAssetId)
+    const creativeAssetIds = [
+      ...new Set(
+        (Array.isArray(input?.creativeAssetIds)
+          ? input.creativeAssetIds
+          : input?.creativeAssetId
+            ? [input.creativeAssetId]
+            : []
+        ).filter(Boolean),
+      ),
+    ].slice(0, 5);
+    if (network && !creativeAssetIds.length)
       throw new AppError(
         409,
         "Для Рекламной сети выберите согласованное изображение.",
         "creative_image_missing",
       );
-    if (input?.creativeAssetId) {
+    if (creativeAssetIds.length) {
       if (!directContext?.connectionId)
         throw new AppError(
           409,
           "Сначала подключите кабинет Директа.",
           "yandex_missing",
         );
-      const adImageHash = await approvedDirectImageHash(
-        tx,
-        userId,
-        business.id,
-        input.creativeAssetId,
-        directContext.connectionId,
-        input.login,
+      const adImageHashes = await Promise.all(
+        creativeAssetIds.map((assetId) =>
+          approvedDirectImageHash(
+            tx,
+            userId,
+            business.id,
+            assetId,
+            directContext.connectionId,
+            input.login,
+          ),
+        ),
       );
-      resolvedInput = network
-        ? {
-            ...input,
-            ads: input.ads.map((ad) => ({
-              ...ad,
-              adImageHashes: [adImageHash],
-            })),
-          }
-        : {
-            ...input,
-            ads: input.ads.map((ad) => ({ ...ad, adImageHash })),
-          };
+      resolvedInput = attachPostgresDirectImageHashes(
+        input,
+        adImageHashes,
+        network,
+      );
     }
     if (network) assertPostgresNetworkReach(resolvedInput);
     else assertPostgresSearchReach(resolvedInput);

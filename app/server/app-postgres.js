@@ -1648,7 +1648,11 @@ export function createPostgresApp({
         .uuid()
         .parse(req.headers["idempotency-key"]);
       let directContext = null;
-      if (req.body?.creativeAssetId) {
+      if (
+        req.body?.creativeAssetId ||
+        (Array.isArray(req.body?.creativeAssetIds) &&
+          req.body.creativeAssetIds.length)
+      ) {
         const business = await requireBusiness(db, req.user.id, req.params.id);
         const connection = await directConnectionForBusiness(db, key, business);
         if (
@@ -2508,6 +2512,7 @@ export function createPostgresApp({
           "schedule",
           "settings",
           "generate",
+          "editCreative",
           "approve",
         ]),
         payload: z.record(z.string(), z.unknown()).default({}),
@@ -2559,10 +2564,48 @@ export function createPostgresApp({
               kind: "creative",
               title: "Подготовлены варианты текста",
               reason:
-                "Рита собрала три объявления по данным бизнеса. Перед запуском каждый текст нужно согласовать.",
+                "Рита собрала три объявления по данным бизнеса. Для продолжения выберите хотя бы один вариант.",
               rule: "templates/1",
             },
           ];
+        } else if (input.action === "editCreative") {
+          const edited = z
+            .object({
+              id: z.string().min(1).max(160),
+              title: z.string().trim().min(1).max(56),
+              text: z.string().trim().min(1).max(81),
+            })
+            .strict()
+            .parse(input.payload);
+          const creative = (state.creatives || []).find(
+            (item) => item.id === edited.id,
+          );
+          if (!creative) throw new AppError(404, "Текст объявления не найден.");
+          if (
+            creative.title === edited.title &&
+            creative.text === edited.text
+          ) {
+            message = "Текст не изменился";
+          } else {
+            creative.title = edited.title;
+            creative.text = edited.text;
+            creative.status = "draft";
+            creative.version = "user/1";
+            state.postgresPilot = {
+              ...(state.postgresPilot || {}),
+              planConfirmedAt: null,
+            };
+            message =
+              "Изменения сохранены. Проверьте текст и разрешите его для рекламы.";
+            entries = [
+              {
+                kind: "creative_edit",
+                title: "Текст объявления изменён",
+                reason: edited.title,
+                rule: "user",
+              },
+            ];
+          }
         } else if (input.action === "approve") {
           const creativeId = z.string().min(1).max(160).parse(input.payload.id);
           const creative = (state.creatives || []).find(

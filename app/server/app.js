@@ -2556,6 +2556,7 @@ export function createApp({
           "settings",
           "analytics",
           "generate",
+          "editCreative",
           "approve",
           "launch",
           "rollback",
@@ -2573,10 +2574,15 @@ export function createApp({
       (b) => {
         const s = b.state,
           p = input.payload;
-        // A live workspace may update its local profile, but every action that could
-        // control advertising remains behind the live gate. Provider writes have no
-        // route in this release.
-        if (s.mode !== "demo" && input.action !== "settings")
+        // These actions only update local preparation data. Keep every provider
+        // write behind the live gate, while allowing copy to be prepared safely.
+        const localPreparationActions = new Set([
+          "settings",
+          "generate",
+          "editCreative",
+          "approve",
+        ]);
+        if (s.mode !== "demo" && !localPreparationActions.has(input.action))
           throw new AppError(
             409,
             "Управление реальной рекламой закрыто до приемки интеграции. Доступно подключение и чтение кабинета.",
@@ -2759,6 +2765,41 @@ export function createApp({
               },
             ];
             break;
+          case "editCreative": {
+            const edited = z
+              .object({
+                id: z.string().min(1).max(160),
+                title: z.string().trim().min(1).max(56),
+                text: z.string().trim().min(1).max(81),
+              })
+              .strict()
+              .parse(p);
+            const creative = s.creatives.find((item) => item.id === edited.id);
+            if (!creative)
+              throw new AppError(404, "Текст объявления не найден.");
+            if (
+              creative.title === edited.title &&
+              creative.text === edited.text
+            ) {
+              message = "Текст не изменился";
+              break;
+            }
+            creative.title = edited.title;
+            creative.text = edited.text;
+            creative.status = "draft";
+            creative.version = "user/1";
+            message =
+              "Изменения сохранены. Проверьте текст и разрешите его для рекламы.";
+            entries = [
+              {
+                kind: "creative_edit",
+                title: "Текст объявления изменён",
+                reason: edited.title,
+                rule: "user",
+              },
+            ];
+            break;
+          }
           case "approve": {
             const c = s.creatives.find((c) => c.id === p.id);
             if (!c) throw new AppError(404, "Объявление не найдено.");

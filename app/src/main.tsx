@@ -38,12 +38,14 @@ import {
   MoreHorizontal,
   PanelsTopLeft,
   Pause,
+  Pencil,
   Play,
   Plus,
   Plug,
   RefreshCw,
   Search,
   Send,
+  Save,
   SlidersHorizontal,
   Split,
   Sparkles,
@@ -1894,6 +1896,11 @@ function App() {
                   navigate={select}
                   approve={(id) =>
                     performWithResult(() => cmd("approve", { id }))
+                  }
+                  saveText={(id, title, text) =>
+                    performWithResult(() =>
+                      cmd("editCreative", { id, title, text }),
+                    )
                   }
                   generateImage={(input) =>
                     perform(async () => {
@@ -3877,13 +3884,15 @@ function HostedPlanReview({
       image.approvedAt &&
       image.directUploads.some((upload) => upload.login === directLogin),
   );
-  const [creativeAssetId, setCreativeAssetId] = useState(
-    directReadyImages[0]?.id || "",
+  const [creativeAssetIds, setCreativeAssetIds] = useState<string[]>(() =>
+    directReadyImages.slice(0, 5).map((image) => image.id),
+  );
+  const selectedCreativeImages = directReadyImages.filter((image) =>
+    creativeAssetIds.includes(image.id),
   );
   const selectedCreativeImage =
-    directReadyImages.find((image) => image.id === creativeAssetId) ||
-    directReadyImages[0] ||
-    null;
+    selectedCreativeImages[0] || directReadyImages[0] || null;
+  const searchAdCount = Math.max(approvedTexts.length, creativeAssetIds.length);
   const previewCreativeImage =
     selectedCreativeImage || approvedImages[0] || null;
   const previewText = approvedTexts[0] || null;
@@ -3899,14 +3908,21 @@ function HostedPlanReview({
       `ritm:direct-image:${ws.id}:${previewCreativeImage.id}:${directLogin}`,
     ),
   );
+  const campaignRevision = shortRevision(
+    JSON.stringify({
+      images: [...creativeAssetIds].sort(),
+      texts: approvedTexts.map(({ id, title, text }) => ({ id, title, text })),
+    }),
+  );
   const searchCampaignName = versionedCampaignName(
     `${ws.state.name} · Поиск`,
-    creativeAssetId,
-    "2",
+    campaignRevision,
+    "3",
   );
   const networkCampaignName = versionedCampaignName(
     `${ws.state.name} · Рекламная сеть`,
-    creativeAssetId,
+    campaignRevision,
+    "3",
   );
   const isSupersededDuplicate = (item: DirectChange, expectedName: string) =>
     item.execution?.status !== "succeeded" &&
@@ -3917,9 +3933,25 @@ function HostedPlanReview({
       ),
     );
   useEffect(() => {
-    if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
-    setCreativeAssetId(directReadyImages[0]?.id || "");
+    setCreativeAssetIds((current) => {
+      const available = new Set(directReadyImages.map((image) => image.id));
+      const valid = current.filter((id) => available.has(id)).slice(0, 5);
+      return valid.length
+        ? valid
+        : directReadyImages.slice(0, 5).map((image) => image.id);
+    });
   }, [directLogin, ws.creativeImages]);
+  const sameImageSelection = (item: DirectChange) => {
+    const planIds = item.plan?.creativeAssetIds?.length
+      ? item.plan.creativeAssetIds
+      : item.plan?.creativeAssetId
+        ? [item.plan.creativeAssetId]
+        : [];
+    return (
+      planIds.length === creativeAssetIds.length &&
+      planIds.every((id) => creativeAssetIds.includes(id))
+    );
+  };
   const allocation = plan?.plan.budgetAllocation || [];
   const useNetwork = Boolean(plan?.plan.channels.includes("network"));
   const expectedChannelCount = useNetwork ? 2 : 1;
@@ -3944,7 +3976,7 @@ function HostedPlanReview({
         item.plan.campaignName === networkCampaignName &&
         !isSupersededDuplicate(item, networkCampaignName) &&
         item.plan.budget === networkBudget &&
-        item.plan.creativeAssetId === creativeAssetId &&
+        sameImageSelection(item) &&
         item.plan.ads.every(
           (ad) =>
             ad.titles.every((title) =>
@@ -3963,9 +3995,7 @@ function HostedPlanReview({
       item.plan.campaignName === searchCampaignName &&
       !isSupersededDuplicate(item, searchCampaignName) &&
       item.plan.budget === searchBudget &&
-      (creativeAssetId
-        ? item.plan.creativeAssetId === creativeAssetId
-        : !item.plan.creativeAssetId) &&
+      sameImageSelection(item) &&
       item.plan.ads.every((ad) =>
         approvedTexts.some(
           (creative) =>
@@ -4043,14 +4073,34 @@ function HostedPlanReview({
   const regionId = /екатеринбург/i.test(ws.state.city) ? 54 : null;
 
   async function prepareHeldDraft() {
-    if (
-      !plan ||
-      approvedTexts.length < 3 ||
-      !yandex?.clients?.[0] ||
-      !regionId ||
-      !creativeAssetId
-    )
+    if (!plan) {
+      setLocalError("Сначала подготовьте рекламный план.");
       return;
+    }
+    if (approvedTexts.length < 1) {
+      setLocalError(
+        "Разрешите для рекламы хотя бы один текст. Остальные варианты можно не выбирать.",
+      );
+      return;
+    }
+    if (!yandex?.clients?.[0]) {
+      setLocalError(
+        "Сначала подключите и проверьте рекламный кабинет Яндекса.",
+      );
+      return;
+    }
+    if (!regionId) {
+      setLocalError(
+        "Ритм пока не определил регион показа. Уточните город в разделе «О бизнесе».",
+      );
+      return;
+    }
+    if (!creativeAssetIds.length) {
+      setLocalError(
+        "Выберите хотя бы одно изображение. Можно выбрать до пяти вариантов.",
+      );
+      return;
+    }
     setPreparingCampaigns(true);
     setLocalError("");
     const searchPlan: DirectPlan = {
@@ -4065,12 +4115,15 @@ function HostedPlanReview({
       periodEnd: period.end,
       ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
       ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
-      ...(creativeAssetId ? { creativeAssetId } : {}),
-      ads: approvedTexts.map((item) => ({
-        title: item.title.slice(0, 56),
-        text: item.text.slice(0, 81),
-        href: ws.state.website,
-      })),
+      creativeAssetIds,
+      ads: Array.from({ length: searchAdCount }, (_, index) => {
+        const item = approvedTexts[index % approvedTexts.length];
+        return {
+          title: item.title.slice(0, 56),
+          text: item.text.slice(0, 81),
+          href: ws.state.website,
+        };
+      }),
       keywords: plan.plan.keywords,
       negativeKeywords: plan.plan.negativeKeywords,
     };
@@ -4086,7 +4139,7 @@ function HostedPlanReview({
       periodEnd: period.end,
       ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
       ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
-      creativeAssetId,
+      creativeAssetIds,
       ads: [
         {
           titles: approvedTexts
@@ -4410,7 +4463,7 @@ function HostedPlanReview({
                     <header>
                       <div>
                         <h4 id="moderation-preview-title">
-                          {approvedTexts.length >= 3 && previewImageIsInDirect
+                          {approvedTexts.length >= 1 && previewImageIsInDirect
                             ? "Готовое объявление перед модерацией"
                             : "Так будет выглядеть ваша реклама"}
                         </h4>
@@ -4508,11 +4561,12 @@ function HostedPlanReview({
                       <div>
                         <dt>Как соберётся</dt>
                         <dd>
-                          {approvedTexts.length < 3
-                            ? `${approvedTexts.length} из 3 вариантов текста согласовано`
+                          {approvedTexts.length === 1 &&
+                          creativeAssetIds.length === 1
+                            ? "1 поисковое объявление · можно добавить тексты или изображения для сравнения"
                             : useNetwork
-                              ? "3 поисковых объявления и 1 адаптивное объявление в Рекламной сети"
-                              : "3 отдельных объявления в поиске"}
+                              ? `${searchAdCount} вариантов в поиске и 1 адаптивное объявление в Рекламной сети`
+                              : `${searchAdCount} вариантов объявления в поиске`}
                         </dd>
                       </div>
                       <div>
@@ -4585,14 +4639,14 @@ function HostedPlanReview({
                   </section>
                 )}
 
-                {approvedTexts.length < 3 ? (
+                {approvedTexts.length < 1 ? (
                   <div className="hosted-direct-action">
                     <div>
-                      <b>Разрешите три варианта текста</b>
+                      <b>Выберите хотя бы один текст</b>
                       <small>
-                        Готово {approvedTexts.length} из 3. Каждый вариант
-                        станет отдельным поисковым объявлением; отправка в
-                        Яндекс начнётся только после итоговой проверки.
+                        Каждый выбранный вариант станет отдельным поисковым
+                        объявлением. Второй и третий варианты можно добавить для
+                        сравнения, но они не обязательны.
                       </small>
                     </div>
                     <button
@@ -4635,21 +4689,57 @@ function HostedPlanReview({
                             ? `Поиск ${money(searchBudget)} · Рекламная сеть ${money(networkBudget)} · общий лимит ${money(ws.state.budget)}`
                             : `Поиск · общий лимит ${money(ws.state.budget)}`}
                         </small>
-                        <label className="hosted-image-choice">
-                          Выбранное изображение
-                          <select
-                            value={creativeAssetId}
-                            onChange={(event) =>
-                              setCreativeAssetId(event.target.value)
-                            }
-                          >
-                            {directReadyImages.map((image, index) => (
-                              <option key={image.id} value={image.id}>
-                                Согласованный вариант {index + 1}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                        <fieldset className="hosted-image-picker">
+                          <legend>Изображения для объявлений</legend>
+                          <small>
+                            Выбрано {creativeAssetIds.length} из{" "}
+                            {Math.min(5, directReadyImages.length)}. В поиске
+                            Ритм соберёт отдельные варианты с выбранными
+                            кадрами, а в Рекламной сети передаст весь набор.
+                          </small>
+                          <div className="hosted-image-picker-grid">
+                            {directReadyImages
+                              .slice(0, 5)
+                              .map((image, index) => {
+                                const selected = creativeAssetIds.includes(
+                                  image.id,
+                                );
+                                return (
+                                  <label
+                                    className={`hosted-image-option ${selected ? "selected" : ""}`}
+                                    key={image.id}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      disabled={
+                                        selected &&
+                                        creativeAssetIds.length === 1
+                                      }
+                                      onChange={() =>
+                                        setCreativeAssetIds((current) =>
+                                          current.includes(image.id)
+                                            ? current.length === 1
+                                              ? current
+                                              : current.filter(
+                                                  (id) => id !== image.id,
+                                                )
+                                            : current.length >= 5
+                                              ? current
+                                              : [...current, image.id],
+                                        )
+                                      }
+                                    />
+                                    <img
+                                      src={image.imageUrl || ""}
+                                      alt={`Вариант изображения ${index + 1}`}
+                                    />
+                                    <span>Вариант {index + 1}</span>
+                                  </label>
+                                );
+                              })}
+                          </div>
+                        </fieldset>
                       </div>
                       <button
                         type="button"
@@ -5366,15 +5456,24 @@ const daysBetween = (start: string, end: string) =>
 
 function versionedCampaignName(
   base: string,
-  creativeAssetId: string,
+  creativeSelection: string,
   adapterRevision = "",
 ) {
-  if (!creativeAssetId) return base.slice(0, 255);
-  const revision = creativeAssetId.replace(/[^a-z0-9]/gi, "").slice(0, 8);
-  const suffix = ` · фото ${revision || "новое"}${
+  if (!creativeSelection) return base.slice(0, 255);
+  const revision = creativeSelection.replace(/[^a-z0-9]/gi, "").slice(0, 20);
+  const suffix = ` · версия ${revision || "новая"}${
     adapterRevision ? ` · ${adapterRevision}` : ""
   }`;
   return `${base.slice(0, 255 - suffix.length)}${suffix}`;
+}
+
+function shortRevision(value: string) {
+  let result = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index);
+    result = Math.imul(result, 16_777_619);
+  }
+  return (result >>> 0).toString(36);
 }
 
 function nextCampaignPeriod(previousStart = "", previousEnd = "") {
@@ -8793,6 +8892,7 @@ function Creatives({
   busy,
   navigate,
   approve,
+  saveText,
   generateImage,
   connectKie,
   disconnectKie,
@@ -8806,6 +8906,7 @@ function Creatives({
   busy: boolean;
   navigate: (page: string) => void;
   approve: (id: string) => Promise<boolean>;
+  saveText: (id: string, title: string, text: string) => Promise<boolean>;
   generateImage: (input: {
     prompt?: string;
     style: "editorial" | "local" | "detail";
@@ -8840,6 +8941,11 @@ function Creatives({
     [approvingTextId, setApprovingTextId] = useState(""),
     [textApprovalError, setTextApprovalError] = useState(""),
     [textApprovalErrorId, setTextApprovalErrorId] = useState(""),
+    [editingTextId, setEditingTextId] = useState(""),
+    [editTitle, setEditTitle] = useState(""),
+    [editBody, setEditBody] = useState(""),
+    [savingTextId, setSavingTextId] = useState(""),
+    [editTextError, setEditTextError] = useState(""),
     [directLogin, setDirectLogin] = useState(
       ws.connections.find((connection) => connection.provider === "yandex")
         ?.clients?.[0]?.Login || "",
@@ -8878,6 +8984,36 @@ function Creatives({
       setTextApprovalErrorId(id);
     }
     setApprovingTextId("");
+  }
+  function beginTextEdit(creative: Workspace["state"]["creatives"][number]) {
+    setEditingTextId(creative.id);
+    setEditTitle(creative.title);
+    setEditBody(creative.text);
+    setEditTextError("");
+  }
+  function cancelTextEdit() {
+    setEditingTextId("");
+    setEditTitle("");
+    setEditBody("");
+    setEditTextError("");
+  }
+  async function submitTextEdit(event: React.FormEvent, id: string) {
+    event.preventDefault();
+    const title = editTitle.trim();
+    const text = editBody.trim();
+    if (!title || !text) {
+      setEditTextError("Заполните заголовок и основной текст.");
+      return;
+    }
+    setSavingTextId(id);
+    setEditTextError("");
+    const saved = await saveText(id, title, text);
+    setSavingTextId("");
+    if (!saved) {
+      setEditTextError("Не удалось сохранить текст. Попробуйте ещё раз.");
+      return;
+    }
+    cancelTextEdit();
   }
   return (
     <>
@@ -9396,11 +9532,10 @@ function Creatives({
       <div className="info-box neutral">
         <BookOpen size={20} />
         <span>
-          Можно разрешить все три текста: в поиске они станут отдельными
-          объявлениями, а в Рекламной сети Яндекс сможет сочетать разрешённые
-          заголовки и описания. Здесь ничего не отправляется — итоговую сборку с
-          фотографией вы увидите на шаге «План и запуск». Цветные карточки ниже
-          — только концепции, не готовые изображения.
+          Для продолжения достаточно одного текста. Дополнительные варианты
+          нужны для сравнения: Ритм создаст из каждого отдельное поисковое
+          объявление. Можно также согласовать несколько изображений и выбрать до
+          пяти на шаге «План и запуск».
         </span>
       </div>
       <div className="creative-grid">
@@ -9430,8 +9565,98 @@ function Creatives({
                 <Badge tone="gray">{c.angle}</Badge>
                 <span>Текстовое объявление</span>
               </div>
-              <h3>{c.title}</h3>
-              <p>{c.text}</p>
+              {editingTextId === c.id ? (
+                <form
+                  className="creative-text-editor"
+                  onSubmit={(event) => void submitTextEdit(event, c.id)}
+                >
+                  <label htmlFor={`creative-title-${c.id}`}>
+                    Заголовок
+                    <input
+                      id={`creative-title-${c.id}`}
+                      value={editTitle}
+                      maxLength={56}
+                      autoFocus
+                      onChange={(event) => {
+                        setEditTitle(event.target.value);
+                        if (editTextError) setEditTextError("");
+                      }}
+                      aria-describedby={`creative-title-count-${c.id}`}
+                    />
+                    <small id={`creative-title-count-${c.id}`}>
+                      {editTitle.length} из 56
+                    </small>
+                  </label>
+                  <label htmlFor={`creative-body-${c.id}`}>
+                    Основной текст
+                    <textarea
+                      id={`creative-body-${c.id}`}
+                      value={editBody}
+                      maxLength={81}
+                      rows={4}
+                      onChange={(event) => {
+                        setEditBody(event.target.value);
+                        if (editTextError) setEditTextError("");
+                      }}
+                      aria-describedby={`creative-body-count-${c.id}`}
+                    />
+                    <small id={`creative-body-count-${c.id}`}>
+                      {editBody.length} из 81
+                    </small>
+                  </label>
+                  {c.status === "approved" && (
+                    <p className="creative-edit-note">
+                      После сохранения текст нужно снова разрешить для рекламы.
+                      Уже созданное объявление в Директе не изменится.
+                    </p>
+                  )}
+                  {editTextError && (
+                    <small className="field-error" role="alert">
+                      {editTextError}
+                    </small>
+                  )}
+                  <div className="creative-editor-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || !!savingTextId}
+                      onClick={cancelTextEdit}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="submit"
+                      className="primary"
+                      disabled={
+                        busy ||
+                        !!savingTextId ||
+                        !editTitle.trim() ||
+                        !editBody.trim()
+                      }
+                    >
+                      {savingTextId === c.id ? (
+                        <LoaderCircle className="spin" size={16} />
+                      ) : (
+                        <Save size={16} />
+                      )}
+                      {savingTextId === c.id ? "Сохраняем…" : "Сохранить текст"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <h3>{c.title}</h3>
+                  <p>{c.text}</p>
+                  <button
+                    type="button"
+                    className="text-button creative-edit-button"
+                    disabled={busy || !!editingTextId}
+                    onClick={() => beginTextEdit(c)}
+                  >
+                    <Pencil size={15} /> Редактировать
+                  </button>
+                </>
+              )}
               <div className="ad-url">
                 <span>Реклама</span>
                 {ws.state.website
@@ -9445,7 +9670,9 @@ function Creatives({
                     ? "approved-button full"
                     : "secondary full"
                 }
-                disabled={busy || c.status === "approved"}
+                disabled={
+                  busy || c.status === "approved" || editingTextId === c.id
+                }
                 aria-busy={approvingTextId === c.id}
                 onClick={() => void approveText(c.id)}
               >

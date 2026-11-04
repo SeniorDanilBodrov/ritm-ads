@@ -44,6 +44,7 @@ export const directPlanSchema = z
     counterId: z.string().regex(/^\d+$/).optional(),
     goalId: z.string().regex(/^\d+$/).optional(),
     creativeAssetId: z.string().uuid().optional(),
+    creativeAssetIds: z.array(z.string().uuid()).min(1).max(5).optional(),
     ads: z
       .array(
         z.object({
@@ -514,8 +515,7 @@ export async function reconcileDirectObjects(
   const campaignId = campaignIds[0],
     adGroupId = adGroupIds[0],
     campaignMatched = campaigns.Campaigns?.some(
-      (item) =>
-        String(item.Id) === String(campaignId) && heldCampaign(item),
+      (item) => String(item.Id) === String(campaignId) && heldCampaign(item),
     ),
     groupMatched = adGroups.AdGroups?.some(
       (item) =>
@@ -537,14 +537,13 @@ export async function reconcileDirectObjects(
       );
       const expectedHash = expectedPlan?.ads?.[index]?.adImageHash;
       const responsiveImages =
-        item?.ResponsiveAd?.AdImages ||
-        item?.ResponsiveAd?.AdImageHashes ||
-        [];
-      const responsiveHashes = (Array.isArray(responsiveImages)
-        ? responsiveImages
-        : Array.isArray(responsiveImages?.Items)
-          ? responsiveImages.Items
-          : []
+        item?.ResponsiveAd?.AdImages || item?.ResponsiveAd?.AdImageHashes || [];
+      const responsiveHashes = (
+        Array.isArray(responsiveImages)
+          ? responsiveImages
+          : Array.isArray(responsiveImages?.Items)
+            ? responsiveImages.Items
+            : []
       )
         .map((image) =>
           typeof image === "string"

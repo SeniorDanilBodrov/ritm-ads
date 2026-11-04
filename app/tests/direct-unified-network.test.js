@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import {
   buildUnifiedNetworkCommands,
@@ -73,6 +74,12 @@ test("network builder creates a held UnifiedCampaign with its own cap", () => {
       /^[a-f0-9]{64}$/.test(command.fingerprint),
     ),
   );
+});
+
+test("network plan keeps multiple selected creative images", () => {
+  const creativeAssetIds = [randomUUID(), randomUUID()];
+  const built = buildUnifiedNetworkCommands({ ...plan(), creativeAssetIds });
+  assert.deepEqual(built.plan.creativeAssetIds, creativeAssetIds);
 });
 
 test("network builder creates UnifiedAdGroup and ResponsiveAd only", () => {

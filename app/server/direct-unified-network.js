@@ -23,6 +23,7 @@ export const unifiedNetworkPlanSchema = z
     counterId: z.string().regex(/^\d+$/).optional(),
     goalId: z.string().regex(/^\d+$/).optional(),
     creativeAssetId: z.string().uuid().optional(),
+    creativeAssetIds: z.array(z.string().uuid()).min(1).max(5).optional(),
     ads: z
       .array(
         z

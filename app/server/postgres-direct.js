@@ -6,6 +6,7 @@ import {
   executeDirectCommands,
   reconcileDirectObjects,
 } from "./direct.js";
+import { reconcileUnifiedNetworkObjects } from "./direct-unified-network.js";
 import { approvedDirectImageHash } from "./postgres-direct-images.js";
 
 const fingerprint = (value) =>
@@ -25,6 +26,78 @@ async function ownedBusiness(db, userId, businessId) {
     .get(businessId, userId);
   if (!row) throw new AppError(404, "Бизнес не найден.", "business_missing");
   return { ...row, state: JSON.parse(row.state) };
+}
+
+export async function reservePostgresCampaignBudget(
+  tx,
+  userId,
+  businessId,
+  changeId,
+  requestedLimitKopecks,
+  at = new Date().toISOString(),
+) {
+  const row = await tx
+    .prepare(
+      "SELECT id,state FROM businesses WHERE id=? AND user_id=? FOR UPDATE",
+    )
+    .get(businessId, userId);
+  if (!row) throw new AppError(404, "Бизнес не найден.", "business_missing");
+  const ownerLimitKopecks = JSON.parse(row.state)?.budget;
+  if (
+    !Number.isSafeInteger(ownerLimitKopecks) ||
+    ownerLimitKopecks <= 0 ||
+    !Number.isSafeInteger(requestedLimitKopecks) ||
+    requestedLimitKopecks <= 0
+  )
+    throw new AppError(
+      409,
+      "Не удалось проверить общий бюджет бизнеса.",
+      "portfolio_budget_invalid",
+    );
+  const allocations = await tx
+    .prepare(
+      `SELECT cba.change_id,cba.limit_kopecks
+       FROM campaign_budget_allocations cba
+       JOIN campaign_ad_lifecycle cl
+         ON cl.business_id=cba.business_id AND cl.change_id=cba.change_id
+       WHERE cba.business_id=?
+         AND cl.status IN ('creating','paused','moderation','active','needs_reconciliation')
+       FOR UPDATE`,
+    )
+    .all(businessId);
+  const reservedKopecks = allocations.reduce((total, allocation) => {
+    if (allocation.change_id === changeId) return total;
+    const limit = Number(allocation.limit_kopecks);
+    if (!Number.isSafeInteger(limit) || limit <= 0)
+      throw new AppError(
+        409,
+        "В портфеле найдена кампания с некорректным лимитом.",
+        "portfolio_budget_invalid",
+      );
+    return total + limit;
+  }, 0);
+  if (reservedKopecks + requestedLimitKopecks > ownerLimitKopecks)
+    throw new AppError(
+      409,
+      "Лимиты кампаний превысят общий бюджет бизнеса. Уменьшите лимит новой кампании или освободите остаток другой кампании.",
+      "portfolio_budget_exceeded",
+    );
+  await tx
+    .prepare(
+      `INSERT INTO campaign_budget_allocations
+       (business_id,change_id,limit_kopecks,updated_at)
+       VALUES(?,?,?,?)
+       ON CONFLICT(business_id,change_id) DO UPDATE SET
+         limit_kopecks=excluded.limit_kopecks,updated_at=excluded.updated_at`,
+    )
+    .run(businessId, changeId, requestedLimitKopecks, at);
+  return {
+    ownerLimitKopecks,
+    reservedKopecks,
+    requestedLimitKopecks,
+    availableKopecks:
+      ownerLimitKopecks - reservedKopecks - requestedLimitKopecks,
+  };
 }
 
 async function addEvent(db, businessId, payload) {
@@ -591,6 +664,14 @@ export async function executePostgresDirectPlan(
         "direct_execution_active",
       );
     const at = new Date(now).toISOString();
+    await reservePostgresCampaignBudget(
+      tx,
+      userId,
+      business.id,
+      change.id,
+      change.plan.budget,
+      at,
+    );
     await tx
       .prepare(
         `INSERT INTO direct_executions(change_id,business_id,connection_id,plan_fingerprint,status,inflight_key,suspend_verified,calls_json,started_at,updated_at,error_code,reconciliation_json)
@@ -643,11 +724,18 @@ export async function executePostgresDirectPlan(
           ),
       },
     );
-    const reconciliation = await reconcileDirectObjects(
-      client,
-      result.calls,
-      prepared.change.plan,
-    );
+    const reconciliation =
+      prepared.change.plan.channel === "network"
+        ? await reconcileUnifiedNetworkObjects(
+            client,
+            result.calls,
+            prepared.change.plan,
+          )
+        : await reconcileDirectObjects(
+            client,
+            result.calls,
+            prepared.change.plan,
+          );
     if (!reconciliation.matched)
       throw new AppError(
         409,
@@ -738,12 +826,15 @@ export async function inspectPostgresDirectExecution(
     throw new AppError(409, "Этому созданию не требуется сверка.");
   const calls = JSON.parse(row.calls_json);
   let reconciliation;
-  if (
-    ["campaign", "suspend", "adgroup", "keywords", "ads"].every(
-      (key, index) => calls[index]?.key === key,
-    )
-  ) {
-    reconciliation = await reconcileDirectObjects(client, calls, change.plan);
+  const expectedKeys =
+    change.plan.channel === "network"
+      ? ["campaign", "suspend", "adgroup", "ads"]
+      : ["campaign", "suspend", "adgroup", "keywords", "ads"];
+  if (expectedKeys.every((key, index) => calls[index]?.key === key)) {
+    reconciliation =
+      change.plan.channel === "network"
+        ? await reconcileUnifiedNetworkObjects(client, calls, change.plan)
+        : await reconcileDirectObjects(client, calls, change.plan);
   } else {
     const campaignId = calls.find((item) => item.key === "campaign")?.ids?.[0];
     const remote = campaignId

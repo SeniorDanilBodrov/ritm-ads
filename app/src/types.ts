@@ -79,6 +79,22 @@ export type Change = {
   after?: object;
   acceptanceRun?: AcceptanceRunReport;
 };
+export type AdLifecycle = {
+  status:
+    | "draft"
+    | "validating"
+    | "ready"
+    | "creating"
+    | "moderation"
+    | "active"
+    | "paused"
+    | "blocked"
+    | "needs_reconciliation"
+    | "completed";
+  changeId: string | null;
+  reason: string;
+  updatedAt: string | null;
+};
 export type Business = {
   mode: "demo" | "live";
   name: string;
@@ -207,22 +223,8 @@ export type Workspace = {
     availableAt: number;
     error: string | null;
   }[];
-  adLifecycle: {
-    status:
-      | "draft"
-      | "validating"
-      | "ready"
-      | "creating"
-      | "moderation"
-      | "active"
-      | "paused"
-      | "blocked"
-      | "needs_reconciliation"
-      | "completed";
-    changeId: string | null;
-    reason: string;
-    updatedAt: string | null;
-  };
+  adLifecycle: AdLifecycle;
+  adLifecycles: AdLifecycle[];
   optimizerActions: {
     id: string;
     changeId: string;

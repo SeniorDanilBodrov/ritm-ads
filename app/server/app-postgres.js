@@ -285,6 +285,27 @@ function idempotencyKey(req) {
     .parse(req.get("Idempotency-Key") || randomUUID());
 }
 
+const defaultAdLifecycle = {
+  status: "draft",
+  changeId: null,
+  reason:
+    "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается.",
+  updatedAt: null,
+};
+
+export function postgresAdLifecycleView(rows) {
+  const adLifecycles = rows.map((row) => ({
+    status: row.status,
+    changeId: row.change_id,
+    reason: row.reason,
+    updatedAt: row.updated_at,
+  }));
+  return {
+    adLifecycles,
+    adLifecycle: adLifecycles[0] ?? defaultAdLifecycle,
+  };
+}
+
 export function createPostgresApp({
   db,
   config,
@@ -1249,11 +1270,12 @@ export function createPostgresApp({
       req.user.id,
       business.id,
     );
-    const lifecycleRow = await db
+    const lifecycleRows = await db
       .prepare(
-        "SELECT status,change_id,reason,updated_at FROM campaign_ad_lifecycle WHERE business_id=? ORDER BY updated_at DESC LIMIT 1",
+        "SELECT status,change_id,reason,updated_at FROM campaign_ad_lifecycle WHERE business_id=? ORDER BY updated_at DESC,change_id DESC",
       )
-      .get(business.id);
+      .all(business.id);
+    const lifecycleView = postgresAdLifecycleView(lifecycleRows);
     const directWriteEnabled =
       canWritePaidAdvertising(config) && config.directWritePilot === true;
     const directModerationEnabled =
@@ -1280,7 +1302,7 @@ export function createPostgresApp({
       controlReviews,
       shadowReviews: autopilot.shadowReviews,
       shadowReviewJobs: [],
-      adLifecycles: [],
+      adLifecycles: lifecycleView.adLifecycles,
       optimizerActions: autopilot.optimizerActions,
       audienceExperiments: await postgresAudienceExperiments(
         db,
@@ -1289,20 +1311,7 @@ export function createPostgresApp({
       ),
       creativeImages: await postgresCreativeImages(db, business.id),
       connections,
-      adLifecycle: lifecycleRow
-        ? {
-            status: lifecycleRow.status,
-            changeId: lifecycleRow.change_id,
-            reason: lifecycleRow.reason,
-            updatedAt: lifecycleRow.updated_at,
-          }
-        : {
-            status: "draft",
-            changeId: null,
-            reason:
-              "Подключите кабинет и проверьте план. До отдельного подтверждения реклама не запускается.",
-            updatedAt: null,
-          },
+      adLifecycle: lifecycleView.adLifecycle,
       capabilities: {
         postgresPilot: true,
         google: Boolean(config.googleId && config.googleSecret),

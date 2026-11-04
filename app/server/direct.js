@@ -279,13 +279,22 @@ export async function executeDirectCommands(
   commands,
   { checkpoint = async () => {}, initialCalls = [], initialResults = {} } = {},
 ) {
-  const expected = [
+  const searchExpected = [
     ["campaign", "campaigns", "add"],
     ["suspend", "campaigns", "suspend"],
     ["adgroup", "adgroups", "add"],
     ["keywords", "keywords", "add"],
     ["ads", "ads", "add"],
   ];
+  const networkExpected = [
+    ["campaign", "campaigns", "add"],
+    ["suspend", "campaigns", "suspend"],
+    ["adgroup", "adgroups", "add"],
+    ["ads", "ads", "add"],
+  ];
+  const expected = commands?.some((command) => command?.key === "keywords")
+    ? searchExpected
+    : networkExpected;
   if (
     !Array.isArray(commands) ||
     commands.length !== expected.length ||
@@ -305,19 +314,17 @@ export async function executeDirectCommands(
       "План команд изменился после dry-run. Подготовьте его заново.",
       "direct_plan_changed",
     );
+  const resumableLengths =
+    expected === searchExpected ? [2, 4] : [2, expected.length - 1];
   if (
     initialCalls.length &&
-    (![2, 4].includes(initialCalls.length) ||
-      initialCalls[0]?.key !== "campaign" ||
-      initialCalls[1]?.key !== "suspend" ||
-      initialCalls[0].ids?.[0] !== initialResults.campaign?.Id ||
-      initialCalls[1].ids?.[0] !== initialResults.suspend?.Id ||
-      initialCalls[1].holdState !== "OFF_DRAFT" ||
-      (initialCalls.length === 4 &&
-        (initialCalls[2]?.key !== "adgroup" ||
-          initialCalls[2].ids?.[0] !== initialResults.adgroup?.Id ||
-          initialCalls[3]?.key !== "keywords" ||
-          initialCalls[3].ids?.[0] !== initialResults.keywords?.Id)))
+    (!resumableLengths.includes(initialCalls.length) ||
+      initialCalls.some(
+        (call, index) =>
+          call?.key !== expected[index][0] ||
+          call.ids?.[0] !== initialResults[call.key]?.Id ||
+          (index === 1 && call.holdState !== "OFF_DRAFT"),
+      ))
   )
     throw new AppError(409, "Точка продолжения плана некорректна.");
   const results = { ...initialResults },
@@ -416,14 +423,16 @@ export async function executeDirectCommands(
       response = await client.createAds(
         params.Ads.map((ad) =>
           results.campaignType === "UNIFIED_CAMPAIGN"
-            ? {
-                AdGroupId: ad.AdGroupId,
-                ResponsiveAd: {
-                  Titles: [ad.TextAd.Title.replace(/\s*·\s*/g, ", ")],
-                  Texts: [ad.TextAd.Text],
-                  Href: ad.TextAd.Href,
-                },
-              }
+            ? ad.ResponsiveAd
+              ? ad
+              : {
+                  AdGroupId: ad.AdGroupId,
+                  ResponsiveAd: {
+                    Titles: [ad.TextAd.Title.replace(/\s*·\s*/g, ", ")],
+                    Texts: [ad.TextAd.Text],
+                    Href: ad.TextAd.Href,
+                  },
+                }
             : ad,
         ),
       );

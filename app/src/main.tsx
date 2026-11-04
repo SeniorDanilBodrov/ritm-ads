@@ -2056,7 +2056,7 @@ function App() {
           onClick={() => select("connections")}
         >
           <Plug size={20} />
-          <span>Страница и Директ</span>
+          <span>Страница</span>
         </button>
         <button
           className={page === "campaigns" ? "selected" : ""}
@@ -3603,6 +3603,20 @@ function Chart({
   mode: "line" | "bars";
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [compact, setCompact] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : window.matchMedia("(max-width: 520px)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 520px)");
+    const update = () => setCompact(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
   if (!daily.length)
     return (
       <Empty
@@ -3613,16 +3627,28 @@ function Chart({
   const data = daily.slice(-10),
     rawMax = Math.max(1, ...data.map((d) => d.leads)),
     max = Math.max(4, Math.ceil(rawMax / 4) * 4),
-    x = (i: number) => 64 + i * (760 / Math.max(1, data.length - 1)),
-    y = (v: number) => 205 - (v / max) * 160,
-    barStep = 760 / data.length,
-    barWidth = Math.min(52, barStep * 0.62),
-    barX = (i: number) => 64 + i * barStep + (barStep - barWidth) / 2;
+    chartWidth = compact ? 360 : 880,
+    chartHeight = compact ? 238 : 270,
+    plotLeft = compact ? 38 : 64,
+    plotRight = compact ? 344 : 824,
+    plotTop = compact ? 28 : 45,
+    plotBottom = compact ? 180 : 205,
+    plotWidth = plotRight - plotLeft,
+    plotHeight = plotBottom - plotTop,
+    x = (i: number) =>
+      plotLeft + i * (plotWidth / Math.max(1, data.length - 1)),
+    y = (v: number) => plotBottom - (v / max) * plotHeight,
+    barStep = plotWidth / data.length,
+    barWidth = Math.min(compact ? 22 : 52, barStep * 0.62),
+    barX = (i: number) =>
+      plotLeft + i * barStep + (barStep - barWidth) / 2,
+    labelY = compact ? 214 : 238;
   const points = data.map((d, i) => `${x(i)},${y(d.leads)}`).join(" ");
   return (
     <div className="chart" onMouseLeave={() => setHover(null)}>
       <svg
-        viewBox="0 0 880 270"
+        className={compact ? "chart-svg chart-svg-compact" : "chart-svg"}
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         role="img"
         aria-label={`${mode === "line" ? "Линейный" : "Столбчатый"} график количества обращений по тестовым дням`}
       >
@@ -3638,12 +3664,16 @@ function Chart({
           <g key={i}>
             <line
               className="chart-grid-line"
-              x1="64"
-              x2="824"
-              y1={45 + (i * 160) / 3}
-              y2={45 + (i * 160) / 3}
+              x1={plotLeft}
+              x2={plotRight}
+              y1={plotTop + (i * plotHeight) / 3}
+              y2={plotTop + (i * plotHeight) / 3}
             />
-            <text x="48" y={50 + (i * 160) / 3} textAnchor="end">
+            <text
+              x={plotLeft - (compact ? 8 : 16)}
+              y={plotTop + 5 + (i * plotHeight) / 3}
+              textAnchor="end"
+            >
               {Math.round(max * (1 - i / 3))}
             </text>
           </g>
@@ -3651,7 +3681,7 @@ function Chart({
         {mode === "line" ? (
           <>
             <polygon
-              points={`64,205 ${points} ${x(data.length - 1)},205`}
+              points={`${plotLeft},${plotBottom} ${points} ${x(data.length - 1)},${plotBottom}`}
               fill="url(#area)"
             />
             <polyline className="chart-line" points={points} fill="none" />
@@ -3664,7 +3694,7 @@ function Chart({
               x={barX(i)}
               y={y(d.leads)}
               width={barWidth}
-              height={205 - y(d.leads)}
+              height={plotBottom - y(d.leads)}
               rx="5"
             />
           ))
@@ -3680,7 +3710,12 @@ function Chart({
           >
             {mode === "line" ? (
               <>
-                <circle cx={x(i)} cy={y(d.leads)} r="18" fill="transparent" />
+                <circle
+                  cx={x(i)}
+                  cy={y(d.leads)}
+                  r={compact ? 14 : 18}
+                  fill="transparent"
+                />
                 <circle
                   className="chart-point"
                   cx={x(i)}
@@ -3691,16 +3726,16 @@ function Chart({
             ) : (
               <rect
                 x={barX(i) - 8}
-                y="38"
+                y={plotTop - 7}
                 width={barWidth + 16}
-                height="176"
+                height={plotHeight + 16}
                 fill="transparent"
               />
             )}
             {(i % 2 === 0 || i === data.length - 1) && (
               <text
                 x={mode === "line" ? x(i) : barX(i) + barWidth / 2}
-                y="238"
+                y={labelY}
                 textAnchor="middle"
               >
                 {d.label}

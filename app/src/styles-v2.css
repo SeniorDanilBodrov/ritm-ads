@@ -94,12 +94,12 @@
 }
 
 html {
-  min-width: 320px;
+  min-width: 0;
   background: var(--canvas);
 }
 
 body {
-  min-width: 320px;
+  min-width: 0;
   margin: 0;
   color: var(--ink);
   background: var(--canvas);

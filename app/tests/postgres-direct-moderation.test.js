@@ -235,7 +235,7 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
           Id: 99,
           CampaignId: 77,
           AdGroupId: 88,
-          Status: submitted ? "MODERATION" : "DRAFT",
+          Status: submitted ? "PREACCEPTED" : "DRAFT",
           TextAd: {
             Title: data.plan.ads[0].title,
             Text: data.plan.ads[0].text,

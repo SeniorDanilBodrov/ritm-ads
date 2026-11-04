@@ -762,9 +762,27 @@ function adsSubmitted(adIds, response) {
   return (
     sameIds(adIds, response?.Ads) &&
     response.Ads.every((ad) =>
-      ["MODERATION", "ACCEPTED", "REJECTED"].includes(ad.Status),
+      ["MODERATION", "PREACCEPTED", "ACCEPTED", "REJECTED"].includes(
+        ad.Status,
+      ),
     )
   );
+}
+
+function moderationFailureCode(error, fallback) {
+  const itemCode = Number(error?.itemErrors?.[0]?.code);
+  if (Number.isSafeInteger(itemCode) && itemCode > 0)
+    return `direct_item_${itemCode}`;
+  const providerCode = Number(error?.providerCode);
+  if (Number.isSafeInteger(providerCode) && providerCode > 0)
+    return `direct_${providerCode}`;
+  if (
+    typeof error?.code === "string" &&
+    /^[a-z][a-z0-9_]{0,63}$/.test(error.code) &&
+    error.code !== "provider_error"
+  )
+    return error.code;
+  return fallback;
 }
 
 export async function submitPostgresModeration(
@@ -848,7 +866,7 @@ export async function submitPostgresModeration(
       "succeeded",
       true,
     );
-  } catch {
+  } catch (error) {
     if (!sending)
       return transitionModeration(
         db,
@@ -858,7 +876,7 @@ export async function submitPostgresModeration(
         "checking",
         "failed_no_write",
         false,
-        "precheck_failed",
+        moderationFailureCode(error, "precheck_failed"),
       );
     try {
       if (adsSubmitted(action.adIds, await client.adsByIds(action.adIds)))
@@ -882,7 +900,7 @@ export async function submitPostgresModeration(
       "sending",
       "needs_reconciliation",
       true,
-      "unknown_result",
+      moderationFailureCode(error, "unknown_result"),
     );
   }
 }

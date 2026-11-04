@@ -5856,6 +5856,7 @@ type ModerationAction = {
     | "failed_no_write"
     | "needs_reconciliation";
   updatedAt: string;
+  errorCode: string | null;
 };
 const moderationBlockerText: Record<string, string> = {
   budget_drift: "Бюджет или период в Директе отличается от плана.",
@@ -5871,6 +5872,28 @@ const moderationBlockerText: Record<string, string> = {
   previous_action_unresolved: "Предыдущее действие модерации требует сверки.",
   campaign_action_unresolved: "Другое действие с кампанией требует сверки.",
 };
+const moderationErrorText: Record<string, string> = {
+  precheck_failed:
+    "Состояние кампании изменилось после проверки. Проверьте готовность ещё раз.",
+  unknown_result:
+    "Ответ Яндекса прервался после отправки. Ритм не повторяет команду, пока не сверит объявления.",
+  provider_error:
+    "Яндекс временно не ответил. Объявления не отправлялись; повторите проверку.",
+  invalid_request:
+    "Кампания не прошла контрольную проверку. Обновите состояние и исправьте указанные препятствия.",
+};
+
+function readableModerationError(code: string | null) {
+  if (!code) return "";
+  if (moderationErrorText[code]) return moderationErrorText[code];
+  const itemCode = code.match(/^direct_item_(\d+)$/)?.[1];
+  if (itemCode)
+    return `Яндекс отклонил параметры объявления (код ${itemCode}). Откройте объявление в Директе, исправьте отмеченное поле и повторите отправку.`;
+  const providerCode = code.match(/^direct_(\d+)$/)?.[1];
+  if (providerCode)
+    return `Яндекс отклонил запрос (код ${providerCode}). Проверьте права кабинета и данные объявления, затем повторите проверку.`;
+  return "Отправка не завершилась. Проверьте готовность кампании ещё раз.";
+}
 
 function ModerationCard({
   businessId,
@@ -5897,7 +5920,11 @@ function ModerationCard({
   const keyName = `ritm:moderate:${businessId}:${changeId}`;
   useEffect(() => {
     void api(`/businesses/${businessId}/direct/${changeId}/moderation-actions`)
-      .then((rows) => setAction((rows as ModerationAction[])[0] || null))
+      .then((rows) => {
+        const latest = (rows as ModerationAction[])[0] || null;
+        setAction(latest);
+        if (!latest || latest.status === "failed_no_write") void inspect();
+      })
       .catch(() => {});
   }, [businessId, changeId]);
   async function inspect() {
@@ -5991,7 +6018,11 @@ function ModerationCard({
         disabled={pending}
         onClick={inspect}
       >
-        {pending ? "Проверяем…" : "Проверить готовность к модерации"}
+        {pending
+          ? "Проверяем готовность…"
+          : readiness
+            ? "Проверить готовность снова"
+            : "Проверить готовность к модерации"}
       </button>
       {readiness && (
         <div className="direct-budget-preview-result" role="status">
@@ -6078,7 +6109,7 @@ function ModerationCard({
               }
               onClick={send}
             >
-              Отправить {readiness.adIds.length} объявл. на модерацию
+              Отправить в Яндекс на модерацию
             </button>
           </div>
         )}
@@ -6105,6 +6136,9 @@ function ModerationCard({
               : "Показы не возобновлялись · "}
             {new Date(action.updatedAt).toLocaleString("ru-RU")}
           </small>
+          {action.errorCode && action.status !== "succeeded" && (
+            <p role="alert">{readableModerationError(action.errorCode)}</p>
+          )}
           {action.status === "succeeded" && (
             <button
               type="button"

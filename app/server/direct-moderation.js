@@ -403,7 +403,9 @@ function submittedAds(adIds, response) {
   return (
     sameIds(adIds, response?.Ads) &&
     response.Ads.every((ad) =>
-      ["MODERATION", "ACCEPTED", "REJECTED"].includes(ad.Status),
+      ["MODERATION", "PREACCEPTED", "ACCEPTED", "REJECTED"].includes(
+        ad.Status,
+      ),
     )
   );
 }

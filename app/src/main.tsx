@@ -3873,6 +3873,10 @@ function HostedPlanReview({
   const [creativeAssetId, setCreativeAssetId] = useState(
     directReadyImages[0]?.id || "",
   );
+  const selectedCreativeImage =
+    directReadyImages.find((image) => image.id === creativeAssetId) ||
+    directReadyImages[0] ||
+    null;
   useEffect(() => {
     if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
     setCreativeAssetId(directReadyImages[0]?.id || "");
@@ -3976,7 +3980,7 @@ function HostedPlanReview({
       approvedTexts.length < 3 ||
       !yandex?.clients?.[0] ||
       !regionId ||
-      (useNetwork && !creativeAssetId)
+      !creativeAssetId
     )
       return;
     setPreparingCampaigns(true);
@@ -4324,13 +4328,80 @@ function HostedPlanReview({
                   </div>
                 </div>
 
+                {approvedTexts.length >= 3 && selectedCreativeImage && (
+                  <section
+                    className="hosted-moderation-preview"
+                    aria-labelledby="moderation-preview-title"
+                  >
+                    <header>
+                      <div>
+                        <span className="eyebrow">ИТОГОВАЯ ПРОВЕРКА</span>
+                        <h4 id="moderation-preview-title">
+                          Что уйдёт на модерацию Яндекса
+                        </h4>
+                        <p>
+                          Фактические материалы запуска, а не декоративный
+                          макет.
+                        </p>
+                      </div>
+                      <Badge tone="green">Материалы выбраны</Badge>
+                    </header>
+                    <div className="hosted-moderation-content">
+                      <figure>
+                        {selectedCreativeImage.imageUrl && (
+                          <img
+                            src={selectedCreativeImage.imageUrl}
+                            alt={`Выбранное изображение для рекламы «${ws.state.name}»`}
+                          />
+                        )}
+                        <figcaption>
+                          <b>Изображение</b>
+                          <span>
+                            {selectedCreativeImage.width &&
+                            selectedCreativeImage.height
+                              ? `${selectedCreativeImage.width} × ${selectedCreativeImage.height}`
+                              : "Готовый файл"}
+                            {selectedCreativeImage.brandPlacement === "none"
+                              ? " · без надписи"
+                              : ` · название ${selectedCreativeImage.brandPlacement === "bottom-left" ? "слева" : "справа"}`}
+                          </span>
+                        </figcaption>
+                      </figure>
+                      <div className="hosted-moderation-copy">
+                        {approvedTexts.slice(0, 3).map((item, index) => (
+                          <article key={item.id}>
+                            <span>Вариант {index + 1}</span>
+                            <h5>{item.title.slice(0, 56)}</h5>
+                            <p>{item.text.slice(0, 81)}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                    <dl className="hosted-moderation-facts">
+                      <div>
+                        <dt>Страница</dt>
+                        <dd>{ws.state.website}</dd>
+                      </div>
+                      <div>
+                        <dt>Как соберётся</dt>
+                        <dd>
+                          {useNetwork
+                            ? "3 поисковых объявления и 1 адаптивное объявление в Рекламной сети"
+                            : "3 отдельных объявления в поиске"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                )}
+
                 {approvedTexts.length < 3 ? (
                   <div className="hosted-direct-action">
                     <div>
-                      <b>Согласуйте три варианта текста</b>
+                      <b>Разрешите три варианта текста</b>
                       <small>
-                        Готово {approvedTexts.length} из 3. Так Ритм сможет
-                        проверить разные причины обратиться к вам.
+                        Готово {approvedTexts.length} из 3. Каждый вариант
+                        станет отдельным поисковым объявлением; отправка в
+                        Яндекс начнётся только после итоговой проверки.
                       </small>
                     </div>
                     <button
@@ -4341,13 +4412,13 @@ function HostedPlanReview({
                       Перейти к текстам <ArrowRight size={15} />
                     </button>
                   </div>
-                ) : useNetwork && directReadyImages.length === 0 ? (
+                ) : directReadyImages.length === 0 ? (
                   <div className="hosted-direct-action">
                     <div>
-                      <b>Выберите изображение для Рекламной сети</b>
+                      <b>Выберите изображение для рекламы</b>
                       <small>
-                        Сначала согласуйте один вариант. Ритм сам передаст его в
-                        Директ и не опубликует без вашей проверки.
+                        Ритм прикрепит его к объявлениям в Директе. Без
+                        выбранного изображения новый запуск не подготовится.
                       </small>
                     </div>
                     <button
@@ -4364,17 +4435,17 @@ function HostedPlanReview({
                     Директа. Добавьте выбор региона перед подготовкой кампании.
                   </div>
                 ) : !directChange ? (
-                  <div className="hosted-direct-action">
-                    <div>
-                      <b>Материалы готовы</b>
-                      <small>
-                        {useNetwork
-                          ? `Поиск ${money(searchBudget)} · Рекламная сеть ${money(networkBudget)} · общий лимит ${money(ws.state.budget)}`
-                          : `Поиск · общий лимит ${money(ws.state.budget)}`}
-                      </small>
-                      {directReadyImages.length > 0 && (
+                  <div className="hosted-direct-ready">
+                    <div className="hosted-direct-action">
+                      <div>
+                        <b>Материалы готовы</b>
+                        <small>
+                          {useNetwork
+                            ? `Поиск ${money(searchBudget)} · Рекламная сеть ${money(networkBudget)} · общий лимит ${money(ws.state.budget)}`
+                            : `Поиск · общий лимит ${money(ws.state.budget)}`}
+                        </small>
                         <label className="hosted-image-choice">
-                          Изображение
+                          Выбранное изображение
                           <select
                             value={creativeAssetId}
                             onChange={(event) =>
@@ -4388,25 +4459,25 @@ function HostedPlanReview({
                             ))}
                           </select>
                         </label>
-                      )}
+                      </div>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={busy || preparingCampaigns}
+                        onClick={() => void prepareHeldDraft()}
+                      >
+                        {preparingCampaigns ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <ShieldCheck size={16} />
+                        )}
+                        {preparingCampaigns
+                          ? useNetwork
+                            ? "Готовим два направления…"
+                            : "Готовим поиск…"
+                          : "Подготовить именно эти материалы"}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={busy || preparingCampaigns}
-                      onClick={() => void prepareHeldDraft()}
-                    >
-                      {preparingCampaigns ? (
-                        <LoaderCircle className="spin" size={16} />
-                      ) : (
-                        <ShieldCheck size={16} />
-                      )}
-                      {preparingCampaigns
-                        ? useNetwork
-                          ? "Готовим два направления…"
-                          : "Готовим поиск…"
-                        : "Проверить и подготовить запуск"}
-                    </button>
                   </div>
                 ) : (
                   <div className="hosted-direct-progress" aria-live="polite">
@@ -8518,7 +8589,7 @@ function Creatives({
     ),
     [brandPlacement, setBrandPlacement] = useState<
       "none" | "bottom-left" | "bottom-right"
-    >("bottom-left"),
+    >("none"),
     [hasCostConsent, setHasCostConsent] = useState(false),
     [apiKey, setApiKey] = useState(""),
     [setupError, setSetupError] = useState(""),
@@ -8558,7 +8629,7 @@ function Creatives({
     const approved = await approve(id);
     if (!approved) {
       setTextApprovalError(
-        "Не удалось согласовать текст. Обновите страницу и попробуйте ещё раз.",
+        "Не удалось сохранить выбор. Обновите страницу и попробуйте ещё раз.",
       );
       setTextApprovalErrorId(id);
     }
@@ -8758,9 +8829,9 @@ function Creatives({
               <div className="creative-choice-row brand-options">
                 {(
                   [
+                    ["none", "Без названия", "Чистая фотография"],
                     ["bottom-left", "Слева", "В нижнем углу"],
                     ["bottom-right", "Справа", "В нижнем углу"],
-                    ["none", "Без названия", "Только фотография"],
                   ] as const
                 ).map(([value, title, text]) => (
                   <label
@@ -8782,8 +8853,9 @@ function Creatives({
                 ))}
               </div>
               <p className="field-hint format-hint">
-                Название наносится после генерации точным шрифтом. Модель не
-                рисует буквы, поэтому текст не искажается.
+                По умолчанию оставляем чистую фотографию. Если добавить
+                название, Ритм нанесёт небольшую светлую подпись после генерации
+                — буквы не будут искажены моделью.
               </p>
             </fieldset>
             <button
@@ -9082,8 +9154,11 @@ function Creatives({
       <div className="info-box neutral">
         <BookOpen size={20} />
         <span>
-          Тексты подготовлены по данным из профиля. Цветные карточки ниже —
-          концепции предпросмотра, а не готовые изображения для рекламы.
+          Можно разрешить все три текста: в поиске они станут отдельными
+          объявлениями, а в Рекламной сети Яндекс сможет сочетать разрешённые
+          заголовки и описания. Здесь ничего не отправляется — итоговую сборку с
+          фотографией вы увидите на шаге «План и запуск». Цветные карточки ниже
+          — только концепции, не готовые изображения.
         </span>
       </div>
       <div className="creative-grid">
@@ -9138,10 +9213,10 @@ function Creatives({
                   <Check size={16} />
                 )}
                 {c.status === "approved"
-                  ? "Согласовано"
+                  ? "Разрешён для рекламы"
                   : approvingTextId === c.id
-                    ? "Согласовываем…"
-                    : "Согласовать текст"}
+                    ? "Сохраняем выбор…"
+                    : "Разрешить использовать"}
               </button>
               {textApprovalError && textApprovalErrorId === c.id && (
                 <small className="field-error" role="alert">
@@ -9156,10 +9231,10 @@ function Creatives({
         ws.state.creatives.some((item) => item.status === "approved") && (
           <section className="card creative-next-step">
             <div>
-              <b>Текст согласован</b>
+              <b>Тексты выбраны</b>
               <p>
-                Вернитесь к плану. Там Ритм проверит кабинет и подготовит
-                выключенную кампанию.
+                Вернитесь к плану. Там вы увидите точные тексты вместе с
+                выбранным изображением до отправки в Директ.
               </p>
             </div>
             <button

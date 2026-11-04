@@ -586,20 +586,19 @@ function brandLines(value) {
 function brandOverlay(width, height, companyName, placement) {
   if (placement === "none" || !creativeBrandName(companyName)) return null;
   const lines = brandLines(companyName),
-    margin = Math.round(Math.min(width, height) * 0.04),
-    paddingX = Math.round(width * 0.027),
+    margin = Math.round(Math.min(width, height) * 0.035),
+    paddingX = Math.round(width * 0.018),
+    paddingY = Math.round(height * 0.014),
     fontSize = Math.round(
-      Math.min(height * (lines.length > 1 ? 0.035 : 0.047), width * 0.044),
+      Math.min(height * (lines.length > 1 ? 0.024 : 0.028), width * 0.028),
     ),
-    lineHeight = Math.round(fontSize * 1.2),
-    panelHeight = Math.round(
-      Math.max(height * 0.105, lineHeight * lines.length + margin * 0.7),
-    ),
+    lineHeight = Math.round(fontSize * 1.18),
+    panelHeight = Math.round(lineHeight * lines.length + paddingY * 2),
     longest = Math.max(...lines.map((line) => line.length)),
     panelWidth = Math.round(
       Math.min(
-        width * 0.68,
-        Math.max(width * 0.27, longest * fontSize * 0.61 + paddingX * 2),
+        width * 0.52,
+        Math.max(width * 0.18, longest * fontSize * 0.58 + paddingX * 2),
       ),
     ),
     x = placement === "bottom-right" ? width - margin - panelWidth : margin,
@@ -611,12 +610,11 @@ function brandOverlay(width, height, companyName, placement) {
     text = lines
       .map(
         (line, index) =>
-          `<text x="${textX}" y="${Math.round(firstBaseline + index * lineHeight)}" text-anchor="${anchor}" dominant-baseline="middle" fill="#ffffff" font-family="Arial, DejaVu Sans, sans-serif" font-size="${fontSize}" font-weight="700">${xml(line)}</text>`,
+          `<text x="${textX}" y="${Math.round(firstBaseline + index * lineHeight)}" text-anchor="${anchor}" dominant-baseline="middle" fill="#17231f" font-family="Arial, DejaVu Sans, sans-serif" font-size="${fontSize}" font-weight="650">${xml(line)}</text>`,
       )
       .join("");
   return Buffer.from(`<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-    <rect x="${x}" y="${y}" width="${panelWidth}" height="${panelHeight}" rx="${Math.round(panelHeight * 0.2)}" fill="#123d31" fill-opacity="0.92"/>
-    <rect x="${placement === "bottom-right" ? x + panelWidth - 7 : x}" y="${y}" width="7" height="${panelHeight}" rx="3" fill="#c9f45b"/>
+    <rect x="${x}" y="${y}" width="${panelWidth}" height="${panelHeight}" rx="${Math.round(panelHeight * 0.28)}" fill="#f7f4ec" fill-opacity="0.9" stroke="#ffffff" stroke-opacity="0.45"/>
     ${text}
   </svg>`);
 }

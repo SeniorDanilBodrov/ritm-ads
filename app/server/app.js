@@ -47,6 +47,7 @@ import {
   refreshYandexToken,
 } from "./providers.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
+import { runAcceptanceSimulation } from "./acceptance-simulation.js";
 import { analyzeSnapshot } from "./advisor.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
@@ -2921,6 +2922,43 @@ export function createApp({
         assertBudget(s);
         for (const e of entries) event(db, b.id, e);
         return { message };
+      },
+    );
+    res.json(response);
+  });
+  app.post("/api/businesses/:id/acceptance-run", authenticated, (req, res) => {
+    const key = z.string().uuid().parse(req.headers["idempotency-key"]);
+    const response = command(
+      db,
+      req.user.id,
+      req.params.id,
+      key,
+      hash("acceptance-simulation/1"),
+      (business) => {
+        const row = db
+          .prepare(
+            `SELECT plan_json FROM direct_changes
+             WHERE business_id=? ORDER BY created_at DESC,id DESC LIMIT 1`,
+          )
+          .get(business.id);
+        if (!row?.plan_json)
+          throw new AppError(
+            409,
+            "Сначала подготовьте план рекламы, затем запустите его проверку.",
+          );
+        const plan = JSON.parse(row.plan_json);
+        const report = runAcceptanceSimulation(business.state, plan);
+        event(db, business.id, {
+          kind: "acceptance_run",
+          title: "Тестовый прогон завершён",
+          reason: `${report.checks.length} проверок пройдено без записи в Яндекс Директ.`,
+          rule: "acceptance-simulation/1",
+          acceptanceRun: report,
+        });
+        return {
+          message: "Тестовый прогон завершён. Рабочая реклама не менялась.",
+          acceptanceRun: report,
+        };
       },
     );
     res.json(response);

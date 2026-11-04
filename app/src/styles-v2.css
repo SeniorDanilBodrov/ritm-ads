@@ -9695,3 +9695,243 @@ textarea::placeholder {
     margin-top: 30px;
   }
 }
+
+/* Acceptance run: a local proof of the autopilot workflow. */
+.acceptance-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px 32px;
+  margin-bottom: 18px;
+  padding: 24px 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+}
+
+.acceptance-run-intro {
+  display: flex;
+  gap: 16px;
+  min-width: 0;
+}
+
+.acceptance-run-mark {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  color: var(--brand);
+  background: var(--surface-soft);
+}
+
+.acceptance-run-kicker {
+  display: block;
+  margin: 1px 0 5px;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.acceptance-run h2 {
+  margin: 0;
+  font-size: clamp(20px, 2vw, 25px);
+  line-height: 1.2;
+}
+
+.acceptance-run-intro p {
+  max-width: 67ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.acceptance-run-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+
+.acceptance-run-action > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.acceptance-run-action .primary {
+  min-width: 238px;
+  justify-content: center;
+}
+
+.acceptance-run-result {
+  grid-column: 1 / -1;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.acceptance-run-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.acceptance-run-result-head b,
+.acceptance-run-result-head small {
+  display: block;
+}
+
+.acceptance-run-result-head small {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.acceptance-run-passed {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--brand-soft);
+}
+
+.acceptance-run-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.acceptance-run-checks li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  padding: 15px 18px 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.acceptance-run-checks li:not(:nth-child(3n + 1)) {
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.acceptance-run-checks svg {
+  margin-top: 1px;
+  color: var(--success);
+}
+
+.acceptance-run-checks b,
+.acceptance-run-checks span {
+  display: block;
+}
+
+.acceptance-run-checks b {
+  line-height: 1.35;
+}
+
+.acceptance-run-checks span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.acceptance-run-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding-top: 15px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.acceptance-run-proof b {
+  color: var(--ink-soft);
+}
+
+@media (max-width: 980px) {
+  .acceptance-run {
+    grid-template-columns: 1fr;
+  }
+
+  .acceptance-run-action {
+    align-items: stretch;
+  }
+
+  .acceptance-run-action > span {
+    order: 2;
+  }
+
+  .acceptance-run-action .primary {
+    width: 100%;
+  }
+
+  .acceptance-run-checks {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .acceptance-run-checks li:nth-child(n) {
+    padding-right: 18px;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .acceptance-run-checks li:not(:nth-child(3n + 1)) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .acceptance-run-checks li:nth-child(even) {
+    padding-left: 18px;
+    border-left: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 620px) {
+  .acceptance-run {
+    gap: 18px;
+    padding: 18px;
+  }
+
+  .acceptance-run-intro {
+    gap: 12px;
+  }
+
+  .acceptance-run-mark {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .acceptance-run-checks {
+    grid-template-columns: 1fr;
+  }
+
+  .acceptance-run-checks li:nth-child(n) {
+    padding: 13px 0;
+    border-left: 0;
+  }
+
+  .acceptance-run-checks li:nth-child(even),
+  .acceptance-run-checks li:not(:nth-child(3n + 1)) {
+    padding: 13px 0;
+    border-left: 0;
+  }
+
+  .acceptance-run-result-head {
+    display: grid;
+  }
+
+  .acceptance-run-passed {
+    width: fit-content;
+  }
+}

@@ -392,7 +392,7 @@ test("live workspace can update its local profile without enabling ad writes", a
     "live_gate",
   );
 });
-test("live workspace can queue an idempotent dry-run without provider writes", async () => {
+test("live workspace can prepare a plan and test the autopilot without provider writes", async () => {
   const { cookie, ws } = await demo(),
     key = randomUUID(),
     state = { ...ws.state, mode: "live" },
@@ -429,6 +429,22 @@ test("live workspace can queue an idempotent dry-run without provider writes", a
   const current = await send("/api/workspace", { cookie });
   assert.equal(current.body.directChanges[0].status, "succeeded");
   assert.equal(current.body.directChanges[0].reconciliation.externalCalls, 0);
+  const stateBeforeRun = structuredClone(current.body.state),
+    acceptance = await send(`/api/businesses/${ws.id}/acceptance-run`, {
+      cookie,
+      body: {},
+    });
+  assert.equal(acceptance.status, 200);
+  assert.equal(acceptance.body.acceptanceRun.status, "passed");
+  assert.equal(acceptance.body.acceptanceRun.providerCalls, 0);
+  assert.equal(acceptance.body.acceptanceRun.externalWrites, 0);
+  assert.equal(acceptance.body.acceptanceRun.checks.length, 9);
+  const afterRun = await send(`/api/workspace?businessId=${ws.id}`, {
+    cookie,
+  });
+  assert.deepEqual(afterRun.body.state, stateBeforeRun);
+  assert.equal(afterRun.body.events[0].kind, "acceptance_run");
+  assert.equal(afterRun.body.events[0].acceptanceRun.status, "passed");
 });
 test("misconfigured OAuth does not redirect with empty credentials", async () => {
   const r = await fetch(base + "/auth/google/start");

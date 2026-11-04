@@ -66,6 +66,7 @@ import type {
   DirectAbPlan,
   DirectControlReview,
   LiveShadowReview,
+  AcceptanceRunReport,
 } from "./types";
 import ritmMark from "./assets/ritm-mark.png";
 import ritmGrowthSeed from "./assets/ritm-growth-seed.png";
@@ -1377,255 +1378,282 @@ function App() {
                   />
                 ))}
               {page === "campaigns" && (
-                <Campaigns
-                  ws={ws}
-                  busy={busy}
-                  navigate={select}
-                  editBusiness={() => setModal("business-edit")}
-                  budget={() => setModal("budget")}
-                  launch={() =>
-                    setConfirmation({
-                      title: "Запустить тестовый план?",
-                      text: "Создадим направления для поиска и знакомства с бизнесом. 10% бюджета останутся в резерве. Реальных списаний не будет.",
-                      action: () => cmd("launch"),
-                    })
-                  }
-                  toggle={(c) =>
-                    setConfirmation({
-                      title:
-                        c.status === "active"
-                          ? "Остановить направление?"
-                          : "Возобновить направление?",
-                      text: c.name,
-                      action: () => cmd("campaign", { id: c.id }),
-                    })
-                  }
-                  create={() => setModal("business")}
-                  prepareAiPlan={() =>
-                    perform(async () => {
-                      const result = await api(
-                        `/businesses/${ws.id}/ai-plan`,
-                        {},
-                      );
-                      await load(ws.id);
-                      setToast(
-                        result.plan.provider === "ollama"
-                          ? "Рита подготовила план рекламы"
-                          : "Подготовлен безопасный базовый план",
-                      );
-                    })
-                  }
-                  dryRun={(plan) =>
-                    perform(async () => {
-                      const result = await api(
-                        `/businesses/${ws.id}/direct/dry-run`,
-                        plan,
-                      );
-                      await load(ws.id);
-                      setToast(
-                        `Ритм подготовил план: ${result.summary.ads} объявлений и ${result.summary.keywords} фраз. Реклама пока не менялась.`,
-                      );
-                    })
-                  }
-                  preflight={(id) =>
-                    perform(async () => {
-                      const report = await api(
-                        `/businesses/${ws.id}/direct/${id}/preflight`,
-                        {},
-                      );
-                      await load(ws.id);
-                      if (report.ready)
-                        requestAnimationFrame(() => {
-                          document
-                            .querySelector(`[data-direct-approval="${id}"]`)
-                            ?.scrollIntoView({
-                              block: "center",
-                              behavior: window.matchMedia(
-                                "(prefers-reduced-motion: reduce)",
-                              ).matches
-                                ? "auto"
-                                : "smooth",
-                            });
-                        });
-                      setToast(
-                        report.ready
-                          ? "Проверка пройдена. Следующий шаг: подтвердить план."
-                          : `Проверка выявила ${report.findings.filter((item: { severity: string }) => item.severity === "blocker").length} блокирующих пунктов`,
-                      );
-                    })
-                  }
-                  confirmPlan={(id, planFingerprint) =>
-                    setConfirmation({
-                      title: "Подтвердить этот план?",
-                      text: "Подтверждение действует 10 минут и относится только к показанному плану. Сейчас ничего не создаётся в Директе и деньги не списываются.",
-                      action: () =>
+                <>
+                  {s!.mode === "live" && ws.directChanges.length > 0 && (
+                    <AcceptanceRunCard
+                      ws={ws}
+                      busy={busy}
+                      onRun={() =>
                         perform(async () => {
                           await api(
-                            `/businesses/${ws.id}/direct/${id}/confirm`,
-                            { planFingerprint },
+                            `/businesses/${ws.id}/acceptance-run`,
+                            {},
+                            "POST",
+                            crypto.randomUUID(),
                           );
                           await load(ws.id);
                           setToast(
-                            "План подтверждён локально. Запись в Директ остаётся выключенной.",
+                            "Тестовый прогон завершён. Рабочая реклама не менялась",
                           );
-                        }),
-                    })
-                  }
-                  executePlan={(id, planFingerprint, name, budget) =>
-                    setConfirmation({
-                      title: `Создать выключенную кампанию «${name}»?`,
-                      text: `Директ создаст кампанию с лимитом ${(
-                        budget / 100
-                      ).toLocaleString(
-                        "ru-RU",
-                      )} ₽, сразу остановит её и только затем добавит объявления. Если ответ API потеряется, повтор будет заблокирован до сверки. Показы не будут включены этим действием.`,
-                      action: () =>
-                        perform(async () => {
-                          try {
+                        })
+                      }
+                    />
+                  )}
+                  <Campaigns
+                    ws={ws}
+                    busy={busy}
+                    navigate={select}
+                    editBusiness={() => setModal("business-edit")}
+                    budget={() => setModal("budget")}
+                    launch={() =>
+                      setConfirmation({
+                        title: "Запустить тестовый план?",
+                        text: "Создадим направления для поиска и знакомства с бизнесом. 10% бюджета останутся в резерве. Реальных списаний не будет.",
+                        action: () => cmd("launch"),
+                      })
+                    }
+                    toggle={(c) =>
+                      setConfirmation({
+                        title:
+                          c.status === "active"
+                            ? "Остановить направление?"
+                            : "Возобновить направление?",
+                        text: c.name,
+                        action: () => cmd("campaign", { id: c.id }),
+                      })
+                    }
+                    create={() => setModal("business")}
+                    prepareAiPlan={() =>
+                      perform(async () => {
+                        const result = await api(
+                          `/businesses/${ws.id}/ai-plan`,
+                          {},
+                        );
+                        await load(ws.id);
+                        setToast(
+                          result.plan.provider === "ollama"
+                            ? "Рита подготовила план рекламы"
+                            : "Подготовлен безопасный базовый план",
+                        );
+                      })
+                    }
+                    dryRun={(plan) =>
+                      perform(async () => {
+                        const result = await api(
+                          `/businesses/${ws.id}/direct/dry-run`,
+                          plan,
+                        );
+                        await load(ws.id);
+                        setToast(
+                          `Ритм подготовил план: ${result.summary.ads} объявлений и ${result.summary.keywords} фраз. Реклама пока не менялась.`,
+                        );
+                      })
+                    }
+                    preflight={(id) =>
+                      perform(async () => {
+                        const report = await api(
+                          `/businesses/${ws.id}/direct/${id}/preflight`,
+                          {},
+                        );
+                        await load(ws.id);
+                        if (report.ready)
+                          requestAnimationFrame(() => {
+                            document
+                              .querySelector(`[data-direct-approval="${id}"]`)
+                              ?.scrollIntoView({
+                                block: "center",
+                                behavior: window.matchMedia(
+                                  "(prefers-reduced-motion: reduce)",
+                                ).matches
+                                  ? "auto"
+                                  : "smooth",
+                              });
+                          });
+                        setToast(
+                          report.ready
+                            ? "Проверка пройдена. Следующий шаг: подтвердить план."
+                            : `Проверка выявила ${report.findings.filter((item: { severity: string }) => item.severity === "blocker").length} блокирующих пунктов`,
+                        );
+                      })
+                    }
+                    confirmPlan={(id, planFingerprint) =>
+                      setConfirmation({
+                        title: "Подтвердить этот план?",
+                        text: "Подтверждение действует 10 минут и относится только к показанному плану. Сейчас ничего не создаётся в Директе и деньги не списываются.",
+                        action: () =>
+                          perform(async () => {
                             await api(
-                              `/businesses/${ws.id}/direct/${id}/execute`,
+                              `/businesses/${ws.id}/direct/${id}/confirm`,
                               { planFingerprint },
                             );
-                            setToast("Выключенная кампания создана и сверена");
-                          } finally {
                             await load(ws.id);
-                          }
-                        }),
-                    })
-                  }
-                  inspectExecution={(id) =>
-                    perform(async () => {
-                      try {
-                        await api(
-                          `/businesses/${ws.id}/direct/${id}/execution/inspect`,
-                          {},
-                        );
-                        setToast("Известные объекты проверены в Директе");
-                      } finally {
-                        await load(ws.id);
-                      }
-                    })
-                  }
-                  suspendCampaign={(id, name, campaignId) =>
-                    setConfirmation({
-                      title: `Проверить остановку «${name}»?`,
-                      text: `Проверим кампанию №${campaignId} в Директе. Если показы идут, отправим одну команду остановки и прочитаем состояние повторно. Бюджет при этом не увеличится.`,
-                      action: () =>
-                        perform(async () => {
-                          const keyName = `ritm:suspend:${ws.id}:${id}`;
-                          const requestKey =
-                            safeStorage.getItem(keyName) || crypto.randomUUID();
-                          safeStorage.setItem(keyName, requestKey);
-                          try {
-                            const action = await api(
-                              `/businesses/${ws.id}/direct/${id}/suspend`,
-                              {},
-                              "POST",
-                              requestKey,
-                            );
-                            if (
-                              action.status === "succeeded" ||
-                              action.status === "failed_no_write"
-                            )
-                              safeStorage.removeItem(keyName);
                             setToast(
-                              action.status === "succeeded"
-                                ? "Остановка подтверждена Директом"
-                                : action.status === "failed_no_write"
-                                  ? "Предварительная проверка не прошла; команда не отправлялась."
-                                  : "Ответ требует сверки; повторная запись заблокирована",
+                              "План подтверждён локально. Запись в Директ остаётся выключенной.",
                             );
-                          } finally {
-                            await load(ws.id);
-                          }
-                        }),
-                    })
-                  }
-                  inspectLifecycle={(id, actionId) =>
-                    perform(async () => {
-                      try {
-                        const action = await api(
-                          `/businesses/${ws.id}/direct/${id}/lifecycle/${actionId}/inspect`,
-                          {},
-                        );
-                        if (action.status === "succeeded")
-                          safeStorage.removeItem(`ritm:suspend:${ws.id}:${id}`);
-                        setToast(
-                          action.status === "succeeded"
-                            ? "Остановка подтверждена Директом"
-                            : "Состояние ещё требует ручной проверки",
-                        );
-                      } finally {
-                        await load(ws.id);
-                      }
-                    })
-                  }
-                  checkBudget={(id) =>
-                    perform(async () => {
-                      try {
-                        const result = await api(
-                          `/businesses/${ws.id}/direct/${id}/budget-check`,
-                          {},
-                        );
-                        setToast(
-                          result.status === "matched"
-                            ? "Лимит и даты сверены с Директом"
-                            : "Настройки в Директе отличаются от плана",
-                        );
-                      } finally {
-                        await load(ws.id);
-                      }
-                    })
-                  }
-                  inspectControl={(id) =>
-                    performWithResult(async () => {
-                      try {
-                        const result = await api(
-                          `/businesses/${ws.id}/direct/${id}/control-review`,
-                          {},
-                          "POST",
-                          crypto.randomUUID(),
-                        );
-                        const waitingForYandex = result.blockers?.some(
-                          (code: string) =>
-                            [
-                              "campaign_under_review",
-                              "ads_under_review",
-                            ].includes(code),
-                        );
-                        setToast(
-                          waitingForYandex
-                            ? "Яндекс ещё проверяет объявление. Показы не запущены"
-                            : result.status === "technical_ready"
-                              ? "Техническая проверка пройдена; для запуска нужны отдельные согласования"
-                              : "Яндекс пока не разрешил показы — причина указана ниже",
-                        );
-                      } finally {
-                        await load(ws.id);
-                      }
-                    })
-                  }
-                  reviewShadow={(id) =>
-                    perform(async () => {
-                      try {
-                        const result = await api(
-                          `/businesses/${ws.id}/direct/${id}/shadow-review`,
-                          {},
-                          "POST",
-                          crypto.randomUUID(),
-                        );
-                        setToast(
-                          result.status === "observed"
-                            ? "Сводка Директа и Метрики обновлена"
-                            : "Для сводки пока недостаточно данных",
-                        );
-                      } finally {
-                        await load(ws.id);
-                      }
-                    })
-                  }
-                  refresh={() => load(ws.id)}
-                />
+                          }),
+                      })
+                    }
+                    executePlan={(id, planFingerprint, name, budget) =>
+                      setConfirmation({
+                        title: `Создать выключенную кампанию «${name}»?`,
+                        text: `Директ создаст кампанию с лимитом ${(
+                          budget / 100
+                        ).toLocaleString(
+                          "ru-RU",
+                        )} ₽, сразу остановит её и только затем добавит объявления. Если ответ API потеряется, повтор будет заблокирован до сверки. Показы не будут включены этим действием.`,
+                        action: () =>
+                          perform(async () => {
+                            try {
+                              await api(
+                                `/businesses/${ws.id}/direct/${id}/execute`,
+                                { planFingerprint },
+                              );
+                              setToast(
+                                "Выключенная кампания создана и сверена",
+                              );
+                            } finally {
+                              await load(ws.id);
+                            }
+                          }),
+                      })
+                    }
+                    inspectExecution={(id) =>
+                      perform(async () => {
+                        try {
+                          await api(
+                            `/businesses/${ws.id}/direct/${id}/execution/inspect`,
+                            {},
+                          );
+                          setToast("Известные объекты проверены в Директе");
+                        } finally {
+                          await load(ws.id);
+                        }
+                      })
+                    }
+                    suspendCampaign={(id, name, campaignId) =>
+                      setConfirmation({
+                        title: `Проверить остановку «${name}»?`,
+                        text: `Проверим кампанию №${campaignId} в Директе. Если показы идут, отправим одну команду остановки и прочитаем состояние повторно. Бюджет при этом не увеличится.`,
+                        action: () =>
+                          perform(async () => {
+                            const keyName = `ritm:suspend:${ws.id}:${id}`;
+                            const requestKey =
+                              safeStorage.getItem(keyName) ||
+                              crypto.randomUUID();
+                            safeStorage.setItem(keyName, requestKey);
+                            try {
+                              const action = await api(
+                                `/businesses/${ws.id}/direct/${id}/suspend`,
+                                {},
+                                "POST",
+                                requestKey,
+                              );
+                              if (
+                                action.status === "succeeded" ||
+                                action.status === "failed_no_write"
+                              )
+                                safeStorage.removeItem(keyName);
+                              setToast(
+                                action.status === "succeeded"
+                                  ? "Остановка подтверждена Директом"
+                                  : action.status === "failed_no_write"
+                                    ? "Предварительная проверка не прошла; команда не отправлялась."
+                                    : "Ответ требует сверки; повторная запись заблокирована",
+                              );
+                            } finally {
+                              await load(ws.id);
+                            }
+                          }),
+                      })
+                    }
+                    inspectLifecycle={(id, actionId) =>
+                      perform(async () => {
+                        try {
+                          const action = await api(
+                            `/businesses/${ws.id}/direct/${id}/lifecycle/${actionId}/inspect`,
+                            {},
+                          );
+                          if (action.status === "succeeded")
+                            safeStorage.removeItem(
+                              `ritm:suspend:${ws.id}:${id}`,
+                            );
+                          setToast(
+                            action.status === "succeeded"
+                              ? "Остановка подтверждена Директом"
+                              : "Состояние ещё требует ручной проверки",
+                          );
+                        } finally {
+                          await load(ws.id);
+                        }
+                      })
+                    }
+                    checkBudget={(id) =>
+                      perform(async () => {
+                        try {
+                          const result = await api(
+                            `/businesses/${ws.id}/direct/${id}/budget-check`,
+                            {},
+                          );
+                          setToast(
+                            result.status === "matched"
+                              ? "Лимит и даты сверены с Директом"
+                              : "Настройки в Директе отличаются от плана",
+                          );
+                        } finally {
+                          await load(ws.id);
+                        }
+                      })
+                    }
+                    inspectControl={(id) =>
+                      performWithResult(async () => {
+                        try {
+                          const result = await api(
+                            `/businesses/${ws.id}/direct/${id}/control-review`,
+                            {},
+                            "POST",
+                            crypto.randomUUID(),
+                          );
+                          const waitingForYandex = result.blockers?.some(
+                            (code: string) =>
+                              [
+                                "campaign_under_review",
+                                "ads_under_review",
+                              ].includes(code),
+                          );
+                          setToast(
+                            waitingForYandex
+                              ? "Яндекс ещё проверяет объявление. Показы не запущены"
+                              : result.status === "technical_ready"
+                                ? "Техническая проверка пройдена; для запуска нужны отдельные согласования"
+                                : "Яндекс пока не разрешил показы — причина указана ниже",
+                          );
+                        } finally {
+                          await load(ws.id);
+                        }
+                      })
+                    }
+                    reviewShadow={(id) =>
+                      perform(async () => {
+                        try {
+                          const result = await api(
+                            `/businesses/${ws.id}/direct/${id}/shadow-review`,
+                            {},
+                            "POST",
+                            crypto.randomUUID(),
+                          );
+                          setToast(
+                            result.status === "observed"
+                              ? "Сводка Директа и Метрики обновлена"
+                              : "Для сводки пока недостаточно данных",
+                          );
+                        } finally {
+                          await load(ws.id);
+                        }
+                      })
+                    }
+                    refresh={() => load(ws.id)}
+                  />
+                </>
               )}
               {page === "experiments" && (
                 <Experiments
@@ -4294,6 +4322,98 @@ function HostedPlanReview({
         ) : null}
       </section>
     </div>
+  );
+}
+
+function AcceptanceRunCard({
+  ws,
+  busy,
+  onRun,
+}: {
+  ws: Workspace;
+  busy: boolean;
+  onRun: () => void;
+}) {
+  const report = ws.events.find(
+    (entry) => entry.kind === "acceptance_run" && entry.acceptanceRun,
+  )?.acceptanceRun as AcceptanceRunReport | undefined;
+
+  return (
+    <section className="acceptance-run" aria-labelledby="acceptance-run-title">
+      <div className="acceptance-run-intro">
+        <div className="acceptance-run-mark" aria-hidden="true">
+          <ShieldCheck size={22} />
+        </div>
+        <div>
+          <span className="acceptance-run-kicker">Без пополнения кабинета</span>
+          <h2 id="acceptance-run-title">Проверить автопилот на копии плана</h2>
+          <p>
+            Ритм воспроизведёт запуск, тестовый расход, решения автопилота и
+            откат. В Яндекс Директ ничего не отправляется.
+          </p>
+        </div>
+      </div>
+      <div className="acceptance-run-action">
+        <span>0 ₽ · без внешних изменений</span>
+        <button
+          type="button"
+          className="primary"
+          aria-busy={busy}
+          disabled={busy}
+          onClick={onRun}
+        >
+          {busy ? (
+            <>
+              <LoaderCircle className="spin" size={16} />
+              Проверяем сценарии…
+            </>
+          ) : (
+            <>
+              <Play size={16} />
+              Провести тестовый прогон
+            </>
+          )}
+        </button>
+      </div>
+      {report && (
+        <div className="acceptance-run-result" role="status">
+          <div className="acceptance-run-result-head">
+            <div>
+              <b>Прогон завершён: {report.checks.length} проверок пройдено</b>
+              <small>
+                {time(report.createdAt, ws.state.timezone)} · рабочая кампания
+                не менялась
+              </small>
+            </div>
+            <span className="acceptance-run-passed">
+              <Check size={14} /> Готово
+            </span>
+          </div>
+          <ol className="acceptance-run-checks">
+            {report.checks.map((check) => (
+              <li key={check.id}>
+                <CheckCircle2 size={18} aria-hidden="true" />
+                <div>
+                  <b>{check.title}</b>
+                  <span>{check.detail}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="acceptance-run-proof">
+            <span>
+              План: <b>{report.source.planName}</b>
+            </span>
+            <span>
+              Тестовый лимит: <b>{money(report.source.budgetKopecks)}</b>
+            </span>
+            <span>
+              Обращений к площадкам: <b>{report.providerCalls}</b>
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

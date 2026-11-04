@@ -40,6 +40,7 @@ import {
 import { MetricaClient } from "./providers.js";
 import { decrypt } from "./security.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
+import { runAcceptanceSimulation } from "./acceptance-simulation.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
 import {
   claimRemotePlan,
@@ -2000,6 +2001,46 @@ export function createPostgresApp({
     );
     res.json(response);
   });
+  app.post(
+    "/api/businesses/:id/acceptance-run",
+    authenticated,
+    async (req, res) => {
+      const response = await command(
+        db,
+        req.user.id,
+        req.params.id,
+        idempotencyKey(req),
+        hash("acceptance-simulation/1"),
+        async (business, tx) => {
+          const row = await tx
+            .prepare(
+              `SELECT plan_json FROM direct_changes
+               WHERE business_id=? ORDER BY created_at DESC,id DESC LIMIT 1`,
+            )
+            .get(business.id);
+          if (!row?.plan_json)
+            throw new AppError(
+              409,
+              "Сначала подготовьте план рекламы, затем запустите его проверку.",
+            );
+          const plan = JSON.parse(row.plan_json);
+          const report = runAcceptanceSimulation(business.state, plan);
+          await event(tx, business.id, {
+            kind: "acceptance_run",
+            title: "Тестовый прогон завершён",
+            reason: `${report.checks.length} проверок пройдено без записи в Яндекс Директ.`,
+            rule: "acceptance-simulation/1",
+            acceptanceRun: report,
+          });
+          return {
+            message: "Тестовый прогон завершён. Рабочая реклама не менялась.",
+            acceptanceRun: report,
+          };
+        },
+      );
+      res.json(response);
+    },
+  );
   app.use("/api", (_req, res) =>
     res.status(404).json({
       error:

@@ -35,6 +35,26 @@ export type Experiment = {
   verdict: string;
   winner?: number;
 };
+export type AcceptanceRunReport = {
+  id: string;
+  createdAt: string;
+  status: "passed";
+  mode: "simulation";
+  source: {
+    businessName: string;
+    planName: string;
+    budgetKopecks: number;
+  };
+  checks: {
+    id: string;
+    title: string;
+    detail: string;
+    status: "passed";
+  }[];
+  externalWrites: 0;
+  providerCalls: 0;
+};
+
 export type Change = {
   id: string;
   at: string;
@@ -45,6 +65,7 @@ export type Change = {
   rollbackOf?: string;
   before?: object;
   after?: object;
+  acceptanceRun?: AcceptanceRunReport;
 };
 export type Business = {
   mode: "demo" | "live";

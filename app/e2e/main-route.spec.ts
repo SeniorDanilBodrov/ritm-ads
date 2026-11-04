@@ -17,7 +17,10 @@ async function openDemo(page: Page) {
   ).toBeVisible();
 }
 
-async function mockApprovedAdPreview(page: Page) {
+async function mockApprovedAdPreview(
+  page: Page,
+  { inDirect = true }: { inDirect?: boolean } = {},
+) {
   const approvedAt = "2026-11-04T10:00:00.000Z";
   const image = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
@@ -31,6 +34,7 @@ async function mockApprovedAdPreview(page: Page) {
     const response = await route.fetch();
     const data = await response.json();
     data.capabilities.postgresPilot = true;
+    data.capabilities.directImageUploadPilot = true;
     data.state.website = "https://forma.example";
     data.state.postgresPilot = { planConfirmedAt: approvedAt };
     data.connections = [
@@ -126,17 +130,19 @@ async function mockApprovedAdPreview(page: Page) {
         width: 1080,
         height: 1080,
         ratio: "1:1",
-        directUploads: [
-          {
-            login:
-              data.connections.find(
-                (connection: { provider: string }) =>
-                  connection.provider === "yandex",
-              )?.clients?.[0]?.Login || "demo-direct",
-            imageType: "REGULAR",
-            verifiedAt: approvedAt,
-          },
-        ],
+        directUploads: inDirect
+          ? [
+              {
+                login:
+                  data.connections.find(
+                    (connection: { provider: string }) =>
+                      connection.provider === "yandex",
+                  )?.clients?.[0]?.Login || "demo-direct",
+                imageType: "REGULAR",
+                verifiedAt: approvedAt,
+              },
+            ]
+          : [],
       },
     ];
     data.directChanges = [
@@ -360,4 +366,53 @@ test("согласованные текст и изображение замен
     viewport: document.documentElement.clientWidth,
   }));
   expect(layout.right).toBeLessThanOrEqual(layout.viewport + 1);
+});
+
+test("кнопка в готовом объявлении добавляет изображение в Директ без возврата к генерации", async ({
+  page,
+}) => {
+  await openDemo(page);
+  await mockApprovedAdPreview(page, { inDirect: false });
+
+  let uploadPayload: Record<string, unknown> | null = null;
+  await page.route(
+    "**/api/businesses/*/creative-images/*/direct-upload",
+    async (route) => {
+      uploadPayload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "succeeded" }),
+      });
+    },
+  );
+  await page.reload();
+
+  await page
+    .getByRole("button", { name: "План и запуск", exact: true })
+    .first()
+    .click();
+
+  const preview = page.getByRole("region", {
+    name: /Готовое объявление перед модерацией|Так будет выглядеть ваша реклама/,
+  });
+  await preview.getByRole("button", { name: /Добавить в Директ/ }).click();
+
+  const confirmation = page.getByRole("dialog", {
+    name: "Добавить изображение в Директ?",
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation
+    .getByRole("button", { name: "Добавить в Директ", exact: true })
+    .click();
+
+  await expect.poll(() => uploadPayload).not.toBeNull();
+  expect(uploadPayload).toMatchObject({
+    login: "e2e-direct",
+    uploadConfirmed: true,
+  });
+  await expect(preview).toBeVisible();
+  await expect(
+    page.getByText("Изображение добавлено в Директ. Показы не запущены."),
+  ).toBeVisible();
 });

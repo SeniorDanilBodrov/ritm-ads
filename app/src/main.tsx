@@ -745,6 +745,52 @@ function App() {
         : result.message,
     );
   }
+  function requestDirectImageUpload(id: string, login: string) {
+    if (!ws) return;
+    setConfirmation({
+      title: "Добавить изображение в Директ?",
+      text: `Ритм добавит согласованный файл в библиотеку кабинета ${login}. Объявления и показы не запустятся.`,
+      actionLabel: "Добавить в Директ",
+      action: () =>
+        perform(async () => {
+          const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
+          const requestKey =
+            safeStorage.getItem(storageKey) || crypto.randomUUID();
+          safeStorage.setItem(storageKey, requestKey);
+          const result = await api(
+            `/businesses/${ws.id}/creative-images/${id}/direct-upload`,
+            { login, uploadConfirmed: true },
+            "POST",
+            requestKey,
+          );
+          if (result.status === "succeeded") safeStorage.removeItem(storageKey);
+          await load(ws.id);
+          setToast("Изображение добавлено в Директ. Показы не запущены.");
+        }),
+    });
+  }
+  function inspectDirectImageUpload(id: string, login: string) {
+    if (!ws) return;
+    perform(async () => {
+      const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
+      const requestKey = safeStorage.getItem(storageKey);
+      if (!requestKey)
+        throw new Error("Нет незавершённой загрузки для сверки.");
+      const result = await api(
+        `/businesses/${ws.id}/creative-images/${id}/direct-upload/${requestKey}/inspect`,
+        { login },
+      );
+      if (result.status === "succeeded") {
+        safeStorage.removeItem(storageKey);
+        setToast("Изображение найдено и подтверждено в Директе.");
+      } else {
+        setToast(
+          "Изображение пока не найдено. Повторная отправка заблокирована.",
+        );
+      }
+      await load(ws.id);
+    });
+  }
   async function demo() {
     await perform(async () => {
       await api("/demo", {});
@@ -1662,6 +1708,8 @@ function App() {
                         }
                       })
                     }
+                    uploadImage={requestDirectImageUpload}
+                    inspectImage={inspectDirectImageUpload}
                     refresh={() => load(ws.id)}
                   />
                 </>
@@ -1897,58 +1945,8 @@ function App() {
                         }),
                     })
                   }
-                  uploadImage={(id, login) =>
-                    setConfirmation({
-                      title: "Добавить изображение в Директ?",
-                      text: `Ритм добавит согласованный файл в библиотеку кабинета ${login}. Объявления и показы не запустятся.`,
-                      actionLabel: "Добавить в Директ",
-                      action: () =>
-                        perform(async () => {
-                          const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
-                          const requestKey =
-                            safeStorage.getItem(storageKey) ||
-                            crypto.randomUUID();
-                          safeStorage.setItem(storageKey, requestKey);
-                          const result = await api(
-                            `/businesses/${ws.id}/creative-images/${id}/direct-upload`,
-                            { login, uploadConfirmed: true },
-                            "POST",
-                            requestKey,
-                          );
-                          if (result.status === "succeeded")
-                            safeStorage.removeItem(storageKey);
-                          await load(ws.id);
-                          setToast(
-                            "Изображение добавлено в Директ. Показы не запущены.",
-                          );
-                        }),
-                    })
-                  }
-                  inspectImage={(id, login) =>
-                    perform(async () => {
-                      const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
-                      const requestKey = safeStorage.getItem(storageKey);
-                      if (!requestKey)
-                        throw new Error(
-                          "Нет незавершённой загрузки для сверки.",
-                        );
-                      const result = await api(
-                        `/businesses/${ws.id}/creative-images/${id}/direct-upload/${requestKey}/inspect`,
-                        { login },
-                      );
-                      if (result.status === "succeeded") {
-                        safeStorage.removeItem(storageKey);
-                        setToast(
-                          "Изображение найдено и подтверждено в Директе.",
-                        );
-                      } else {
-                        setToast(
-                          "Изображение пока не найдено. Повторная отправка заблокирована.",
-                        );
-                      }
-                      await load(ws.id);
-                    })
-                  }
+                  uploadImage={requestDirectImageUpload}
+                  inspectImage={inspectDirectImageUpload}
                   removeImage={(id) =>
                     setConfirmation({
                       title: "Удалить этот визуал?",
@@ -3829,6 +3827,8 @@ function HostedPlanReview({
   executePlan,
   inspectExecution,
   inspectControl,
+  uploadImage,
+  inspectImage,
   refresh,
 }: {
   ws: Workspace;
@@ -3846,6 +3846,8 @@ function HostedPlanReview({
   ) => void;
   inspectExecution: (id: string) => void;
   inspectControl: (id: string) => Promise<boolean> | boolean | void;
+  uploadImage: (id: string, login: string) => void;
+  inspectImage: (id: string, login: string) => void;
   refresh: () => Promise<void>;
 }) {
   const plan = ws.state.aiPlan;
@@ -3886,6 +3888,13 @@ function HostedPlanReview({
   const previewImageIsInDirect = Boolean(
     previewCreativeImage?.directUploads.some(
       (upload) => upload.login === directLogin,
+    ),
+  );
+  const pendingDirectImageUpload = Boolean(
+    previewCreativeImage &&
+    directLogin &&
+    safeStorage.getItem(
+      `ritm:direct-image:${ws.id}:${previewCreativeImage.id}:${directLogin}`,
     ),
   );
   useEffect(() => {
@@ -4484,19 +4493,55 @@ function HostedPlanReview({
                     {!previewImageIsInDirect && (
                       <footer className="hosted-ad-preview-next">
                         <div>
-                          <b>Осталось добавить фотографию в Директ</b>
+                          <b>
+                            {!directLogin
+                              ? "Сначала подключите Яндекс Директ"
+                              : !ws.capabilities.directImageUploadPilot
+                                ? "Загрузка изображений пока недоступна"
+                                : pendingDirectImageUpload
+                                  ? "Проверяем добавление фотографии"
+                                  : "Осталось добавить фотографию в Директ"}
+                          </b>
                           <small>
-                            Материалы уже согласованы. Загрузка не запускает
-                            показы и не отправляет объявление на модерацию.
+                            {!directLogin
+                              ? "После подключения кабинета здесь появится безопасная загрузка согласованного файла."
+                              : !ws.capabilities.directImageUploadPilot
+                                ? "На сервере выключена отправка изображений в Директ. Материалы останутся сохранёнными."
+                                : pendingDirectImageUpload
+                                  ? "Повторно файл не отправляем — сначала сверим незавершённую загрузку с Директом."
+                                  : "Материалы уже согласованы. Загрузка не запускает показы и не отправляет объявление на модерацию."}
                           </small>
                         </div>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => navigate("creatives")}
-                        >
-                          Добавить в Директ <ArrowRight size={15} />
-                        </button>
+                        {(!directLogin ||
+                          ws.capabilities.directImageUploadPilot) && (
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!directLogin) {
+                                navigate("connections");
+                                return;
+                              }
+                              if (!previewCreativeImage) return;
+                              if (pendingDirectImageUpload) {
+                                inspectImage(
+                                  previewCreativeImage.id,
+                                  directLogin,
+                                );
+                                return;
+                              }
+                              uploadImage(previewCreativeImage.id, directLogin);
+                            }}
+                          >
+                            {!directLogin
+                              ? "Подключить Директ"
+                              : pendingDirectImageUpload
+                                ? "Сверить загрузку"
+                                : "Добавить в Директ"}{" "}
+                            <ArrowRight size={15} />
+                          </button>
+                        )}
                       </footer>
                     )}
                   </section>
@@ -5033,6 +5078,8 @@ function Campaigns({
   checkBudget,
   inspectControl,
   reviewShadow,
+  uploadImage,
+  inspectImage,
   refresh,
 }: {
   ws: Workspace;
@@ -5059,6 +5106,8 @@ function Campaigns({
   checkBudget: (id: string) => void;
   inspectControl: (id: string) => Promise<boolean> | boolean | void;
   reviewShadow: (id: string) => void;
+  uploadImage: (id: string, login: string) => void;
+  inspectImage: (id: string, login: string) => void;
   refresh: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState("all"),
@@ -5081,6 +5130,8 @@ function Campaigns({
         executePlan={executePlan}
         inspectExecution={inspectExecution}
         inspectControl={inspectControl}
+        uploadImage={uploadImage}
+        inspectImage={inspectImage}
         refresh={refresh}
       />
     );

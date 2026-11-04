@@ -54,6 +54,18 @@ export type AcceptanceRunReport = {
   externalWrites: 0;
   providerCalls: 0;
 };
+export type AcceptanceRun = {
+  id: string;
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+  stage: "queued" | "running" | "complete" | "failed" | string;
+  attempts: number;
+  availableAt: number;
+  queuedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+  report: AcceptanceRunReport | null;
+};
 
 export type Change = {
   id: string;
@@ -183,6 +195,7 @@ export type Workspace = {
     clients: { Login: string; ClientId: number; Currency?: string }[];
   }[];
   directChanges: DirectChange[];
+  acceptanceRuns: AcceptanceRun[];
   abPlans: DirectAbPlan[];
   controlReviews: DirectControlReview[];
   shadowReviews: LiveShadowReview[];

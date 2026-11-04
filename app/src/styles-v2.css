@@ -9771,6 +9771,49 @@ textarea::placeholder {
   border-top: 1px solid var(--line);
 }
 
+.acceptance-run-progress,
+.acceptance-run-error {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.acceptance-run-progress > div,
+.acceptance-run-error > div {
+  min-width: 0;
+}
+
+.acceptance-run-progress b,
+.acceptance-run-progress span,
+.acceptance-run-error b,
+.acceptance-run-error span {
+  display: block;
+}
+
+.acceptance-run-progress span,
+.acceptance-run-error span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.acceptance-run-progress svg {
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+.acceptance-run-error {
+  justify-content: space-between;
+}
+
+.acceptance-run-error b {
+  color: var(--danger);
+}
+
 .acceptance-run-result-head {
   display: flex;
   align-items: flex-start;
@@ -9858,6 +9901,25 @@ textarea::placeholder {
   color: var(--ink-soft);
 }
 
+.acceptance-run-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.acceptance-run-download:hover {
+  text-decoration: underline;
+}
+
+.acceptance-run-download:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 @media (max-width: 980px) {
   .acceptance-run {
     grid-template-columns: 1fr;
@@ -9933,5 +9995,10 @@ textarea::placeholder {
 
   .acceptance-run-passed {
     width: fit-content;
+  }
+
+  .acceptance-run-error {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

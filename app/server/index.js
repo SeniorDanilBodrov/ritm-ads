@@ -24,6 +24,7 @@ import { startLiveDataWorker } from "./live-data-worker.js";
 import { startOperationsMonitor } from "./operations-monitor.js";
 import { recoverOptimizerDispatches } from "./optimizer-executor.js";
 import { canRunAutopilot, canWritePaidAdvertising } from "./live-ads.js";
+import { startAcceptanceWorker } from "./acceptance-jobs.js";
 const production = process.env.NODE_ENV === "production";
 if (process.env.YANDEX_SANDBOX === "true")
   throw new Error(
@@ -186,6 +187,7 @@ const stopOperationsMonitor = postgresPilot
       bearerToken: config.operationsAlertBearer,
       intervalMs: config.operationsAlertIntervalMs,
     });
+const stopAcceptance = startAcceptanceWorker(db);
 const server = app.listen(config.port, process.env.HOST || "127.0.0.1", () =>
   console.log(
     `Ритм: ${config.origin} | демонстрация ${config.demo ? "включена" : "выключена"} | платные действия ${canWritePaidAdvertising(config) ? "разрешены" : "заблокированы"} | автопилот ${canRunAutopilot(config) ? "включён" : "выключен"}`,
@@ -211,6 +213,7 @@ for (const signal of ["SIGINT", "SIGTERM"])
       await stopCreatives();
       await stopCreativeRetention();
       await stopOperationsMonitor();
+      await stopAcceptance();
       await db.close();
       process.exit(0);
     }),

@@ -7,6 +7,7 @@ import { createApp } from "../server/app.js";
 import { tickDemo, assertBudget, seedDemo } from "../server/engine.js";
 import { runReportCycle } from "../server/reports.js";
 import { enqueueDirectDryRun, runDirectCycle } from "../server/direct.js";
+import { runAcceptanceCycle } from "../server/acceptance-jobs.js";
 import { encrypt, hash } from "../server/security.js";
 let db, server, base;
 const config = {
@@ -434,17 +435,35 @@ test("live workspace can prepare a plan and test the autopilot without provider 
       cookie,
       body: {},
     });
-  assert.equal(acceptance.status, 200);
-  assert.equal(acceptance.body.acceptanceRun.status, "passed");
-  assert.equal(acceptance.body.acceptanceRun.providerCalls, 0);
-  assert.equal(acceptance.body.acceptanceRun.externalWrites, 0);
-  assert.equal(acceptance.body.acceptanceRun.checks.length, 9);
+  assert.equal(acceptance.status, 202);
+  assert.equal(acceptance.body.acceptanceRun.status, "pending");
+  assert.equal(acceptance.body.acceptanceRun.stage, "queued");
+  assert.equal(acceptance.body.acceptanceRun.report, null);
+  const inQueue = await send(`/api/workspace?businessId=${ws.id}`, {
+    cookie,
+  });
+  assert.equal(inQueue.body.acceptanceRuns[0].status, "pending");
+  const result = await runAcceptanceCycle(db, {
+    now: acceptance.body.acceptanceRun.availableAt,
+  });
+  assert.equal(result.status, "succeeded");
   const afterRun = await send(`/api/workspace?businessId=${ws.id}`, {
     cookie,
   });
   assert.deepEqual(afterRun.body.state, stateBeforeRun);
+  assert.equal(afterRun.body.acceptanceRuns[0].status, "succeeded");
+  assert.equal(afterRun.body.acceptanceRuns[0].report.providerCalls, 0);
+  assert.equal(afterRun.body.acceptanceRuns[0].report.externalWrites, 0);
+  assert.equal(afterRun.body.acceptanceRuns[0].report.checks.length, 9);
   assert.equal(afterRun.body.events[0].kind, "acceptance_run");
   assert.equal(afterRun.body.events[0].acceptanceRun.status, "passed");
+  const protocol = await fetch(
+    `${base}/api/businesses/${ws.id}/acceptance-run/${acceptance.body.acceptanceRun.id}/protocol`,
+    { headers: { Cookie: cookie, Origin: config.origin } },
+  );
+  assert.equal(protocol.status, 200);
+  assert.match(protocol.headers.get("content-disposition"), /attachment/);
+  assert.match(await protocol.text(), /9 из 9 проверок пройдено/);
 });
 test("misconfigured OAuth does not redirect with empty credentials", async () => {
   const r = await fetch(base + "/auth/google/start");

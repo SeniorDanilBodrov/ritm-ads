@@ -40,7 +40,11 @@ import {
 import { MetricaClient } from "./providers.js";
 import { decrypt } from "./security.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
-import { runAcceptanceSimulation } from "./acceptance-simulation.js";
+import {
+  acceptanceProtocol,
+  acceptanceRunsPostgres,
+  enqueueAcceptanceRunPostgres,
+} from "./acceptance-jobs.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
 import {
   claimRemotePlan,
@@ -1242,6 +1246,7 @@ export function createPostgresApp({
       reportJobs: [],
       jobs: [],
       directChanges,
+      acceptanceRuns: await acceptanceRunsPostgres(db, business.id),
       abPlans: [],
       controlReviews,
       shadowReviews: [],
@@ -2023,22 +2028,42 @@ export function createPostgresApp({
               409,
               "Сначала подготовьте план рекламы, затем запустите его проверку.",
             );
-          const plan = JSON.parse(row.plan_json);
-          const report = runAcceptanceSimulation(business.state, plan);
-          await event(tx, business.id, {
-            kind: "acceptance_run",
-            title: "Тестовый прогон завершён",
-            reason: `${report.checks.length} проверок пройдено без записи в Яндекс Директ.`,
-            rule: "acceptance-simulation/1",
-            acceptanceRun: report,
-          });
+          const run = await enqueueAcceptanceRunPostgres(
+            tx,
+            business,
+            JSON.parse(row.plan_json),
+          );
           return {
-            message: "Тестовый прогон завершён. Рабочая реклама не менялась.",
-            acceptanceRun: report,
+            message:
+              "Тестовый прогон поставлен в очередь. Рабочая реклама не меняется.",
+            acceptanceRun: run,
           };
         },
       );
-      res.json(response);
+      res.status(202).json(response);
+    },
+  );
+  app.get(
+    "/api/businesses/:id/acceptance-run/:runId/protocol",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const run = (await acceptanceRunsPostgres(db, business.id)).find(
+        (item) => item.id === req.params.runId,
+      );
+      const protocol = acceptanceProtocol(run, business.state.name);
+      if (!protocol)
+        throw new AppError(
+          409,
+          "Протокол появится после завершения тестового прогона.",
+          "acceptance_pending",
+        );
+      res
+        .set({
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename="ritm-acceptance-${run.id}.txt"`,
+        })
+        .send(protocol);
     },
   );
   app.use("/api", (_req, res) =>

@@ -47,7 +47,11 @@ import {
   refreshYandexToken,
 } from "./providers.js";
 import { buildMetricaSetup } from "./metrica-setup.js";
-import { runAcceptanceSimulation } from "./acceptance-simulation.js";
+import {
+  acceptanceProtocol,
+  acceptanceRunsSync,
+  enqueueAcceptanceRunSync,
+} from "./acceptance-jobs.js";
 import { analyzeSnapshot } from "./advisor.js";
 import { createAdvertisingPlan } from "./ai-plan.js";
 import { onboardingAssistant } from "./onboarding-chat.js";
@@ -691,6 +695,7 @@ export function createApp({
         )
         .all(b.id),
       directChanges: directChanges(db, b.id),
+      acceptanceRuns: acceptanceRunsSync(db, b.id),
       abPlans: directAbPlans(db, req.user.id, b.id),
       controlReviews: db
         .prepare(
@@ -2946,23 +2951,43 @@ export function createApp({
             409,
             "Сначала подготовьте план рекламы, затем запустите его проверку.",
           );
-        const plan = JSON.parse(row.plan_json);
-        const report = runAcceptanceSimulation(business.state, plan);
-        event(db, business.id, {
-          kind: "acceptance_run",
-          title: "Тестовый прогон завершён",
-          reason: `${report.checks.length} проверок пройдено без записи в Яндекс Директ.`,
-          rule: "acceptance-simulation/1",
-          acceptanceRun: report,
-        });
+        const run = enqueueAcceptanceRunSync(
+          db,
+          business,
+          JSON.parse(row.plan_json),
+        );
         return {
-          message: "Тестовый прогон завершён. Рабочая реклама не менялась.",
-          acceptanceRun: report,
+          message:
+            "Тестовый прогон поставлен в очередь. Рабочая реклама не меняется.",
+          acceptanceRun: run,
         };
       },
     );
-    res.json(response);
+    res.status(202).json(response);
   });
+  app.get(
+    "/api/businesses/:id/acceptance-run/:runId/protocol",
+    authenticated,
+    (req, res) => {
+      const business = requireBusiness(db, req.user.id, req.params.id);
+      const run = acceptanceRunsSync(db, business.id).find(
+        (item) => item.id === req.params.runId,
+      );
+      const protocol = acceptanceProtocol(run, business.state.name);
+      if (!protocol)
+        throw new AppError(
+          409,
+          "Протокол появится после завершения тестового прогона.",
+          "acceptance_pending",
+        );
+      res
+        .set({
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename="ritm-acceptance-${run.id}.txt"`,
+        })
+        .send(protocol);
+    },
+  );
   app.get(
     "/api/businesses/:id/provider/:resource",
     authenticated,

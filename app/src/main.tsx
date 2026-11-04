@@ -67,6 +67,7 @@ import type {
   DirectControlReview,
   LiveShadowReview,
   AcceptanceRunReport,
+  AcceptanceRun,
 } from "./types";
 import ritmMark from "./assets/ritm-mark.png";
 import ritmGrowthSeed from "./assets/ritm-growth-seed.png";
@@ -617,6 +618,14 @@ function App() {
     }, 10_000);
     return () => window.clearInterval(timer);
   }, [ws?.id, ws?.state.remoteAiPlan?.status]);
+  useEffect(() => {
+    const run = ws?.acceptanceRuns?.[0];
+    if (!run || !["pending", "running"].includes(run.status)) return;
+    const timer = window.setInterval(() => {
+      void load(ws.id).catch(() => undefined);
+    }, 2_500);
+    return () => window.clearInterval(timer);
+  }, [ws?.id, ws?.acceptanceRuns?.[0]?.id, ws?.acceptanceRuns?.[0]?.status]);
   useEffect(() => {
     if (!notificationsOpen) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -1393,7 +1402,7 @@ function App() {
                           );
                           await load(ws.id);
                           setToast(
-                            "Тестовый прогон завершён. Рабочая реклама не менялась",
+                            "Тестовый прогон поставлен в очередь. Рабочая реклама не меняется",
                           );
                         })
                       }
@@ -4334,9 +4343,13 @@ function AcceptanceRunCard({
   busy: boolean;
   onRun: () => void;
 }) {
-  const report = ws.events.find(
-    (entry) => entry.kind === "acceptance_run" && entry.acceptanceRun,
-  )?.acceptanceRun as AcceptanceRunReport | undefined;
+  const run = ws.acceptanceRuns?.[0] as AcceptanceRun | undefined;
+  const report = run?.report as AcceptanceRunReport | null | undefined;
+  const active = run && ["pending", "running"].includes(run.status);
+  const runningLabel =
+    run?.status === "running"
+      ? "Проверяем автопилот на сохранённой копии…"
+      : "Прогон ждёт фонового обработчика…";
 
   return (
     <section className="acceptance-run" aria-labelledby="acceptance-run-title">
@@ -4358,14 +4371,14 @@ function AcceptanceRunCard({
         <button
           type="button"
           className="primary"
-          aria-busy={busy}
-          disabled={busy}
+          aria-busy={busy || active}
+          disabled={busy || active}
           onClick={onRun}
         >
-          {busy ? (
+          {busy || active ? (
             <>
               <LoaderCircle className="spin" size={16} />
-              Проверяем сценарии…
+              {active ? runningLabel : "Ставим в очередь…"}
             </>
           ) : (
             <>
@@ -4375,6 +4388,38 @@ function AcceptanceRunCard({
           )}
         </button>
       </div>
+      {active && (
+        <div
+          className="acceptance-run-progress"
+          role="status"
+          aria-live="polite"
+        >
+          <LoaderCircle className="spin" size={18} aria-hidden="true" />
+          <div>
+            <b>{runningLabel}</b>
+            <span>
+              Задание сохранено на сервере. Страницу можно закрыть — проверка
+              продолжится после перезапуска.
+            </span>
+          </div>
+        </div>
+      )}
+      {run?.status === "failed" && (
+        <div className="acceptance-run-error" role="alert">
+          <div>
+            <b>Прогон не завершён</b>
+            <span>{run.error || "Рабочая реклама не менялась."}</span>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={onRun}
+          >
+            <RefreshCw size={16} /> Повторить
+          </button>
+        </div>
+      )}
       {report && (
         <div className="acceptance-run-result" role="status">
           <div className="acceptance-run-result-head">
@@ -4410,6 +4455,12 @@ function AcceptanceRunCard({
             <span>
               Обращений к площадкам: <b>{report.providerCalls}</b>
             </span>
+            <a
+              className="acceptance-run-download"
+              href={`/api/businesses/${ws.id}/acceptance-run/${run?.id}/protocol`}
+            >
+              <Download size={14} /> Скачать протокол
+            </a>
           </div>
         </div>
       )}

@@ -127,6 +127,26 @@ function executionView(row) {
   };
 }
 
+const wait = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function reconcileWithRetry(reconcile, attempts = 3) {
+  let lastError = null;
+  let lastResult = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await wait(350 * 2 ** (attempt - 1));
+    try {
+      lastResult = await reconcile();
+      lastError = null;
+      if (lastResult?.matched) return lastResult;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError && !lastResult) throw lastError;
+  return lastResult;
+}
+
 // A lost response from Campaigns.add must never be replayed blindly. After a
 // quiet period we can, however, prove that no remote campaign exists by reading
 // the complete campaign list. Only that verified no-write case is released so
@@ -857,18 +877,15 @@ export async function executePostgresDirectPlan(
           ),
       },
     );
-    const reconciliation =
+    const reconciliation = await reconcileWithRetry(() =>
       prepared.change.plan.channel === "network"
-        ? await reconcileUnifiedNetworkObjects(
+        ? reconcileUnifiedNetworkObjects(
             client,
             result.calls,
             prepared.change.plan,
           )
-        : await reconcileDirectObjects(
-            client,
-            result.calls,
-            prepared.change.plan,
-          );
+        : reconcileDirectObjects(client, result.calls, prepared.change.plan),
+    );
     if (!reconciliation.matched)
       throw new AppError(
         409,
@@ -964,10 +981,13 @@ export async function inspectPostgresDirectExecution(
       ? ["campaign", "suspend", "adgroup", "ads"]
       : ["campaign", "suspend", "adgroup", "keywords", "ads"];
   if (expectedKeys.every((key, index) => calls[index]?.key === key)) {
-    reconciliation =
-      change.plan.channel === "network"
-        ? await reconcileUnifiedNetworkObjects(client, calls, change.plan)
-        : await reconcileDirectObjects(client, calls, change.plan);
+    reconciliation = await reconcileWithRetry(
+      () =>
+        change.plan.channel === "network"
+          ? reconcileUnifiedNetworkObjects(client, calls, change.plan)
+          : reconcileDirectObjects(client, calls, change.plan),
+      2,
+    );
   } else {
     const campaignId = calls.find((item) => item.key === "campaign")?.ids?.[0];
     const remote = campaignId

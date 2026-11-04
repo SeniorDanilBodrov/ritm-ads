@@ -3863,6 +3863,7 @@ function HostedPlanReview({
   const [acknowledged, setAcknowledged] = useState(false);
   const [draftAcknowledged, setDraftAcknowledged] = useState(false);
   const [localError, setLocalError] = useState("");
+  const autoInspectedChanges = useRef(new Set<string>());
   const approvedTexts = ws.state.creatives.filter(
     (item) => item.status === "approved",
   );
@@ -4011,6 +4012,21 @@ function HostedPlanReview({
     nextIncompleteChange ||
     directChanges[0] ||
     null;
+  useEffect(() => {
+    if (
+      busy ||
+      !directChange ||
+      directChange.execution?.status !== "needs_reconciliation" ||
+      autoInspectedChanges.current.has(directChange.id)
+    )
+      return;
+    const changeId = directChange.id;
+    const timer = window.setTimeout(() => {
+      autoInspectedChanges.current.add(changeId);
+      inspectExecution(changeId);
+    }, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [busy, directChange?.id, directChange?.execution?.status]);
   useEffect(() => {
     if (nextIncompleteChange) setSelectedChangeId(nextIncompleteChange.id);
     else if (

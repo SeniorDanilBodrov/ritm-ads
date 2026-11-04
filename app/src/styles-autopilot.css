@@ -398,10 +398,72 @@ h2 { letter-spacing: -0.035em; }
   .dispatcher-actions > header p { font-size: 11px; }
   .dispatcher-growth-score { min-width: 66px; padding: 7px; }
   .dispatcher-growth-score b { font-size: 22px; }
-  .dispatcher-growth-map { padding: 0 16px 14px; overflow-x: auto; scroll-snap-type: x proximity; }
-  .dispatcher-growth-map li { padding: 0 8px 8px; scroll-snap-align: start; }
+  .dispatcher-growth-map {
+    padding: 0 18px 14px;
+    grid-template-columns: 1fr;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+  .dispatcher-growth-map::before {
+    top: 30px;
+    right: auto;
+    bottom: 44px;
+    left: 49px;
+    width: 1px;
+    height: auto;
+  }
+  .dispatcher-growth-map li {
+    min-height: 88px;
+    padding: 8px 0;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: stretch;
+    gap: 12px;
+    text-align: left;
+    scroll-snap-align: none;
+  }
+  .dispatcher-growth-tree {
+    width: 64px;
+    height: 72px;
+  }
+  .dispatcher-growth-copy {
+    min-width: 0;
+  }
+  .dispatcher-growth-copy small {
+    min-height: 0;
+  }
+  .dispatcher-growth-status {
+    margin-top: 0;
+    justify-self: end;
+  }
   .dispatcher-growth-footer { padding: 12px 20px; align-items: flex-start; flex-direction: column; gap: 10px; }
   .dispatcher-growth-footer button { width: 100%; justify-content: center; }
+
+  .dispatcher-incoming-toast {
+    width: 100%;
+    min-height: 64px;
+    padding: 11px 13px;
+    grid-column: 1 / -1;
+    grid-template-columns: 38px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: 10px;
+  }
+  .dispatcher-incoming-toast .dispatcher-inquiry-avatar {
+    grid-column: 1;
+  }
+  .dispatcher-incoming-toast > div {
+    min-width: 0;
+    grid-column: 2;
+  }
+  .dispatcher-incoming-toast > svg {
+    grid-column: 3;
+  }
+  .dispatcher-incoming-toast small,
+  .dispatcher-incoming-toast b {
+    width: auto;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
 }
 :root[data-theme="dark"] .topbar-right .icon-button,
 :root[data-theme="dark"] .topbar-right .notification {
@@ -776,6 +838,10 @@ h2 { letter-spacing: -0.035em; }
     width: 100%;
     min-width: 0;
     max-width: 100%;
+  }
+
+  .topbar {
+    position: relative;
   }
 
   main.page > *,

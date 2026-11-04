@@ -63,6 +63,8 @@ import type {
   Change,
   Campaign,
   DirectPlan,
+  DirectNetworkPlan,
+  AnyDirectPlan,
   DirectAbPlan,
   DirectControlReview,
   LiveShadowReview,
@@ -3822,7 +3824,6 @@ function HostedPlanReview({
   navigate,
   editBusiness,
   prepareAiPlan,
-  dryRun,
   preflight,
   confirmPlan,
   executePlan,
@@ -3835,7 +3836,6 @@ function HostedPlanReview({
   navigate: (page: string) => void;
   editBusiness: () => void;
   prepareAiPlan: () => void;
-  dryRun: (plan: DirectPlan) => void;
   preflight: (id: string) => void;
   confirmPlan: (id: string, planFingerprint: string) => void;
   executePlan: (
@@ -3852,6 +3852,8 @@ function HostedPlanReview({
   const [readiness, setReadiness] = useState<LaunchReadiness | null>(null);
   const [checking, setChecking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [preparingCampaigns, setPreparingCampaigns] = useState(false);
+  const [selectedChangeId, setSelectedChangeId] = useState("");
   const [confirmed, setConfirmed] = useState(
     Boolean(ws.state.postgresPilot?.planConfirmedAt),
   );
@@ -3875,22 +3877,92 @@ function HostedPlanReview({
     if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
     setCreativeAssetId(directReadyImages[0]?.id || "");
   }, [directLogin, ws.creativeImages]);
-  const directChange =
-    ws.directChanges.find(
-      (item) =>
-        item.plan?.website === ws.state.website &&
-        item.plan?.budget === ws.state.budget &&
-        (creativeAssetId
-          ? item.plan?.creativeAssetId === creativeAssetId
-          : !item.plan?.creativeAssetId) &&
-        item.plan?.ads.every((ad) =>
-          approvedTexts.some(
-            (creative) =>
-              creative.title.slice(0, 56) === ad.title &&
-              creative.text.slice(0, 81) === ad.text,
-          ),
+  const allocation = plan?.plan.budgetAllocation || [];
+  const useNetwork = Boolean(plan?.plan.channels.includes("network"));
+  const expectedChannelCount = useNetwork ? 2 : 1;
+  const networkPercent = useNetwork
+    ? Math.min(
+        45,
+        Math.max(
+          25,
+          allocation.find((item) => item.channel === "network")?.percent || 35,
         ),
-    ) || null;
+      )
+    : 0;
+  const networkBudget = useNetwork
+    ? Math.max(1, Math.floor((ws.state.budget * networkPercent) / 100))
+    : 0;
+  const searchBudget = ws.state.budget - networkBudget;
+  const matchingDirectChanges = ws.directChanges.filter((item) => {
+    if (!item.plan || item.plan.website !== ws.state.website) return false;
+    if (item.plan.channel === "network")
+      return (
+        useNetwork &&
+        item.plan.budget === networkBudget &&
+        item.plan.creativeAssetId === creativeAssetId &&
+        item.plan.ads.every(
+          (ad) =>
+            ad.titles.every((title) =>
+              approvedTexts.some(
+                (creative) => creative.title.slice(0, 56) === title,
+              ),
+            ) &&
+            ad.texts.every((text) =>
+              approvedTexts.some(
+                (creative) => creative.text.slice(0, 81) === text,
+              ),
+            ),
+        )
+      );
+    return (
+      item.plan.budget === searchBudget &&
+      (creativeAssetId
+        ? item.plan.creativeAssetId === creativeAssetId
+        : !item.plan.creativeAssetId) &&
+      item.plan.ads.every((ad) =>
+        approvedTexts.some(
+          (creative) =>
+            creative.title.slice(0, 56) === ad.title &&
+            creative.text.slice(0, 81) === ad.text,
+        ),
+      )
+    );
+  });
+  const directChanges = (["search", "network"] as const).flatMap((channel) => {
+    const candidates = matchingDirectChanges
+      .filter((item) => (item.plan?.channel || "search") === channel)
+      .sort((left, right) => {
+        const succeeded =
+          Number(right.execution?.status === "succeeded") -
+          Number(left.execution?.status === "succeeded");
+        if (succeeded) return succeeded;
+        const rightUpdated = Date.parse(
+          right.updatedAt || right.createdAt || "",
+        );
+        const leftUpdated = Date.parse(left.updatedAt || left.createdAt || "");
+        return (
+          (Number.isFinite(rightUpdated) ? rightUpdated : 0) -
+          (Number.isFinite(leftUpdated) ? leftUpdated : 0)
+        );
+      });
+    return candidates.slice(0, 1);
+  });
+  const nextIncompleteChange = directChanges.find(
+    (item) => item.execution?.status !== "succeeded",
+  );
+  const directChange =
+    directChanges.find((item) => item.id === selectedChangeId) ||
+    nextIncompleteChange ||
+    directChanges[0] ||
+    null;
+  useEffect(() => {
+    if (nextIncompleteChange) setSelectedChangeId(nextIncompleteChange.id);
+    else if (
+      selectedChangeId &&
+      !directChanges.some((item) => item.id === selectedChangeId)
+    )
+      setSelectedChangeId("");
+  }, [ws.directChanges]);
   const directPreflightFresh = Boolean(
     directChange?.preflight &&
     Date.parse(directChange.preflight.checkedAt) + 10 * 60_000 > Date.now(),
@@ -3898,16 +3970,24 @@ function HostedPlanReview({
   const period = nextCampaignPeriod("", "");
   const regionId = /екатеринбург/i.test(ws.state.city) ? 54 : null;
 
-  function prepareHeldDraft() {
-    if (!plan || approvedTexts.length < 3 || !yandex?.clients?.[0] || !regionId)
+  async function prepareHeldDraft() {
+    if (
+      !plan ||
+      approvedTexts.length < 3 ||
+      !yandex?.clients?.[0] ||
+      !regionId ||
+      (useNetwork && !creativeAssetId)
+    )
       return;
-    dryRun({
+    setPreparingCampaigns(true);
+    setLocalError("");
+    const searchPlan: DirectPlan = {
       login: yandex.clients[0].Login,
       campaignName: `${ws.state.name} · Поиск`.slice(0, 255),
       website: ws.state.website,
       audience: plan.plan.audiences.map((item) => item.name).join("; "),
       regionIds: [regionId],
-      budget: ws.state.budget,
+      budget: searchBudget,
       targetCpa: ws.state.targetCpa,
       periodStart: period.start,
       periodEnd: period.end,
@@ -3921,7 +4001,65 @@ function HostedPlanReview({
       })),
       keywords: plan.plan.keywords,
       negativeKeywords: plan.plan.negativeKeywords,
-    });
+    };
+    const networkPlan: DirectNetworkPlan = {
+      channel: "network",
+      login: yandex.clients[0].Login,
+      campaignName: `${ws.state.name} · Рекламная сеть`.slice(0, 255),
+      website: ws.state.website,
+      audience: plan.plan.audiences.map((item) => item.name).join("; "),
+      regionIds: [regionId],
+      budget: networkBudget,
+      periodStart: period.start,
+      periodEnd: period.end,
+      ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
+      ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      creativeAssetId,
+      ads: [
+        {
+          titles: approvedTexts
+            .slice(0, 3)
+            .map((item) => item.title.slice(0, 56)),
+          texts: approvedTexts
+            .slice(0, 3)
+            .map((item) => item.text.slice(0, 81)),
+          href: ws.state.website,
+        },
+      ],
+    };
+    let requestFailed = false;
+    try {
+      const preparedChannels = new Set(
+        directChanges.map((item) => item.plan?.channel || "search"),
+      );
+      const missingCampaigns = (
+        [
+          searchPlan,
+          ...(useNetwork ? [networkPlan] : []),
+        ] satisfies AnyDirectPlan[]
+      ).filter(
+        (campaign) => !preparedChannels.has(campaign.channel || "search"),
+      );
+      for (const campaign of missingCampaigns)
+        await api(`/businesses/${ws.id}/direct/dry-run`, campaign);
+    } catch (cause) {
+      requestFailed = true;
+      setLocalError(
+        cause instanceof Error
+          ? cause.message
+          : "Не удалось подготовить направления. Попробуйте ещё раз.",
+      );
+    } finally {
+      try {
+        await refresh();
+      } catch {
+        if (!requestFailed)
+          setLocalError(
+            "Направления подготовлены, но экран не обновился. Обновите страницу.",
+          );
+      }
+      setPreparingCampaigns(false);
+    }
   }
 
   async function checkReadiness() {
@@ -4172,10 +4310,16 @@ function HostedPlanReview({
                     <Send size={20} />
                   </span>
                   <div>
-                    <h3>Подготовьте выключенную кампанию в Директе</h3>
+                    <h3>
+                      {useNetwork
+                        ? "Подготовьте поиск и Рекламную сеть"
+                        : "Подготовьте поиск"}
+                    </h3>
                     <p>
-                      Ритм проверит кабинет, даты и лимит. Созданная кампания
-                      останется выключенной — показы и расходы не начнутся.
+                      {useNetwork
+                        ? "Ритм разделит общий бюджет между двумя направлениями и проверит каждое отдельно."
+                        : "Для текущего бюджета Ритм начнёт с одного поискового направления."}{" "}
+                      До вашего подтверждения показы и расходы не начнутся.
                     </p>
                   </div>
                 </div>
@@ -4197,6 +4341,23 @@ function HostedPlanReview({
                       Перейти к текстам <ArrowRight size={15} />
                     </button>
                   </div>
+                ) : useNetwork && directReadyImages.length === 0 ? (
+                  <div className="hosted-direct-action">
+                    <div>
+                      <b>Выберите изображение для Рекламной сети</b>
+                      <small>
+                        Сначала согласуйте один вариант. Ритм сам передаст его в
+                        Директ и не опубликует без вашей проверки.
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => navigate("creatives")}
+                    >
+                      Подготовить изображение <ArrowRight size={15} />
+                    </button>
+                  </div>
                 ) : !regionId ? (
                   <div className="inline-error" role="alert">
                     Для города «{ws.state.city}» пока не найден точный регион
@@ -4207,8 +4368,9 @@ function HostedPlanReview({
                     <div>
                       <b>Материалы готовы</b>
                       <small>
-                        {approvedTexts.length} согласованных текстов · бюджет{" "}
-                        {money(ws.state.budget)}
+                        {useNetwork
+                          ? `Поиск ${money(searchBudget)} · Рекламная сеть ${money(networkBudget)} · общий лимит ${money(ws.state.budget)}`
+                          : `Поиск · общий лимит ${money(ws.state.budget)}`}
                       </small>
                       {directReadyImages.length > 0 && (
                         <label className="hosted-image-choice">
@@ -4231,22 +4393,99 @@ function HostedPlanReview({
                     <button
                       type="button"
                       className="primary"
-                      disabled={busy}
-                      onClick={prepareHeldDraft}
+                      disabled={busy || preparingCampaigns}
+                      onClick={() => void prepareHeldDraft()}
                     >
-                      <ShieldCheck size={16} />
-                      Подготовить запуск
+                      {preparingCampaigns ? (
+                        <LoaderCircle className="spin" size={16} />
+                      ) : (
+                        <ShieldCheck size={16} />
+                      )}
+                      {preparingCampaigns
+                        ? useNetwork
+                          ? "Готовим два направления…"
+                          : "Готовим поиск…"
+                        : "Проверить и подготовить запуск"}
                     </button>
                   </div>
                 ) : (
                   <div className="hosted-direct-progress" aria-live="polite">
+                    <div className="hosted-channel-summary">
+                      <span>
+                        Подготовлено направлений:{" "}
+                        <b>
+                          {directChanges.length} из {expectedChannelCount}
+                        </b>
+                      </span>
+                      <span>
+                        Общий лимит: <b>{money(ws.state.budget)}</b>
+                      </span>
+                    </div>
+                    {directChanges.length > 1 && (
+                      <div
+                        className="hosted-channel-switch"
+                        aria-label="Направления рекламы"
+                      >
+                        {directChanges.map((change) => (
+                          <button
+                            type="button"
+                            key={change.id}
+                            className={
+                              change.id === directChange.id ? "active" : ""
+                            }
+                            onClick={() => setSelectedChangeId(change.id)}
+                          >
+                            <span>
+                              {change.plan?.channel === "network"
+                                ? "Рекламная сеть"
+                                : "Поиск"}
+                            </span>
+                            <small>
+                              {change.execution?.status === "succeeded"
+                                ? "Черновик создан"
+                                : change.preflight?.ready
+                                  ? "Проверка пройдена"
+                                  : "Нужно проверить"}
+                            </small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {directChanges.length < expectedChannelCount && (
+                      <div className="inline-error" role="status">
+                        <b>Одно направление ещё не подготовлено</b>
+                        <p>
+                          Уже сохранённая часть останется без изменений. Ритм
+                          добавит только недостающее направление.
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy || preparingCampaigns}
+                          onClick={() => void prepareHeldDraft()}
+                        >
+                          {preparingCampaigns ? (
+                            <LoaderCircle className="spin" size={16} />
+                          ) : (
+                            <RefreshCw size={16} />
+                          )}
+                          Подготовить второе направление
+                        </button>
+                      </div>
+                    )}
                     <div className="hosted-direct-progress-row complete">
                       <CheckCircle2 size={18} />
                       <div>
-                        <b>План кампании собран</b>
+                        <b>
+                          {directChange.plan?.channel === "network"
+                            ? "Рекламная сеть подготовлена"
+                            : "Поиск подготовлен"}
+                        </b>
                         <small>
-                          {directChange.summary.ads} объявлений ·{" "}
-                          {directChange.summary.keywords} фраз
+                          Лимит {money(directChange.plan?.budget || 0)} ·{" "}
+                          {directChange.plan?.channel === "network"
+                            ? `${directChange.summary.ads} адаптивное объявление с изображением`
+                            : `${directChange.summary.ads} объявления · ${directChange.summary.keywords} фразы`}
                         </small>
                       </div>
                     </div>
@@ -4658,7 +4897,6 @@ function Campaigns({
         navigate={navigate}
         editBusiness={editBusiness}
         prepareAiPlan={prepareAiPlan}
-        dryRun={dryRun}
         preflight={preflight}
         confirmPlan={confirmPlan}
         executePlan={executePlan}
@@ -7650,6 +7888,7 @@ function LiveExperiments({
     (change) =>
       ws.capabilities.abPlanning &&
       change.execution?.status === "succeeded" &&
+      change.plan?.channel !== "network" &&
       change.plan?.ads.length === 1 &&
       change.plan.periodStart > today &&
       !plans.some((plan) => plan.changeId === change.id),
@@ -7660,6 +7899,7 @@ function LiveExperiments({
     (change) =>
       change.execution?.status === "succeeded" &&
       !!change.plan &&
+      change.plan.channel !== "network" &&
       change.plan.periodStart > today &&
       !audiencePlans.some((plan) => plan.changeId === change.id),
   );
@@ -7932,8 +8172,16 @@ function LiveExperiments({
                 <span className="small muted">
                   Вариант А · существующее объявление
                 </span>
-                <b>{selected.plan?.ads[0].title}</b>
-                <p>{selected.plan?.ads[0].text}</p>
+                <b>
+                  {selected.plan && selected.plan.channel !== "network"
+                    ? selected.plan.ads[0].title
+                    : ""}
+                </b>
+                <p>
+                  {selected.plan && selected.plan.channel !== "network"
+                    ? selected.plan.ads[0].text
+                    : ""}
+                </p>
               </div>
               <label>
                 Заголовок варианта Б

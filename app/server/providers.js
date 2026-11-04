@@ -369,6 +369,43 @@ export class DirectClient {
       ],
     });
   }
+  updateUnifiedCampaignPeriodBudget(
+    id,
+    { spendLimitKopecks, startDate, endDate },
+  ) {
+    validateDirectIds([id], "кампаний");
+    if (
+      !Number.isSafeInteger(spendLimitKopecks) ||
+      spendLimitKopecks <= 0 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate)
+    )
+      throw new AppError(400, "Некорректный периодный лимит кампании");
+    return this.call("campaigns", "update", {
+      Campaigns: [
+        {
+          Id: directId(id),
+          UnifiedCampaign: {
+            BiddingStrategy: {
+              Search: { BiddingStrategyType: "SERVING_OFF" },
+              Network: {
+                BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                PlacementTypes: { Network: "YES", Maps: "NO" },
+                WbMaximumClicks: {
+                  CustomPeriodBudget: {
+                    SpendLimit: spendLimitKopecks * 10_000,
+                    StartDate: startDate,
+                    EndDate: endDate,
+                    AutoContinue: "NO",
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+  }
   adGroupsByCampaignId(id) {
     validateDirectIds([id], "кампаний");
     return this.call("adgroups", "get", {

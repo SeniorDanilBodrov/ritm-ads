@@ -356,6 +356,42 @@ test("Direct budget update sends one exact custom-period limit", async () => {
   ]);
 });
 
+test("Direct network budget update preserves the isolated Unified strategy", async () => {
+  let request;
+  const client = new DirectClient({
+    accessToken: "test-token",
+    login: "test-login",
+    fetcher: async (url, options) => {
+      request = { url, body: JSON.parse(options.body) };
+      return Response.json({ result: { UpdateResults: [{ Id: 321 }] } });
+    },
+  });
+  await client.updateUnifiedCampaignPeriodBudget(321, {
+    spendLimitKopecks: 175_000,
+    startDate: "2026-11-01",
+    endDate: "2026-11-14",
+  });
+  const campaign = request.body.params.Campaigns[0];
+  assert.equal(campaign.Id, 321);
+  assert.equal(
+    campaign.UnifiedCampaign.BiddingStrategy.Search.BiddingStrategyType,
+    "SERVING_OFF",
+  );
+  assert.equal(
+    campaign.UnifiedCampaign.BiddingStrategy.Network.BiddingStrategyType,
+    "WB_MAXIMUM_CLICKS",
+  );
+  assert.deepEqual(
+    campaign.UnifiedCampaign.BiddingStrategy.Network.PlacementTypes,
+    { Network: "YES", Maps: "NO" },
+  );
+  assert.equal(
+    campaign.UnifiedCampaign.BiddingStrategy.Network.WbMaximumClicks
+      .CustomPeriodBudget.SpendLimit,
+    1_750_000_000,
+  );
+});
+
 test("Direct marking read requests tax and advertiser fields without a write", async () => {
   let request;
   const client = new DirectClient({

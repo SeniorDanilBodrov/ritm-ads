@@ -76,7 +76,10 @@ test("business owner can request an isolated AI advertising plan without Direct 
   assert.equal(first.status, 201);
   assert.deepEqual(first.body, repeated.body);
   assert.equal(first.body.plan.provider, "fallback");
-  assert.equal(first.body.plan.plan.budgetAllocation[0].percent, 100);
+  assert.deepEqual(first.body.plan.plan.budgetAllocation, [
+    { channel: "search", percent: 65 },
+    { channel: "network", percent: 35 },
+  ]);
   const current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
   assert.equal(current.body.state.aiPlan.provider, "fallback");
   assert.equal(current.body.directChanges.length, 0);

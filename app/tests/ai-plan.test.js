@@ -21,10 +21,21 @@ const state = {
 
 test("fallback advertising plan is valid, safe and keeps the full budget", () => {
   const plan = fallbackAdvertisingPlan(state);
-  assert.equal(plan.budgetAllocation.reduce((sum, item) => sum + item.percent, 0), 100);
+  assert.equal(
+    plan.budgetAllocation.reduce((sum, item) => sum + item.percent, 0),
+    100,
+  );
+  assert.deepEqual(plan.channels, ["search", "network"]);
+  assert.deepEqual(plan.budgetAllocation, [
+    { channel: "search", percent: 65 },
+    { channel: "network", percent: 35 },
+  ]);
   assert.ok(plan.ads.length >= 3 && plan.ads.length <= 4);
   assert.ok(plan.keywords.every((item) => item.length <= 80));
-  assert.equal(plan.keywords.length, new Set(plan.keywords.map((item) => item.toLowerCase())).size);
+  assert.equal(
+    plan.keywords.length,
+    new Set(plan.keywords.map((item) => item.toLowerCase())).size,
+  );
 });
 
 test("Ollama plan is constrained by schema before it is returned", async () => {
@@ -45,18 +56,50 @@ test("Ollama plan is constrained by schema before it is returned", async () => {
         JSON.stringify({
           message: {
             content: JSON.stringify({
-              summary: "Покажем рекламу людям в Екатеринбурге, которые уже ищут услугу, и проверим разные причины обратиться.",
-              audiences: [{ name: "Ищут услугу рядом", need: "Хотят записаться в Екатеринбурге." }],
+              summary:
+                "Покажем рекламу людям в Екатеринбурге, которые уже ищут услугу, и проверим разные причины обратиться.",
+              audiences: [
+                {
+                  name: "Ищут услугу рядом",
+                  need: "Хотят записаться в Екатеринбурге.",
+                },
+              ],
               channels: ["search", "search"],
-              keywords: ["маникюр Екатеринбург", "маникюр рядом", "маникюр с покрытием", "Маникюр рядом"],
+              keywords: [
+                "маникюр Екатеринбург",
+                "маникюр рядом",
+                "маникюр с покрытием",
+                "Маникюр рядом",
+              ],
               negativeKeywords: ["вакансии", "обучение"],
               ads: [
-                { angle: "Близость", title: "Маникюр в Екатеринбурге", text: "Удобная онлайн-запись. Узнайте подробности." },
-                { angle: "Удобство", title: "Запись на маникюр", text: "Бережный уход и удобная онлайн-запись." },
-                { angle: "Забота", title: "Бережный маникюр", text: "Уход и удобная запись в студию «Форма»." },
+                {
+                  angle: "Близость",
+                  title: "Маникюр в Екатеринбурге",
+                  text: "Удобная онлайн-запись. Узнайте подробности.",
+                },
+                {
+                  angle: "Удобство",
+                  title: "Запись на маникюр",
+                  text: "Бережный уход и удобная онлайн-запись.",
+                },
+                {
+                  angle: "Забота",
+                  title: "Бережный маникюр",
+                  text: "Уход и удобная запись в студию «Форма».",
+                },
               ],
-              budgetAllocation: [{ channel: "search", percent: 50 }, { channel: "search", percent: 50 }],
-              abHypotheses: [{ hypothesis: "Запись важнее близости", changes: "Сравним заголовки", metric: "Обращения" }],
+              budgetAllocation: [
+                { channel: "search", percent: 50 },
+                { channel: "search", percent: 50 },
+              ],
+              abHypotheses: [
+                {
+                  hypothesis: "Запись важнее близости",
+                  changes: "Сравним заголовки",
+                  metric: "Обращения",
+                },
+              ],
               assumptions: ["На сайте доступна запись."],
               warnings: [],
             }),
@@ -70,13 +113,19 @@ test("Ollama plan is constrained by schema before it is returned", async () => {
   assert.equal(plan.ads[0].title, "Маникюр в Екатеринбурге");
   assert.deepEqual(plan.channels, ["search"]);
   assert.equal(plan.keywords.length, 3);
-  assert.deepEqual(plan.budgetAllocation, [{ channel: "search", percent: 100 }]);
+  assert.deepEqual(plan.budgetAllocation, [
+    { channel: "search", percent: 100 },
+  ]);
 });
 
 test("invalid or unavailable local model falls back without exposing a provider error", async () => {
   const result = await createAdvertisingPlan(
     state,
-    { aiProvider: "ollama", aiOllamaUrl: "http://127.0.0.1:11434", aiModel: "qwen3.5:4b" },
+    {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
     async () => new Response("broken", { status: 503 }),
   );
   assert.equal(result.provider, "fallback");
@@ -89,28 +138,62 @@ test("invalid or unavailable local model falls back without exposing a provider 
 
 test("model cannot invent a discount, rating or licence that is absent from the business form", async () => {
   const unsafe = {
-    summary: "Покажем рекламу людям в Екатеринбурге, которые выбирают услугу и хотят записаться в удобное время.",
-    audiences: [{ name: "Ищут услугу рядом", need: "Хотят записаться в Екатеринбурге." }],
+    summary:
+      "Покажем рекламу людям в Екатеринбурге, которые выбирают услугу и хотят записаться в удобное время.",
+    audiences: [
+      { name: "Ищут услугу рядом", need: "Хотят записаться в Екатеринбурге." },
+    ],
     channels: ["search"],
     keywords: ["маникюр Екатеринбург", "маникюр рядом", "маникюр с покрытием"],
     negativeKeywords: ["вакансии"],
     ads: [
-      { angle: "Цена", title: "Скидка 50% на маникюр", text: "Запишитесь онлайн и получите выгодные условия." },
-      { angle: "Выбор", title: "Лучший маникюр в городе", text: "Бережный уход и онлайн-запись." },
-      { angle: "Доверие", title: "Маникюр рядом", text: "Бережный уход и удобная онлайн-запись." },
+      {
+        angle: "Цена",
+        title: "Скидка 50% на маникюр",
+        text: "Запишитесь онлайн и получите выгодные условия.",
+      },
+      {
+        angle: "Выбор",
+        title: "Лучший маникюр в городе",
+        text: "Бережный уход и онлайн-запись.",
+      },
+      {
+        angle: "Доверие",
+        title: "Маникюр рядом",
+        text: "Бережный уход и удобная онлайн-запись.",
+      },
     ],
     budgetAllocation: [{ channel: "search", percent: 100 }],
-    abHypotheses: [{ hypothesis: "Подача записи даст больше обращений", changes: "Сравним два заголовка", metric: "Обращения" }],
+    abHypotheses: [
+      {
+        hypothesis: "Подача записи даст больше обращений",
+        changes: "Сравним два заголовка",
+        metric: "Обращения",
+      },
+    ],
     assumptions: ["На сайте доступна запись."],
     warnings: [],
   };
   const result = await createAdvertisingPlan(
     state,
-    { aiProvider: "ollama", aiOllamaUrl: "http://127.0.0.1:11434", aiModel: "qwen3.5:4b" },
-    async () => new Response(JSON.stringify({ message: { content: JSON.stringify(unsafe) } }), { status: 200 }),
+    {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
+    async () =>
+      new Response(
+        JSON.stringify({ message: { content: JSON.stringify(unsafe) } }),
+        { status: 200 },
+      ),
   );
   assert.equal(result.provider, "fallback");
-  assert.equal(result.plan.ads.some((ad) => /скидк|лучший/iu.test(`${ad.title} ${ad.text}`)), false);
+  assert.equal(
+    result.plan.ads.some((ad) =>
+      /скидк|лучший/iu.test(`${ad.title} ${ad.text}`),
+    ),
+    false,
+  );
 });
 
 test("fallback always creates at least three distinct ads without a known price", () => {

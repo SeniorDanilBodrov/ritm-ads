@@ -22,11 +22,7 @@ export const advertisingPlanSchema = z
   .object({
     summary: z.string().trim().min(30).max(650),
     audiences: z
-      .array(
-        z
-          .object({ name: plainText, need: plainText })
-          .strict(),
-      )
+      .array(z.object({ name: plainText, need: plainText }).strict())
       .min(1)
       .max(5),
     channels: z.array(channel).min(1).max(2),
@@ -55,7 +51,11 @@ export const advertisingPlanSchema = z
     abHypotheses: z
       .array(
         z
-          .object({ hypothesis: plainText, changes: plainText, metric: plainText })
+          .object({
+            hypothesis: plainText,
+            changes: plainText,
+            metric: plainText,
+          })
           .strict(),
       )
       .min(1)
@@ -83,18 +83,42 @@ function uniqueStrings(values) {
 function normalizedAllocation(channels, allocations) {
   const weights = new Map();
   for (const item of allocations) {
-    if (!item || !channels.includes(item.channel) || !Number.isFinite(item.percent)) continue;
-    weights.set(item.channel, (weights.get(item.channel) || 0) + Math.max(0, item.percent));
+    if (
+      !item ||
+      !channels.includes(item.channel) ||
+      !Number.isFinite(item.percent)
+    )
+      continue;
+    weights.set(
+      item.channel,
+      (weights.get(item.channel) || 0) + Math.max(0, item.percent),
+    );
   }
-  const values = channels.map((channel) => ({ channel, weight: weights.get(channel) || 1 }));
+  const values = channels.map((channel) => ({
+    channel,
+    weight: weights.get(channel) || 1,
+  }));
   const total = values.reduce((sum, item) => sum + item.weight, 0);
-  const exact = values.map((item) => ({ ...item, percent: (item.weight / total) * 100 }));
-  const result = exact.map((item) => ({ channel: item.channel, percent: Math.floor(item.percent) }));
+  const exact = values.map((item) => ({
+    ...item,
+    percent: (item.weight / total) * 100,
+  }));
+  const result = exact.map((item) => ({
+    channel: item.channel,
+    percent: Math.floor(item.percent),
+  }));
   let remainder = 100 - result.reduce((sum, item) => sum + item.percent, 0);
   const order = exact
-    .map((item, index) => ({ index, fraction: item.percent - Math.floor(item.percent) }))
+    .map((item, index) => ({
+      index,
+      fraction: item.percent - Math.floor(item.percent),
+    }))
     .sort((a, b) => b.fraction - a.fraction);
-  for (let index = 0; remainder > 0; index = (index + 1) % order.length, remainder--)
+  for (
+    let index = 0;
+    remainder > 0;
+    index = (index + 1) % order.length, remainder--
+  )
     result[order[index].index].percent++;
   return result;
 }
@@ -103,10 +127,19 @@ function normalizeModelPlan(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const plan = { ...raw };
   if (Array.isArray(plan.channels)) plan.channels = [...new Set(plan.channels)];
-  if (Array.isArray(plan.keywords)) plan.keywords = uniqueStrings(plan.keywords);
-  if (Array.isArray(plan.negativeKeywords)) plan.negativeKeywords = uniqueStrings(plan.negativeKeywords);
-  if (Array.isArray(plan.channels) && plan.channels.length && Array.isArray(plan.budgetAllocation))
-    plan.budgetAllocation = normalizedAllocation(plan.channels, plan.budgetAllocation);
+  if (Array.isArray(plan.keywords))
+    plan.keywords = uniqueStrings(plan.keywords);
+  if (Array.isArray(plan.negativeKeywords))
+    plan.negativeKeywords = uniqueStrings(plan.negativeKeywords);
+  if (
+    Array.isArray(plan.channels) &&
+    plan.channels.length &&
+    Array.isArray(plan.budgetAllocation)
+  )
+    plan.budgetAllocation = normalizedAllocation(
+      plan.channels,
+      plan.budgetAllocation,
+    );
   return plan;
 }
 
@@ -117,7 +150,8 @@ function businessInput(state) {
     city: state.city,
     service: state.service,
     benefit: state.benefit,
-    price: Number.isInteger(state.price) && state.price > 0 ? state.price : null,
+    price:
+      Number.isInteger(state.price) && state.price > 0 ? state.price : null,
     website: state.website || null,
     budgetRubles: Math.round(state.budget / 100),
     periodStart: state.periodStart,
@@ -134,13 +168,16 @@ export function advertisingPlanInputHash(state) {
 export function validateAdvertisingPlan(raw, state) {
   const plan = advertisingPlanSchema.parse(raw);
   const channels = new Set(plan.channels);
-  const allocations = new Set(plan.budgetAllocation.map((item) => item.channel));
+  const allocations = new Set(
+    plan.budgetAllocation.map((item) => item.channel),
+  );
   if (channels.size !== plan.channels.length)
     throw new Error("Каналы повторяются");
   if (allocations.size !== plan.budgetAllocation.length)
     throw new Error("Распределение повторяется");
   if (
-    plan.budgetAllocation.reduce((sum, item) => sum + item.percent, 0) !== 100 ||
+    plan.budgetAllocation.reduce((sum, item) => sum + item.percent, 0) !==
+      100 ||
     [...allocations].some((item) => !channels.has(item))
   )
     throw new Error("Распределение бюджета некорректно");
@@ -148,26 +185,59 @@ export function validateAdvertisingPlan(raw, state) {
     throw new Error("Ключевые фразы повторяются");
   if (normalized(plan.negativeKeywords).size !== plan.negativeKeywords.length)
     throw new Error("Минус-фразы повторяются");
-  if (plan.ads.some((ad) => /(?:\d+[\s ]?₽|\d+[\s ]?руб)/iu.test(`${ad.title} ${ad.text}`))) {
+  if (
+    plan.ads.some((ad) =>
+      /(?:\d+[\s ]?₽|\d+[\s ]?руб)/iu.test(`${ad.title} ${ad.text}`),
+    )
+  ) {
     const allowedPrice = state.price
-      ? new RegExp(`(?:от\\s*)?${state.price.toLocaleString("ru-RU").replace(/\s/g, "[\\s ]?")}[\\s ]?(?:₽|руб)`, "iu")
+      ? new RegExp(
+          `(?:от\\s*)?${state.price.toLocaleString("ru-RU").replace(/\s/g, "[\\s ]?")}[\\s ]?(?:₽|руб)`,
+          "iu",
+        )
       : null;
-    if (!allowedPrice || plan.ads.some((ad) => /(?:\d+[\s ]?₽|\d+[\s ]?руб)/iu.test(`${ad.title} ${ad.text}`) && !allowedPrice.test(`${ad.title} ${ad.text}`)))
+    if (
+      !allowedPrice ||
+      plan.ads.some(
+        (ad) =>
+          /(?:\d+[\s ]?₽|\d+[\s ]?руб)/iu.test(`${ad.title} ${ad.text}`) &&
+          !allowedPrice.test(`${ad.title} ${ad.text}`),
+      )
+    )
       throw new Error("В объявлении есть неподтверждённая цена");
   }
-  const adCopy = plan.ads.map((ad) => `${ad.title} ${ad.text}`).join(" ").toLocaleLowerCase("ru");
+  const adCopy = plan.ads
+    .map((ad) => `${ad.title} ${ad.text}`)
+    .join(" ")
+    .toLocaleLowerCase("ru");
   const statedBenefits = String(state.benefit || "").toLocaleLowerCase("ru");
   const requiresEvidence = [
-    [/(?:скидк|акци|распродаж|\b\d{1,2}\s*%)/iu, /(?:скидк|акци|распродаж|\b\d{1,2}\s*%)/iu, "скидка или акция"],
-    [/(?:лицензи|сертификат)/iu, /(?:лицензи|сертификат)/iu, "лицензия или сертификат"],
+    [
+      /(?:скидк|акци|распродаж|\b\d{1,2}\s*%)/iu,
+      /(?:скидк|акци|распродаж|\b\d{1,2}\s*%)/iu,
+      "скидка или акция",
+    ],
+    [
+      /(?:лицензи|сертификат)/iu,
+      /(?:лицензи|сертификат)/iu,
+      "лицензия или сертификат",
+    ],
     [/(?:гаранти)/iu, /(?:гаранти)/iu, "гарантия"],
   ];
   for (const [claim, evidence, label] of requiresEvidence) {
     if (claim.test(adCopy) && !evidence.test(statedBenefits))
-      throw new Error(`В объявлении есть неподтверждённое утверждение: ${label}`);
+      throw new Error(
+        `В объявлении есть неподтверждённое утверждение: ${label}`,
+      );
   }
-  if (/(?:лучший|лучшая|№\s*1|номер\s*1|топ[-\s]?\d+|рейтинг\s*\d|\d\s*зв[её]зд)/iu.test(adCopy))
-    throw new Error("В объявлении есть неподтверждённый рейтинг или сравнительное утверждение");
+  if (
+    /(?:лучший|лучшая|№\s*1|номер\s*1|топ[-\s]?\d+|рейтинг\s*\d|\d\s*зв[её]зд)/iu.test(
+      adCopy,
+    )
+  )
+    throw new Error(
+      "В объявлении есть неподтверждённый рейтинг или сравнительное утверждение",
+    );
   return plan;
 }
 
@@ -194,7 +264,10 @@ export function fallbackAdvertisingPlan(state, warning) {
     {
       angle: "Близость",
       title: `${service} в ${city}`.slice(0, 56),
-      text: `${benefit}. Узнайте подробности и выберите удобное время.`.slice(0, 81),
+      text: `${benefit}. Узнайте подробности и выберите удобное время.`.slice(
+        0,
+        81,
+      ),
     },
     {
       angle: "Услуга",
@@ -213,9 +286,16 @@ export function fallbackAdvertisingPlan(state, warning) {
   if (state.price > 0)
     ads.push({
       angle: "Понятная цена",
-      title: `${service} от ${state.price.toLocaleString("ru-RU")} ₽`.slice(0, 56),
-      text: `${state.name} в ${city}. Узнайте условия записи на сайте.`.slice(0, 81),
+      title: `${service} от ${state.price.toLocaleString("ru-RU")} ₽`.slice(
+        0,
+        56,
+      ),
+      text: `${state.name} в ${city}. Узнайте условия записи на сайте.`.slice(
+        0,
+        81,
+      ),
     });
+  const useNetwork = state.budget >= 1_000_000;
   return validateAdvertisingPlan(
     {
       summary: `Начнём с поиска людей в ${city}, которые уже выбирают ${service.toLocaleLowerCase("ru")}. Проверим разные причины обратиться и не превысим общий бюджет.`,
@@ -225,7 +305,7 @@ export function fallbackAdvertisingPlan(state, warning) {
           need: `Хотят найти подходящую услугу в ${city}.`,
         },
       ],
-      channels: ["search"],
+      channels: useNetwork ? ["search", "network"] : ["search"],
       keywords: [
         `${serviceWords} ${city}`.trim(),
         `${serviceWords} рядом`.trim(),
@@ -233,15 +313,23 @@ export function fallbackAdvertisingPlan(state, warning) {
       ],
       negativeKeywords: ["вакансии", "обучение", "бесплатно"],
       ads,
-      budgetAllocation: [{ channel: "search", percent: 100 }],
+      budgetAllocation: useNetwork
+        ? [
+            { channel: "search", percent: 65 },
+            { channel: "network", percent: 35 },
+          ]
+        : [{ channel: "search", percent: 100 }],
       abHypotheses: [
         {
-          hypothesis: "Упоминание удобства записи даст больше обращений, чем нейтральная подача услуги.",
+          hypothesis:
+            "Упоминание удобства записи даст больше обращений, чем нейтральная подача услуги.",
           changes: "Сравним заголовок про запись с заголовком про близость.",
           metric: "Обращения после перехода.",
         },
       ],
-      assumptions: ["Пользователь может оставить заявку или записаться на сайте."],
+      assumptions: [
+        "Пользователь может оставить заявку или записаться на сайте.",
+      ],
       warnings: warning ? [warning] : [],
     },
     state,
@@ -267,11 +355,16 @@ function isLocalOllamaUrl(value) {
   );
 }
 
-export async function requestOllamaAdvertisingPlan(state, config, fetcher = fetch) {
+export async function requestOllamaAdvertisingPlan(
+  state,
+  config,
+  fetcher = fetch,
+) {
   const base = config.aiOllamaUrl || "http://127.0.0.1:11434";
   const model = config.aiModel || "qwen3.5:4b";
   if (!isLocalOllamaUrl(base)) throw new Error("Ollama URL is not local");
-  if (!/^[\w.:-]{1,160}$/u.test(model)) throw new Error("Ollama model is invalid");
+  if (!/^[\w.:-]{1,160}$/u.test(model))
+    throw new Error("Ollama model is invalid");
   const input = businessInput(state);
   const bases = [base];
   const configuredUrl = new URL(base);
@@ -312,7 +405,10 @@ export async function requestOllamaAdvertisingPlan(state, config, fetcher = fetc
         const output = JSON.parse(raw)?.message?.content;
         if (typeof output !== "string" || output.length > 80_000)
           throw new Error("Ollama output missing");
-        return validateAdvertisingPlan(normalizeModelPlan(JSON.parse(output)), state);
+        return validateAdvertisingPlan(
+          normalizeModelPlan(JSON.parse(output)),
+          state,
+        );
       } catch (error) {
         lastError = error;
       }
@@ -350,7 +446,9 @@ export async function createAdvertisingPlan(state, config, fetcher = fetch) {
         corrections:
           attempt === 0
             ? []
-            : ["Первый ответ модели не прошёл защитную проверку; использован повторный ответ."],
+            : [
+                "Первый ответ модели не прошёл защитную проверку; использован повторный ответ.",
+              ],
         plan: await requestOllamaAdvertisingPlan(state, config, fetcher),
       };
     } catch {

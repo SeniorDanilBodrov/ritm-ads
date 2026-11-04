@@ -489,6 +489,7 @@ export type DirectCommand = {
   fingerprint: string;
 };
 export type DirectPlan = {
+  channel?: "search";
   login: string;
   campaignName: string;
   website: string;
@@ -505,13 +506,34 @@ export type DirectPlan = {
   keywords: string[];
   negativeKeywords?: string[];
 };
+export type DirectNetworkPlan = {
+  channel: "network";
+  login: string;
+  campaignName: string;
+  website: string;
+  audience: string;
+  regionIds: number[];
+  budget: number;
+  periodStart: string;
+  periodEnd: string;
+  counterId?: string;
+  goalId?: string;
+  creativeAssetId: string;
+  ads: {
+    titles: string[];
+    texts: string[];
+    href: string;
+    adImageHashes?: string[];
+  }[];
+};
+export type AnyDirectPlan = DirectPlan | DirectNetworkPlan;
 export type DirectChange = {
   id: string;
   mode: "dry_run";
   status: string;
   attempts: number;
   availableAt: number;
-  plan?: DirectPlan;
+  plan?: AnyDirectPlan;
   commands: DirectCommand[];
   summary: {
     campaigns: number;

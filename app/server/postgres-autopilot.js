@@ -46,7 +46,8 @@ async function writeEvent(tx, businessId, payload, now = Date.now()) {
 }
 
 function campaignId(callsJson) {
-  const id = json(callsJson, []).find((call) => call.key === "campaign")?.ids?.[0];
+  const id = json(callsJson, []).find((call) => call.key === "campaign")
+    ?.ids?.[0];
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
@@ -215,7 +216,15 @@ async function unresolved(db, businessId, changeId) {
   );
 }
 
-async function allocationCandidate(db, businessId, recipientChangeId, recipientPlan, recipient, targetCpa, policy) {
+async function allocationCandidate(
+  db,
+  businessId,
+  recipientChangeId,
+  recipientPlan,
+  recipient,
+  targetCpa,
+  policy,
+) {
   const rows = await db
     .prepare(
       `SELECT cl.change_id,dc.plan_json,cba.limit_kopecks,de.calls_json,de.connection_id
@@ -238,7 +247,10 @@ async function allocationCandidate(db, businessId, recipientChangeId, recipientP
       )
       .get(businessId, row.change_id);
     const plan = json(row.plan_json, {});
-    const performance = observedPerformance(json(reviewRow?.result_json, {}), policy);
+    const performance = observedPerformance(
+      json(reviewRow?.result_json, {}),
+      policy,
+    );
     const limitKopecks = Number(row.limit_kopecks ?? plan.budget);
     const remoteId = campaignId(row.calls_json);
     if (
@@ -263,9 +275,12 @@ async function allocationCandidate(db, businessId, recipientChangeId, recipientP
       freeKopecks: limitKopecks - performance.spentKopecks,
     });
   }
-  return choices.sort(
-    (left, right) => right.performance.cpaKopecks - left.performance.cpaKopecks,
-  )[0] || null;
+  return (
+    choices.sort(
+      (left, right) =>
+        right.performance.cpaKopecks - left.performance.cpaKopecks,
+    )[0] || null
+  );
 }
 
 export async function queuePostgresOptimizerAction(
@@ -295,7 +310,8 @@ export async function queuePostgresOptimizerAction(
     !performance.goals ||
     performance.cpaKopecks > targetCpa * policy.pauseCpaTargetMultiple
       ? "pause_campaign"
-      : performance.cpaKopecks < targetCpa * policy.efficientCpaTargetMultiple &&
+      : performance.cpaKopecks <
+            targetCpa * policy.efficientCpaTargetMultiple &&
           performance.goals >= policy.minGoalsForReallocation
         ? "consider_reallocation"
         : null;
@@ -427,7 +443,11 @@ async function createShadowReview(
   )
     throw new AppError(409, "Кампания, аналитика или подключение изменились.");
   const receivedAt = Date.parse(row.received_at);
-  if (!Number.isFinite(receivedAt) || receivedAt > now || now - receivedAt > 48 * 3600000)
+  if (
+    !Number.isFinite(receivedAt) ||
+    receivedAt > now ||
+    now - receivedAt > 48 * 3600000
+  )
     throw new AppError(409, "Отчёт устарел; решение не подготовлено.");
   const rows = json(row.rows_json, []).filter(
     (item) =>
@@ -463,12 +483,17 @@ async function createShadowReview(
   if (
     !Array.isArray(totals) ||
     totals.length !== 2 ||
-    totals.some((value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0) ||
+    totals.some(
+      (value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0,
+    ) ||
     stats.sampled === true ||
     campaign?.Id !== remoteId ||
     campaign.State !== "ON"
   )
-    throw new AppError(409, "Источники не подтвердили активную кампанию и точную атрибуцию.");
+    throw new AppError(
+      409,
+      "Источники не подтвердили активную кампанию и точную атрибуцию.",
+    );
   const result = {
     id: randomUUID(),
     changeId: payload.changeId,
@@ -527,15 +552,26 @@ async function createShadowReview(
       optimizerPolicy,
     );
     await tx
-      .prepare("UPDATE jobs SET status='succeeded',available_at=?,error=NULL WHERE id=?")
+      .prepare(
+        "UPDATE jobs SET status='succeeded',available_at=?,error=NULL WHERE id=?",
+      )
       .run(now, job.id);
-    await writeEvent(tx, job.business_id, {
-      kind: "shadow_review",
-      title: queued ? "Ритм подготовил защитное решение" : "Ритм проверил результат",
-      reason: queued ? "Решение будет применено только после повторной проверки кабинета и общего бюджета." : result.reason,
-      rule: "postgres-autopilot/shadow@1",
-      reviewId: stored.id,
-    }, now);
+    await writeEvent(
+      tx,
+      job.business_id,
+      {
+        kind: "shadow_review",
+        title: queued
+          ? "Ритм подготовил защитное решение"
+          : "Ритм проверил результат",
+        reason: queued
+          ? "Решение будет применено только после повторной проверки кабинета и общего бюджета."
+          : result.reason,
+        rule: "postgres-autopilot/shadow@1",
+        reviewId: stored.id,
+      },
+      now,
+    );
     return { status: "succeeded", review: stored, optimizerAction: queued };
   });
 }
@@ -560,7 +596,9 @@ export async function runPostgresShadowCycle(
       .get(now);
     if (!row) return null;
     await tx
-      .prepare("UPDATE jobs SET status='running',attempts=attempts+1,available_at=? WHERE id=?")
+      .prepare(
+        "UPDATE jobs SET status='running',attempts=attempts+1,available_at=? WHERE id=?",
+      )
       .run(now + 60_000, row.id);
     return { ...row, attempts: Number(row.attempts) + 1 };
   });
@@ -575,7 +613,9 @@ export async function runPostgresShadowCycle(
     });
   } catch (error) {
     await db.transaction(async (tx) => {
-      const retry = Number(job.attempts) < 3 && !(error instanceof AppError && error.status === 409);
+      const retry =
+        Number(job.attempts) < 3 &&
+        !(error instanceof AppError && error.status === 409);
       await tx
         .prepare("UPDATE jobs SET status=?,available_at=?,error=? WHERE id=?")
         .run(
@@ -592,15 +632,25 @@ export async function runPostgresShadowCycle(
 }
 
 function remoteBudget(response, id) {
-  const campaign = response?.Campaigns?.length === 1 ? response.Campaigns[0] : null;
-  const strategy = campaign?.TextCampaign?.BiddingStrategy;
-  const period = strategy?.Search?.WbMaximumClicks?.CustomPeriodBudget;
+  const campaign =
+    response?.Campaigns?.length === 1 ? response.Campaigns[0] : null;
+  const network = campaign?.Type === "UNIFIED_CAMPAIGN";
+  const strategy = network
+    ? campaign?.UnifiedCampaign?.BiddingStrategy
+    : campaign?.TextCampaign?.BiddingStrategy;
+  const placement = network ? strategy?.Network : strategy?.Search;
+  const period = placement?.WbMaximumClicks?.CustomPeriodBudget;
   const micros = period?.SpendLimit;
   if (
     campaign?.Id !== id ||
-    campaign.Type !== "TEXT_CAMPAIGN" ||
-    strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
-    strategy?.Network?.BiddingStrategyType !== "SERVING_OFF" ||
+    !["TEXT_CAMPAIGN", "UNIFIED_CAMPAIGN"].includes(campaign.Type) ||
+    (network
+      ? strategy?.Search?.BiddingStrategyType !== "SERVING_OFF" ||
+        strategy?.Network?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
+        strategy?.Network?.PlacementTypes?.Network !== "YES" ||
+        strategy?.Network?.PlacementTypes?.Maps !== "NO"
+      : strategy?.Search?.BiddingStrategyType !== "WB_MAXIMUM_CLICKS" ||
+        strategy?.Network?.BiddingStrategyType !== "SERVING_OFF") ||
     !Number.isSafeInteger(micros) ||
     micros <= 0 ||
     micros % 10_000 !== 0 ||
@@ -608,6 +658,7 @@ function remoteBudget(response, id) {
   )
     throw new AppError(409, "Стратегия или лимит кампании изменились.");
   return {
+    channel: network ? "network" : "search",
     state: campaign.State,
     limitKopecks: micros / 10_000,
     periodStart: period.StartDate,
@@ -616,7 +667,11 @@ function remoteBudget(response, id) {
 }
 
 async function updateBudget(client, id, before, limitKopecks) {
-  const response = await client.updateTextCampaignPeriodBudget(id, {
+  const update =
+    before.channel === "network"
+      ? client.updateUnifiedCampaignPeriodBudget.bind(client)
+      : client.updateTextCampaignPeriodBudget.bind(client);
+  const response = await update(id, {
     spendLimitKopecks: limitKopecks,
     startDate: before.periodStart,
     endDate: before.periodEnd,
@@ -656,9 +711,18 @@ async function applyPause(db, action, client) {
       throw new AppError(409, "Кампания больше не активна.");
     const before = await client.campaignsByIds([id]);
     const remote = before?.Campaigns?.length === 1 ? before.Campaigns[0] : null;
-    if (remote?.Id !== id) throw new AppError(409, "Кампания не найдена в Директе.");
-    if (remote.State === "SUSPENDED") return { status: "applied", reason: "Кампания уже остановлена; состояние подтверждено Директом." };
-    if (remote.State !== "ON") throw new AppError(409, "Директ не подтвердил активное состояние кампании.");
+    if (remote?.Id !== id)
+      throw new AppError(409, "Кампания не найдена в Директе.");
+    if (remote.State === "SUSPENDED")
+      return {
+        status: "applied",
+        reason: "Кампания уже остановлена; состояние подтверждено Директом.",
+      };
+    if (remote.State !== "ON")
+      throw new AppError(
+        409,
+        "Директ не подтвердил активное состояние кампании.",
+      );
     writeAttempted = true;
     const result = await client.suspendCampaigns([id]);
     if (
@@ -668,9 +732,19 @@ async function applyPause(db, action, client) {
     )
       throw new AppError(502, "Директ не подтвердил остановку кампании.");
     const after = await client.campaignsByIds([id]);
-    if (after?.Campaigns?.length !== 1 || after.Campaigns[0].State !== "SUSPENDED")
-      throw new AppError(502, "Состояние SUSPENDED не подтверждено чтением Директа.");
-    return { status: "applied", reason: "Неэффективная кампания остановлена; состояние подтверждено чтением Директа." };
+    if (
+      after?.Campaigns?.length !== 1 ||
+      after.Campaigns[0].State !== "SUSPENDED"
+    )
+      throw new AppError(
+        502,
+        "Состояние SUSPENDED не подтверждено чтением Директа.",
+      );
+    return {
+      status: "applied",
+      reason:
+        "Неэффективная кампания остановлена; состояние подтверждено чтением Директа.",
+    };
   } catch {
     return {
       status: writeAttempted ? "needs_reconciliation" : "failed_no_write",
@@ -695,27 +769,49 @@ async function applyReallocation(db, action, client, connectionId) {
       value.recipient?.connectionId !== connectionId ||
       value.donor?.connectionId !== connectionId ||
       value.recipient.changeId === value.donor.changeId ||
-      value.transferKopecks > value.donor.previousLimitKopecks - value.donor.spentKopecks
+      value.transferKopecks >
+        value.donor.previousLimitKopecks - value.donor.spentKopecks
     )
-      throw new AppError(409, "План перераспределения неполный или небезопасный.");
+      throw new AppError(
+        409,
+        "План перераспределения неполный или небезопасный.",
+      );
     const lifecycles = await db
       .prepare(
         "SELECT change_id,status FROM campaign_ad_lifecycle WHERE business_id=? AND change_id IN (?,?)",
       )
       .all(action.business_id, value.recipient.changeId, value.donor.changeId);
-    if (lifecycles.length !== 2 || lifecycles.some((item) => item.status !== "active"))
+    if (
+      lifecycles.length !== 2 ||
+      lifecycles.some((item) => item.status !== "active")
+    )
       throw new AppError(409, "Одна из кампаний больше не активна.");
     const allocations = await db
-      .prepare("SELECT limit_kopecks FROM campaign_budget_allocations WHERE business_id=?")
+      .prepare(
+        "SELECT limit_kopecks FROM campaign_budget_allocations WHERE business_id=?",
+      )
       .all(action.business_id);
-    const business = await db.prepare("SELECT state FROM businesses WHERE id=?").get(action.business_id);
+    const business = await db
+      .prepare("SELECT state FROM businesses WHERE id=?")
+      .get(action.business_id);
     const portfolioLimit = Number(json(business?.state, {}).budget);
-    const allocated = allocations.reduce((sum, item) => sum + Number(item.limit_kopecks), 0);
-    if (!Number.isSafeInteger(allocated) || !Number.isSafeInteger(portfolioLimit) || allocated > portfolioLimit)
+    const allocated = allocations.reduce(
+      (sum, item) => sum + Number(item.limit_kopecks),
+      0,
+    );
+    if (
+      !Number.isSafeInteger(allocated) ||
+      !Number.isSafeInteger(portfolioLimit) ||
+      allocated > portfolioLimit
+    )
       throw new AppError(409, "Общий лимит портфеля не подтверждён.");
     const [recipientBefore, donorBefore] = await Promise.all([
-      client.campaignBudgetById(value.recipient.campaignId).then((result) => remoteBudget(result, value.recipient.campaignId)),
-      client.campaignBudgetById(value.donor.campaignId).then((result) => remoteBudget(result, value.donor.campaignId)),
+      client
+        .campaignBudgetById(value.recipient.campaignId)
+        .then((result) => remoteBudget(result, value.recipient.campaignId)),
+      client
+        .campaignBudgetById(value.donor.campaignId)
+        .then((result) => remoteBudget(result, value.donor.campaignId)),
     ]);
     if (
       recipientBefore.state !== "ON" ||
@@ -725,17 +821,26 @@ async function applyReallocation(db, action, client, connectionId) {
       recipientBefore.periodStart !== donorBefore.periodStart ||
       recipientBefore.periodEnd !== donorBefore.periodEnd
     )
-      throw new AppError(409, "Лимиты кампаний изменились после контрольного среза.");
+      throw new AppError(
+        409,
+        "Лимиты кампаний изменились после контрольного среза.",
+      );
     const donorLimit = donorBefore.limitKopecks - value.transferKopecks;
     const recipientLimit = recipientBefore.limitKopecks + value.transferKopecks;
     if (
       donorLimit < value.donor.spentKopecks ||
-      donorLimit + recipientLimit !== donorBefore.limitKopecks + recipientBefore.limitKopecks
+      donorLimit + recipientLimit !==
+        donorBefore.limitKopecks + recipientBefore.limitKopecks
     )
       throw new AppError(409, "Перенос нарушает подтверждённый общий лимит.");
     writeAttempted = true;
     await updateBudget(client, value.donor.campaignId, donorBefore, donorLimit);
-    await updateBudget(client, value.recipient.campaignId, recipientBefore, recipientLimit);
+    await updateBudget(
+      client,
+      value.recipient.campaignId,
+      recipientBefore,
+      recipientLimit,
+    );
     await db.transaction(async (tx) => {
       const at = new Date().toISOString();
       for (const [changeId, limit] of [
@@ -751,7 +856,10 @@ async function applyReallocation(db, action, client, connectionId) {
           )
           .run(action.business_id, changeId, limit, at);
     });
-    return { status: "applied", reason: `Перенесено ${value.transferKopecks} коп. Общий лимит портфеля не изменился.` };
+    return {
+      status: "applied",
+      reason: `Перенесено ${value.transferKopecks} коп. Общий лимит портфеля не изменился.`,
+    };
   } catch {
     return {
       status: writeAttempted ? "needs_reconciliation" : "failed_no_write",
@@ -774,12 +882,20 @@ async function executeClaimedPostgresOptimizerAction(
 ) {
   let result;
   try {
-    const { metadata, credentials } = await currentConnection(db, action.business_id, key);
+    const { metadata, credentials } = await currentConnection(
+      db,
+      action.business_id,
+      key,
+    );
     const execution = await db
-      .prepare("SELECT connection_id FROM direct_executions WHERE business_id=? AND change_id=?")
+      .prepare(
+        "SELECT connection_id FROM direct_executions WHERE business_id=? AND change_id=?",
+      )
       .get(action.business_id, action.change_id);
     const planRow = await db
-      .prepare("SELECT plan_json FROM direct_changes WHERE business_id=? AND id=?")
+      .prepare(
+        "SELECT plan_json FROM direct_changes WHERE business_id=? AND id=?",
+      )
       .get(action.business_id, action.change_id);
     const plan = json(planRow?.plan_json, {});
     if (
@@ -801,36 +917,56 @@ async function executeClaimedPostgresOptimizerAction(
   } catch {
     result = {
       status: "failed_no_write",
-      reason: "Подключение или контрольные данные изменились; внешняя команда не отправлялась.",
+      reason:
+        "Подключение или контрольные данные изменились; внешняя команда не отправлялась.",
     };
   }
   return db.transaction(async (tx) => {
     await tx
-      .prepare("UPDATE optimizer_actions SET status=?,reason=?,updated_at=? WHERE id=? AND status='dispatching'")
-      .run(result.status, result.reason, new Date(now).toISOString(), action.id);
+      .prepare(
+        "UPDATE optimizer_actions SET status=?,reason=?,updated_at=? WHERE id=? AND status='dispatching'",
+      )
+      .run(
+        result.status,
+        result.reason,
+        new Date(now).toISOString(),
+        action.id,
+      );
     if (result.status === "applied" && action.action === "pause_campaign")
       await tx
-        .prepare("UPDATE campaign_ad_lifecycle SET status='paused',reason=?,updated_at=? WHERE business_id=? AND change_id=? AND status='active'")
-        .run(result.reason, new Date(now).toISOString(), action.business_id, action.change_id);
-    await writeEvent(tx, action.business_id, {
-      kind:
-        result.status === "applied"
-          ? "optimizer_action_applied"
-          : result.status === "needs_reconciliation"
-            ? "optimizer_action_uncertain"
-            : "optimizer_action_not_applied",
-      title:
-        result.status === "applied"
-          ? action.action === "pause_campaign"
-            ? "Ритм остановил неэффективную кампанию"
-            : "Ритм перенёс свободный остаток"
-          : result.status === "needs_reconciliation"
-            ? "Решение требует сверки"
-            : "Реклама не изменена",
-      reason: result.reason,
-      rule: "postgres-budget-guard/executor@1",
-      jobId: action.id,
-    }, now);
+        .prepare(
+          "UPDATE campaign_ad_lifecycle SET status='paused',reason=?,updated_at=? WHERE business_id=? AND change_id=? AND status='active'",
+        )
+        .run(
+          result.reason,
+          new Date(now).toISOString(),
+          action.business_id,
+          action.change_id,
+        );
+    await writeEvent(
+      tx,
+      action.business_id,
+      {
+        kind:
+          result.status === "applied"
+            ? "optimizer_action_applied"
+            : result.status === "needs_reconciliation"
+              ? "optimizer_action_uncertain"
+              : "optimizer_action_not_applied",
+        title:
+          result.status === "applied"
+            ? action.action === "pause_campaign"
+              ? "Ритм остановил неэффективную кампанию"
+              : "Ритм перенёс свободный остаток"
+            : result.status === "needs_reconciliation"
+              ? "Решение требует сверки"
+              : "Реклама не изменена",
+        reason: result.reason,
+        rule: "postgres-budget-guard/executor@1",
+        jobId: action.id,
+      },
+      now,
+    );
     return { id: action.id, action: action.action, ...result };
   });
 }
@@ -956,7 +1092,11 @@ export async function rollbackPostgresOptimizerAction(
 ) {
   await ownedBusiness(db, userId, businessId);
   if (!canRunAutopilot(config))
-    throw new AppError(409, "Откат защитного действия отключён.", "autopilot_gate");
+    throw new AppError(
+      409,
+      "Откат защитного действия отключён.",
+      "autopilot_gate",
+    );
   if (!spendConfirmed || !launchConfirmed)
     throw new AppError(
       400,
@@ -980,7 +1120,11 @@ export async function rollbackPostgresOptimizerAction(
         "UPDATE optimizer_actions SET status='rollback_dispatching',guard_json=?,updated_at=? WHERE id=? AND status='applied'",
       )
       .run(JSON.stringify(guard), new Date(now).toISOString(), row.id);
-    return { ...row, status: "rollback_dispatching", guard_json: JSON.stringify(guard) };
+    return {
+      ...row,
+      status: "rollback_dispatching",
+      guard_json: JSON.stringify(guard),
+    };
   });
   if (action.status !== "rollback_dispatching")
     return {
@@ -994,7 +1138,11 @@ export async function rollbackPostgresOptimizerAction(
   let reason = "Откат не применён; внешняя реклама не изменена.";
   let possibleWrite = false;
   try {
-    const { metadata, credentials } = await currentConnection(db, businessId, key);
+    const { metadata, credentials } = await currentConnection(
+      db,
+      businessId,
+      key,
+    );
     const planRow = await db
       .prepare(
         `SELECT dc.plan_json,de.connection_id,de.calls_json,cba.limit_kopecks
@@ -1057,7 +1205,10 @@ export async function rollbackPostgresOptimizerAction(
     } else if (action.action === "consider_reallocation") {
       const value = json(action.guard_json, {})?.reallocation;
       if (!value)
-        throw new AppError(409, "Исходные лимиты перераспределения не найдены.");
+        throw new AppError(
+          409,
+          "Исходные лимиты перераспределения не найдены.",
+        );
       const [recipient, donor] = await Promise.all([
         client
           .campaignBudgetById(value.recipient.campaignId)
@@ -1068,7 +1219,8 @@ export async function rollbackPostgresOptimizerAction(
       ]);
       const expectedRecipient =
         value.recipient.previousLimitKopecks + value.transferKopecks;
-      const expectedDonor = value.donor.previousLimitKopecks - value.transferKopecks;
+      const expectedDonor =
+        value.donor.previousLimitKopecks - value.transferKopecks;
       if (
         recipient.state !== "ON" ||
         donor.state !== "ON" ||
@@ -1173,7 +1325,9 @@ export async function runPostgresOptimizerCycle(
       .get();
     if (!row) return null;
     await tx
-      .prepare("UPDATE optimizer_actions SET status='dispatching',updated_at=? WHERE id=?")
+      .prepare(
+        "UPDATE optimizer_actions SET status='dispatching',updated_at=? WHERE id=?",
+      )
       .run(new Date(now).toISOString(), row.id);
     return { ...row, status: "dispatching" };
   });
@@ -1259,7 +1413,10 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
   let pending = null;
   let stopped = false;
   let lastScheduled = 0;
-  const scheduleEvery = Math.max(60_000, Number(config?.liveDataScheduleMs) || 300_000);
+  const scheduleEvery = Math.max(
+    60_000,
+    Number(config?.liveDataScheduleMs) || 300_000,
+  );
   const tickEvery = Math.max(5_000, Number(config?.liveDataTickMs) || 15_000);
   const tick = () => {
     if (stopped || pending) return;
@@ -1273,7 +1430,11 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
       await runPostgresShadowCycle(db, { key, config, now });
       await runPostgresOptimizerCycle(db, { key, config, now });
     })()
-      .catch(() => console.error(JSON.stringify({ event: "postgres_autopilot_worker_error" })))
+      .catch(() =>
+        console.error(
+          JSON.stringify({ event: "postgres_autopilot_worker_error" }),
+        ),
+      )
       .finally(() => {
         pending = null;
       });

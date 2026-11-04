@@ -1965,6 +1965,61 @@ tbody tr:hover {
   justify-self: start;
 }
 
+.hosted-channel-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 18px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.hosted-channel-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hosted-channel-switch button {
+  min-width: 0;
+  padding: 11px 13px;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  background: var(--surface);
+}
+
+.hosted-channel-switch button:hover,
+.hosted-channel-switch button.active {
+  border-color: var(--brand-action);
+}
+
+.hosted-channel-switch button.active {
+  color: var(--ink);
+  background: var(--success-soft);
+}
+
+.hosted-channel-switch span,
+.hosted-channel-switch small {
+  overflow-wrap: anywhere;
+}
+
+.hosted-channel-switch span {
+  font-weight: 750;
+}
+
+.hosted-channel-switch small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .hosted-direct-progress-row {
   display: flex;
   align-items: flex-start;
@@ -7258,6 +7313,10 @@ textarea::placeholder {
   .creative-direct-account {
     width: 100%;
     max-width: none;
+  }
+
+  .hosted-channel-switch {
+    grid-template-columns: 1fr;
   }
 
   .generated-section .section-heading.compact {

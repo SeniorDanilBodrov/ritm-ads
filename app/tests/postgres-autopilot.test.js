@@ -78,22 +78,23 @@ function fixture() {
   sqlite
     .prepare("INSERT INTO businesses VALUES(?,?,?,1)")
     .run(businessId, userId, JSON.stringify(state));
-  sqlite
-    .prepare("INSERT INTO connections VALUES(?,?,?,?)")
-    .run(
-      businessId,
-      "yandex",
-      encrypt({ access_token: "token" }, KEY, `${businessId}:yandex`),
-      JSON.stringify({
-        connectionId,
-        sandbox: false,
-        clients: [{ Login: "client", Currency: "RUB" }],
-      }),
-    );
+  sqlite.prepare("INSERT INTO connections VALUES(?,?,?,?)").run(
+    businessId,
+    "yandex",
+    encrypt({ access_token: "token" }, KEY, `${businessId}:yandex`),
+    JSON.stringify({
+      connectionId,
+      sandbox: false,
+      clients: [{ Login: "client", Currency: "RUB" }],
+    }),
+  );
   return { sqlite, db, userId, businessId, connectionId, state };
 }
 
-function installCampaign(data, { campaignId, budget = 3_000_000 } = {}) {
+function installCampaign(
+  data,
+  { campaignId, budget = 3_000_000, channel = "search" } = {},
+) {
   const changeId = randomUUID();
   const at = new Date(NOW - 86400000).toISOString();
   const plan = {
@@ -104,6 +105,7 @@ function installCampaign(data, { campaignId, budget = 3_000_000 } = {}) {
     periodEnd: "2026-11-30",
     counterId: "123",
     goalId: "456",
+    ...(channel === "network" ? { channel: "network" } : {}),
   };
   data.sqlite
     .prepare(
@@ -141,7 +143,11 @@ function installCampaign(data, { campaignId, budget = 3_000_000 } = {}) {
   return { changeId, plan };
 }
 
-function storeSnapshot(data, campaignId, { spent = 180_000, clicks = 150 } = {}) {
+function storeSnapshot(
+  data,
+  campaignId,
+  { spent = 180_000, clicks = 150 } = {},
+) {
   const jobId = randomUUID();
   const snapshotId = randomUUID();
   data.sqlite
@@ -204,30 +210,53 @@ function review({ spent, clicks, goals, snapshotId = randomUUID() }) {
   };
 }
 
-function budgetCampaign(id, limit) {
+function budgetCampaign(id, limit, channel = "search") {
+  const network = channel === "network";
   return {
     Campaigns: [
       {
         Id: id,
         State: "ON",
         Status: "ACCEPTED",
-        Type: "TEXT_CAMPAIGN",
-        TextCampaign: {
-          BiddingStrategy: {
-            Search: {
-              BiddingStrategyType: "WB_MAXIMUM_CLICKS",
-              WbMaximumClicks: {
-                CustomPeriodBudget: {
-                  SpendLimit: limit * 10_000,
-                  StartDate: "2026-11-01",
-                  EndDate: "2026-11-30",
-                  AutoContinue: "NO",
+        Type: network ? "UNIFIED_CAMPAIGN" : "TEXT_CAMPAIGN",
+        ...(network
+          ? {
+              UnifiedCampaign: {
+                BiddingStrategy: {
+                  Search: { BiddingStrategyType: "SERVING_OFF" },
+                  Network: {
+                    BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                    PlacementTypes: { Network: "YES", Maps: "NO" },
+                    WbMaximumClicks: {
+                      CustomPeriodBudget: {
+                        SpendLimit: limit * 10_000,
+                        StartDate: "2026-11-01",
+                        EndDate: "2026-11-30",
+                        AutoContinue: "NO",
+                      },
+                    },
+                  },
                 },
               },
-            },
-            Network: { BiddingStrategyType: "SERVING_OFF" },
-          },
-        },
+            }
+          : {
+              TextCampaign: {
+                BiddingStrategy: {
+                  Search: {
+                    BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                    WbMaximumClicks: {
+                      CustomPeriodBudget: {
+                        SpendLimit: limit * 10_000,
+                        StartDate: "2026-11-01",
+                        EndDate: "2026-11-30",
+                        AutoContinue: "NO",
+                      },
+                    },
+                  },
+                  Network: { BiddingStrategyType: "SERVING_OFF" },
+                },
+              },
+            }),
       },
     ],
   };
@@ -321,13 +350,15 @@ test("PostgreSQL Budget Guard suspends once and verifies read-back", async () =>
     "paused",
   );
   assert.equal(
-    (await runPostgresOptimizerCycle(data.db, {
-      key: KEY,
-      config: CONFIG,
-      directFactory: () => {
-        throw new Error("must not execute");
-      },
-    })).status,
+    (
+      await runPostgresOptimizerCycle(data.db, {
+        key: KEY,
+        config: CONFIG,
+        directFactory: () => {
+          throw new Error("must not execute");
+        },
+      })
+    ).status,
     "idle",
   );
   assert.equal(writes, 1);
@@ -359,7 +390,11 @@ test("owner-requested PostgreSQL suspension is journaled and applied once", asyn
       directFactory: () => ({
         campaignsByIds: async () => ({
           Campaigns: [
-            { Id: 77, State: suspended ? "SUSPENDED" : "ON", Status: "ACCEPTED" },
+            {
+              Id: 77,
+              State: suspended ? "SUSPENDED" : "ON",
+              Status: "ACCEPTED",
+            },
           ],
         }),
         suspendCampaigns: async () => {
@@ -386,7 +421,10 @@ test("owner-requested PostgreSQL suspension is journaled and applied once", asyn
 
 test("PostgreSQL autopilot transfers only the donor remainder and preserves the portfolio", async () => {
   const data = fixture();
-  const recipient = installCampaign(data, { campaignId: 77 });
+  const recipient = installCampaign(data, {
+    campaignId: 77,
+    channel: "network",
+  });
   const donor = installCampaign(data, { campaignId: 88 });
   const donorReview = review({ spent: 180_000, clicks: 250, goals: 4 });
   data.sqlite
@@ -418,9 +456,15 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
   ]);
   const writes = [];
   const client = {
-    campaignBudgetById: async (id) => budgetCampaign(id, limits.get(id)),
+    campaignBudgetById: async (id) =>
+      budgetCampaign(id, limits.get(id), id === 77 ? "network" : "search"),
     updateTextCampaignPeriodBudget: async (id, input) => {
-      writes.push([id, input.spendLimitKopecks]);
+      writes.push(["search", id, input.spendLimitKopecks]);
+      limits.set(id, input.spendLimitKopecks);
+      return { UpdateResults: [{ Id: id }] };
+    },
+    updateUnifiedCampaignPeriodBudget: async (id, input) => {
+      writes.push(["network", id, input.spendLimitKopecks]);
       limits.set(id, input.spendLimitKopecks);
       return { UpdateResults: [{ Id: id }] };
     },
@@ -433,8 +477,8 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
   });
   assert.equal(result.status, "applied");
   assert.deepEqual(writes, [
-    [88, 180_000],
-    [77, 5_820_000],
+    ["search", 88, 180_000],
+    ["network", 77, 5_820_000],
   ]);
   assert.equal(limits.get(77) + limits.get(88), 6_000_000);
   assert.equal(
@@ -462,8 +506,8 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
   );
   assert.equal(rollback.status, "rolled_back");
   assert.deepEqual(writes.slice(-2), [
-    [77, 3_000_000],
-    [88, 3_000_000],
+    ["network", 77, 3_000_000],
+    ["search", 88, 3_000_000],
   ]);
   assert.equal(limits.get(77) + limits.get(88), 6_000_000);
   data.sqlite.close();

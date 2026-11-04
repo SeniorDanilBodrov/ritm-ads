@@ -10520,6 +10520,16 @@ type FormData = {
 };
 type EditableBusinessFact =
   "name" | "category" | "city" | "service" | "benefit" | "budget" | "website";
+function budgetFromBusinessMessage(message: string) {
+  const match = message.match(
+    /бюджет[^\d]{0,60}(\d[\d\s\u00a0\u202f]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
+  );
+  if (!match) return null;
+  const value = Number(match[1].replace(/[^\d]/gu, ""));
+  return Number.isSafeInteger(value) && value >= 1_000 && value <= 1_000_000
+    ? value
+    : null;
+}
 function formFrom(s: Business): FormData {
   return {
     name: s.name,
@@ -10891,6 +10901,19 @@ function BusinessModal({
         { role: "assistant", text: result.reply },
       ]);
     } catch {
+      const budget = budgetFromBusinessMessage(message);
+      if (budget !== null) {
+        set((current) => ({ ...current, budget }));
+        setAssistantProblem(false);
+        setMessages((items) => [
+          ...items,
+          {
+            role: "assistant",
+            text: `Бюджет обновила: ${budget.toLocaleString("ru-RU")} ₽ в месяц.`,
+          },
+        ]);
+        return;
+      }
       setAssistantProblem(true);
       setMessages((items) => [
         ...items,

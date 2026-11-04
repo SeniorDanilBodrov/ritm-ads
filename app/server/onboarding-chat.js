@@ -106,21 +106,26 @@ function nextQuestion(profile) {
   return questions[nextMissingField(profile)] || null;
 }
 
+function budgetFromMessage(source) {
+  const match =
+    source.match(
+      /бюджет[^\d]{0,60}(\d[\d\s\u00a0\u202f]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
+    ) ||
+    source.match(
+      /(?:готов(?:а|ы)?\s+)?выдел(?:ять|ить)\s+(\d[\d\s\u00a0\u202f]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
+    );
+  if (!match) return null;
+  const value = Number(match[1].replace(/[^\d]/gu, ""));
+  return Number.isSafeInteger(value) && value >= 1_000 && value <= 1_000_000
+    ? value
+    : null;
+}
+
 function fallbackProfile(message, profile) {
   const source = message.trim();
   const parsed = {};
-  const budget =
-    source.match(
-      /бюджет(?:\s+на\s+месяц)?\s*(?::|—|-)?\s*(\d[\d\s]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
-    )?.[1] ||
-    source.match(
-      /(?:готов(?:а|ы)?\s+)?выдел(?:ять|ить)\s+(\d[\d\s]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?/iu,
-    )?.[1];
-  if (budget) {
-    const value = Number(budget.replace(/\s/g, ""));
-    if (Number.isSafeInteger(value) && value >= 1_000 && value <= 1_000_000)
-      parsed.budget = value;
-  }
+  const budget = budgetFromMessage(source);
+  if (budget !== null) parsed.budget = budget;
   const city = source.match(/(?:^|\s)в\s+([А-ЯЁ][А-ЯЁа-яё-]{2,})/u)?.[1];
   const normalizedCities = {
     москве: "Москва",
@@ -165,9 +170,16 @@ function fallbackProfile(message, profile) {
 function fallbackReply(message, profile) {
   const merged = fallbackProfile(message, profile);
   const question = nextQuestion(merged);
+  const budgetChanged =
+    profile.budget !== undefined &&
+    merged.budget !== undefined &&
+    merged.budget !== profile.budget;
   return {
     reply:
-      question || "Спасибо, я поняла ваш бизнес и могу собрать рекламный план.",
+      question ||
+      (budgetChanged
+        ? `Бюджет обновила: ${merged.budget.toLocaleString("ru-RU")} ₽ в месяц.`
+        : "Спасибо, я поняла ваш бизнес и могу собрать рекламный план."),
     profile: merged,
     complete: !question,
     provider: "fallback",

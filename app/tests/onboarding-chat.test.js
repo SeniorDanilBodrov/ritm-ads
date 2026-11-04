@@ -144,3 +144,24 @@ test("fallback understands a natural first message without repeating answered qu
   assert.equal(result.profile.budget, 30_000);
   assert.doesNotMatch(result.reply, /уточнит|какую услугу/iu);
 });
+
+test("fallback changes a saved budget from a natural correction", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "Бюджет изменим на 40 000 ₽",
+    profile,
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.provider, "fallback");
+  assert.equal(result.complete, true);
+  assert.equal(result.profile.budget, 40_000);
+  assert.equal(result.profile.city, "Екатеринбург");
+  assert.equal(result.reply, "Бюджет обновила: 40 000 ₽ в месяц.");
+});

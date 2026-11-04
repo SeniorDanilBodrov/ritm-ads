@@ -1,5 +1,4 @@
 import express from "express";
-import ExcelJS from "exceljs";
 import { randomUUID, createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -60,7 +59,11 @@ import {
   postgresCreativeImages,
   removePostgresCreativeImage,
 } from "./postgres-creatives.js";
-import { canWritePaidAdvertising } from "./live-ads.js";
+import {
+  inspectPostgresDirectImageUpload,
+  uploadApprovedPostgresCreativeToDirect,
+} from "./postgres-direct-images.js";
+import { canRunAutopilot, canWritePaidAdvertising } from "./live-ads.js";
 import {
   confirmPostgresDirectPlan,
   executePostgresDirectPlan,
@@ -77,6 +80,35 @@ import {
   postgresModerationActions,
   submitPostgresModeration,
 } from "./postgres-direct-moderation.js";
+import {
+  inspectPostgresResumeAction,
+  postgresResumeActions,
+  resumePostgresVerifiedCampaign,
+} from "./postgres-direct-resume.js";
+import { assertPostgresSearchReach } from "./postgres-direct-reach.js";
+import {
+  applyPostgresDirectAbDecision,
+  bindPostgresAudienceExperiment,
+  createPostgresAudienceExperiment,
+  createPostgresDirectAbPlan,
+  createVerifiedPostgresAbVariant,
+  enqueuePostgresAbReport,
+  inspectPostgresAbVariantAction,
+  inspectPostgresDirectAbDecision,
+  postgresAudienceExperiments,
+  postgresDirectAbActions,
+  postgresDirectAbDecisionActions,
+  postgresDirectAbPlans,
+  postgresDirectAbPlanView,
+} from "./postgres-ab.js";
+import {
+  applyPostgresOptimizerAction,
+  createPostgresManualSuspendAction,
+  postgresAutopilotView,
+  rollbackPostgresOptimizerAction,
+  runPostgresAutopilotTick,
+} from "./postgres-autopilot.js";
+import { exportReportXlsx } from "./report-xlsx.js";
 
 const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs"),
@@ -277,6 +309,23 @@ export function createPostgresApp({
       res.set("Cache-Control", "no-store");
     next();
   });
+  app.post("/api/internal/autopilot/tick", async (req, res) => {
+    const authorization = String(req.get("authorization") || "");
+    const supplied = authorization.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : "";
+    if (
+      !config.autopilotWorkerToken ||
+      config.autopilotWorkerToken.length < 32 ||
+      !secureEquals(supplied, config.autopilotWorkerToken)
+    )
+      throw new AppError(
+        401,
+        "Планировщик не авторизован.",
+        "autopilot_worker_unauthorized",
+      );
+    res.json(await runPostgresAutopilotTick(db, { key, config }));
+  });
   app.use("/api", (req, _res, next) => {
     sameOrigin(req, config.origin);
     next();
@@ -313,11 +362,14 @@ export function createPostgresApp({
   };
   app.get("/api/health", async (_req, res) => {
     await db.prepare("SELECT 1").get();
+    const paidWrites = canWritePaidAdvertising(config);
     res.json({
       ok: true,
       mode: "postgres-pilot",
       liveLaunch:
-        canWritePaidAdvertising(config) && config.directWritePilot === true,
+        paidWrites &&
+        config.directWritePilot === true &&
+        config.directResumePilot === true,
       creativeImages: Boolean(config.encryptionConfigured),
       imageProvider: "kie",
       textApproval: true,
@@ -338,6 +390,7 @@ export function createPostgresApp({
   });
   app.get("/api/session", async (req, res) => {
     const user = await auth(req);
+    const paidWrites = canWritePaidAdvertising(config);
     res.json({
       user: user
         ? {
@@ -350,7 +403,9 @@ export function createPostgresApp({
       googleConfigured: Boolean(config.googleId && config.googleSecret),
       yandexConfigured: Boolean(config.yandexId && config.yandexSecret),
       liveLaunch:
-        canWritePaidAdvertising(config) && config.directWritePilot === true,
+        paidWrites &&
+        config.directWritePilot === true &&
+        config.directResumePilot === true,
       postgresPilot: true,
     });
   });
@@ -1145,50 +1200,17 @@ export function createPostgresApp({
       await requireBusiness(db, req.user.id, req.params.id);
       const report = await db
         .prepare(
-          "SELECT date_from,date_to,rows_json,totals_json FROM report_snapshots WHERE id=? AND business_id=?",
+          "SELECT source,login,date_from,date_to,received_at,rows_json,totals_json FROM report_snapshots WHERE id=? AND business_id=?",
         )
         .get(req.params.reportId, req.params.id);
       if (!report) throw new AppError(404, "Снимок отчёта не найден.");
-      const rows = JSON.parse(report.rows_json),
-        totals = JSON.parse(report.totals_json);
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = "Ритм";
-      const sheet = workbook.addWorksheet("Отчёт");
-      sheet.columns = [
-        { header: "Дата", key: "date", width: 14 },
-        { header: "Кампания", key: "campaign", width: 34 },
-        { header: "Расход, ₽", key: "spent", width: 16 },
-        { header: "Клики", key: "clicks", width: 12 },
-        { header: "Показы", key: "impressions", width: 14 },
-        { header: "Обращения", key: "conversions", width: 16 },
-      ];
-      sheet.insertRow(1, [`Отчёт за ${report.date_from} — ${report.date_to}`]);
-      sheet.mergeCells("A1:F1");
-      sheet.getCell("A1").font = { bold: true, size: 16 };
-      for (const row of rows)
-        sheet.addRow({
-          date: row.Date,
-          campaign: row.CampaignName,
-          spent: row.spent / 100,
-          clicks: row.clicks,
-          impressions: row.impressions,
-          conversions: row.conversions || 0,
-        });
-      sheet.addRow({
-        campaign: "Итого",
-        spent: totals.spent / 100,
-        clicks: totals.clicks,
-        impressions: totals.impressions,
-        conversions: totals.conversions || 0,
-      });
-      sheet.getColumn("spent").numFmt = '#,##0.00 "₽"';
       res
         .set({
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "Content-Disposition": 'attachment; filename="ritm-report.xlsx"',
         })
-        .send(Buffer.from(await workbook.xlsx.writeBuffer()));
+        .send(Buffer.from(await exportReportXlsx(report)));
     },
   );
   app.get("/api/businesses", authenticated, async (req, res) => {
@@ -1236,6 +1258,13 @@ export function createPostgresApp({
       canWritePaidAdvertising(config) && config.directWritePilot === true;
     const directModerationEnabled =
       directWriteEnabled && config.directModerationPilot === true;
+    const directResumeEnabled =
+      directWriteEnabled && config.directResumePilot === true;
+    const directAbVariantEnabled =
+      directWriteEnabled && config.directAbVariantPilot === true;
+    const directAbDecisionEnabled =
+      directWriteEnabled && config.directAbDecisionPilot === true;
+    const autopilot = await postgresAutopilotView(db, req.user.id, business.id);
     res.json({
       id: business.id,
       version: business.version,
@@ -1247,13 +1276,17 @@ export function createPostgresApp({
       jobs: [],
       directChanges,
       acceptanceRuns: await acceptanceRunsPostgres(db, business.id),
-      abPlans: [],
+      abPlans: await postgresDirectAbPlans(db, req.user.id, business.id),
       controlReviews,
-      shadowReviews: [],
+      shadowReviews: autopilot.shadowReviews,
       shadowReviewJobs: [],
       adLifecycles: [],
-      optimizerActions: [],
-      audienceExperiments: [],
+      optimizerActions: autopilot.optimizerActions,
+      audienceExperiments: await postgresAudienceExperiments(
+        db,
+        req.user.id,
+        business.id,
+      ),
       creativeImages: await postgresCreativeImages(db, business.id),
       connections,
       adLifecycle: lifecycleRow
@@ -1274,15 +1307,17 @@ export function createPostgresApp({
         postgresPilot: true,
         google: Boolean(config.googleId && config.googleSecret),
         yandex: Boolean(config.yandexId && config.yandexSecret),
-        liveLaunch: directWriteEnabled,
+        liveLaunch: directResumeEnabled,
         directWritePilot: directWriteEnabled,
         directArchivePilot: false,
         directModerationPilot: directModerationEnabled,
-        directResumePilot: false,
+        directResumePilot: directResumeEnabled,
+        directImageUploadPilot:
+          directWriteEnabled && config.directImageUploadPilot === true,
         directBudgetPilot: false,
-        directAbVariantPilot: false,
-        directAbDecisionPilot: false,
-        abPlanning: false,
+        directAbVariantPilot: directAbVariantEnabled,
+        directAbDecisionPilot: directAbDecisionEnabled,
+        abPlanning: true,
         analyst: remoteAiEnabled(config),
         creativeImages: true,
         creativeImageSetup: Boolean(config.encryptionConfigured),
@@ -1291,7 +1326,7 @@ export function createPostgresApp({
     });
   });
   app.post(
-    "/api/businesses/:id/direct/dry-run",
+    "/api/businesses/:id/direct/:changeId/audience-experiment",
     authenticated,
     async (req, res) => {
       const requestKey = z
@@ -1301,12 +1336,324 @@ export function createPostgresApp({
       res
         .status(201)
         .json(
+          await createPostgresAudienceExperiment(
+            db,
+            req.user.id,
+            req.params.id,
+            req.params.changeId,
+            requestKey,
+            req.body,
+          ),
+        );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/audience-experiments/:experimentId/bind",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const experiment = (
+        await postgresAudienceExperiments(db, req.user.id, business.id)
+      ).find((item) => item.id === req.params.experimentId);
+      if (!experiment) throw new AppError(404, "Тест аудитории не найден.");
+      const change = (
+        await postgresDirectChanges(db, req.user.id, business.id)
+      ).find((item) => item.id === experiment.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const input = z
+        .object({
+          controlCampaignId: z.string().regex(/^[1-9]\d*$/),
+          variantCampaignId: z.string().regex(/^[1-9]\d*$/),
+          controlAdId: z.string().regex(/^[1-9]\d*$/),
+          variantAdId: z.string().regex(/^[1-9]\d*$/),
+          budgetPerVariantKopecks: z.number().int().positive(),
+        })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await bindPostgresAudienceExperiment(
+          db,
+          req.user.id,
+          business.id,
+          req.params.experimentId,
+          input,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/ab-plan",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      res
+        .status(201)
+        .json(
+          await createPostgresDirectAbPlan(
+            db,
+            req.user.id,
+            req.params.id,
+            req.params.changeId,
+            requestKey,
+            req.body,
+          ),
+        );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/ab-plans/:planId/report",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      res
+        .status(202)
+        .json(
+          await enqueuePostgresAbReport(
+            db,
+            req.user.id,
+            req.params.id,
+            requestKey,
+            req.params.planId,
+          ),
+        );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/direct/ab-plans/:planId/decisions",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await postgresDirectAbDecisionActions(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.planId,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/ab-plans/:planId/decision",
+    authenticated,
+    async (req, res) => {
+      if (
+        !canWritePaidAdvertising(config) ||
+        config.directWritePilot !== true ||
+        config.directAbDecisionPilot !== true
+      )
+        throw new AppError(
+          409,
+          "Применение A/B-решений отключено на этом сервере.",
+          "live_gate",
+        );
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const input = z
+        .object({
+          operation: z.enum(["rollback_variant", "apply_outcome"]),
+          confirmCampaignId: z.number().int().positive(),
+          confirmTargetAdId: z.string().regex(/^[1-9]\d*$/),
+          confirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const plan = await postgresDirectAbPlanView(
+        db,
+        req.user.id,
+        business.id,
+        req.params.planId,
+      );
+      const change = (
+        await postgresDirectChanges(db, req.user.id, business.id)
+      ).find((item) => item.id === plan.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const connection = await directConnectionForBusiness(db, key, business);
+      res.json(
+        await applyPostgresDirectAbDecision(
+          db,
+          req.user.id,
+          business.id,
+          plan.id,
+          requestKey,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+          { enabled: true, ...input },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/ab-plans/:planId/decisions/:actionId/inspect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const plan = await postgresDirectAbPlanView(
+        db,
+        req.user.id,
+        business.id,
+        req.params.planId,
+      );
+      const change = (
+        await postgresDirectChanges(db, req.user.id, business.id)
+      ).find((item) => item.id === plan.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const connection = await directConnectionForBusiness(db, key, business);
+      res.json(
+        await inspectPostgresDirectAbDecision(
+          db,
+          req.user.id,
+          business.id,
+          plan.id,
+          req.params.actionId,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/direct/:changeId/ab-actions",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await postgresDirectAbActions(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.changeId,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/ab-variant",
+    authenticated,
+    async (req, res) => {
+      if (
+        !canWritePaidAdvertising(config) ||
+        config.directWritePilot !== true ||
+        config.directAbVariantPilot !== true
+      )
+        throw new AppError(
+          409,
+          "Создание варианта Б отключено на этом сервере.",
+          "live_gate",
+        );
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const input = z
+        .object({
+          confirmCampaignId: z.number().int().positive(),
+          confirmControlAdId: z.string().regex(/^[1-9]\d*$/),
+          variantConfirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const change = (
+        await postgresDirectChanges(db, req.user.id, business.id)
+      ).find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const connection = await directConnectionForBusiness(db, key, business);
+      res.json(
+        await createVerifiedPostgresAbVariant(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          requestKey,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+          { enabled: true, ...input },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/ab-variant/:actionId/inspect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const change = (
+        await postgresDirectChanges(db, req.user.id, business.id)
+      ).find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      const connection = await directConnectionForBusiness(db, key, business);
+      res.json(
+        await inspectPostgresAbVariantAction(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          req.params.actionId,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/dry-run",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      assertPostgresSearchReach(req.body);
+      let directContext = null;
+      if (req.body?.creativeAssetId) {
+        const business = await requireBusiness(db, req.user.id, req.params.id);
+        const connection = await directConnectionForBusiness(db, key, business);
+        if (
+          !connection.metadata.clients?.some(
+            (client) => client.Login === req.body.login,
+          )
+        )
+          throw new AppError(403, "Кабинет не доступен этому подключению.");
+        directContext = { connectionId: connection.metadata.connectionId };
+      }
+      res
+        .status(201)
+        .json(
           await preparePostgresDirectPlan(
             db,
             req.user.id,
             req.params.id,
             requestKey,
             req.body,
+            directContext,
           ),
         );
     },
@@ -1575,6 +1922,187 @@ export function createPostgresApp({
       );
     },
   );
+  app.get(
+    "/api/businesses/:id/direct/:changeId/resume-actions",
+    authenticated,
+    async (req, res) => {
+      res.json(
+        await postgresResumeActions(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.changeId,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/resume",
+    authenticated,
+    async (req, res) => {
+      if (
+        !canWritePaidAdvertising(config) ||
+        config.directWritePilot !== true ||
+        config.directResumePilot !== true
+      )
+        throw new AppError(
+          409,
+          "Запуск показов отключён на этом сервере.",
+          "live_gate",
+        );
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const confirmations = z
+        .object({
+          advertiserConfirmed: z.literal(true),
+          siteConfirmed: z.literal(true),
+          markingConfirmed: z.literal(true),
+          spendConfirmed: z.literal(true),
+          launchConfirmed: z.literal(true),
+          confirmCampaignId: z.number().int().positive(),
+          confirmLimitKopecks: z.number().int().positive(),
+        })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await resumePostgresVerifiedCampaign(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          requestKey,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+          { enabled: true, ...confirmations },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/resume/:actionId/inspect",
+    authenticated,
+    async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Созданная кампания не найдена.");
+      res.json(
+        await inspectPostgresResumeAction(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          req.params.actionId,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/businesses/:id/optimizer-actions",
+    authenticated,
+    async (req, res) => {
+      res.json(await postgresAutopilotView(db, req.user.id, req.params.id));
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/suspend",
+    authenticated,
+    async (req, res) => {
+      if (!canRunAutopilot(config))
+        throw new AppError(
+          409,
+          "Защитные действия отключены на этом сервере.",
+          "autopilot_gate",
+        );
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const input = z
+        .object({ suspendConfirmed: z.literal(true) })
+        .strict()
+        .parse(req.body);
+      const action = await createPostgresManualSuspendAction(
+        db,
+        req.user.id,
+        req.params.id,
+        req.params.changeId,
+        requestKey,
+        { confirmed: input.suspendConfirmed },
+      );
+      res.json(
+        await applyPostgresOptimizerAction(
+          db,
+          req.user.id,
+          req.params.id,
+          action.id,
+          { key, config, directFactory },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/budget-reallocation/:actionId/apply",
+    authenticated,
+    async (req, res) => {
+      z.object({ reallocationConfirmed: z.literal(true) })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await applyPostgresOptimizerAction(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.actionId,
+          { key, config, directFactory },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/optimizer-actions/:actionId/rollback",
+    authenticated,
+    async (req, res) => {
+      const requestKey = z
+        .string()
+        .uuid()
+        .parse(req.headers["idempotency-key"]);
+      const input = z
+        .object({
+          spendConfirmed: z.literal(true),
+          launchConfirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await rollbackPostgresOptimizerAction(
+          db,
+          req.user.id,
+          req.params.id,
+          req.params.actionId,
+          requestKey,
+          { key, config, directFactory, ...input },
+        ),
+      );
+    },
+  );
   app.put(
     "/api/businesses/:id/image-provider/kie",
     authenticated,
@@ -1691,6 +2219,81 @@ export function createPostgresApp({
           req.user.id,
           req.params.id,
           req.params.assetId,
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/creative-images/:assetId/direct-upload",
+    authenticated,
+    async (req, res) => {
+      const input = z
+        .object({
+          login: z.string().trim().min(1).max(160),
+          uploadConfirmed: z.literal(true),
+        })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      if (
+        !connection.metadata.clients?.some(
+          (client) => client.Login === input.login,
+        )
+      )
+        throw new AppError(403, "Кабинет не доступен этому подключению.");
+      res.json(
+        await uploadApprovedPostgresCreativeToDirect(
+          db,
+          req.user.id,
+          business.id,
+          req.params.assetId,
+          idempotencyKey(req),
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: input.login,
+            sandbox: false,
+          }),
+          connection.metadata.connectionId,
+          {
+            enabled:
+              canWritePaidAdvertising(config) &&
+              config.directWritePilot === true &&
+              config.directImageUploadPilot === true,
+            ...input,
+          },
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/creative-images/:assetId/direct-upload/:jobId/inspect",
+    authenticated,
+    async (req, res) => {
+      const input = z
+        .object({ login: z.string().trim().min(1).max(160) })
+        .strict()
+        .parse(req.body);
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      if (
+        !connection.metadata.clients?.some(
+          (client) => client.Login === input.login,
+        )
+      )
+        throw new AppError(403, "Кабинет не доступен этому подключению.");
+      res.json(
+        await inspectPostgresDirectImageUpload(
+          db,
+          req.user.id,
+          business.id,
+          req.params.assetId,
+          req.params.jobId,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: input.login,
+            sandbox: false,
+          }),
         ),
       );
     },

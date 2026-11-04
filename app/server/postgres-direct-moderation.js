@@ -76,8 +76,11 @@ async function campaignBundle(
   const business = await ownedBusiness(db, userId, businessId);
   const row = await db
     .prepare(
-      `SELECT dc.plan_json,de.connection_id,de.status,de.suspend_verified,de.calls_json
+      `SELECT dc.plan_json,de.connection_id,de.status,de.suspend_verified,de.calls_json,
+              cba.limit_kopecks
        FROM direct_changes dc JOIN direct_executions de ON de.change_id=dc.id
+       LEFT JOIN campaign_budget_allocations cba
+         ON cba.business_id=dc.business_id AND cba.change_id=dc.id
        WHERE dc.id=? AND dc.business_id=?`,
     )
     .get(changeId, business.id);
@@ -88,6 +91,8 @@ async function campaignBundle(
   if (row.connection_id !== currentConnectionId)
     throw new AppError(409, "Кабинет изменился после создания кампании.");
   const plan = JSON.parse(row.plan_json);
+  if (Number.isSafeInteger(Number(row.limit_kopecks)) && Number(row.limit_kopecks) > 0)
+    plan.budget = Number(row.limit_kopecks);
   const calls = JSON.parse(row.calls_json);
   const ids = Object.fromEntries(calls.map((item) => [item.key, item.ids]));
   const campaignId = Number(ids.campaign?.[0]);

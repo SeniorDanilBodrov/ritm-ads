@@ -277,6 +277,7 @@ export type Workspace = {
     directArchivePilot: boolean;
     directModerationPilot: boolean;
     directResumePilot: boolean;
+    directImageUploadPilot: boolean;
     directBudgetPilot: boolean;
     directAbVariantPilot: boolean;
     directAbDecisionPilot: boolean;
@@ -471,6 +472,11 @@ export type CreativeImage = {
   width: number | null;
   height: number | null;
   ratio: string | null;
+  directUploads: {
+    login: string;
+    imageType: "REGULAR" | "WIDE";
+    verifiedAt: string;
+  }[];
 };
 export type DirectCommand = {
   key: string;
@@ -492,6 +498,7 @@ export type DirectPlan = {
   periodEnd: string;
   counterId?: string;
   goalId?: string;
+  creativeAssetId?: string;
   ads: { title: string; title2?: string; text: string; href: string }[];
   keywords: string[];
   negativeKeywords?: string[];

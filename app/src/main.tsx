@@ -1895,6 +1895,58 @@ function App() {
                         }),
                     })
                   }
+                  uploadImage={(id, login) =>
+                    setConfirmation({
+                      title: "Добавить изображение в Директ?",
+                      text: `Ритм добавит согласованный файл в библиотеку кабинета ${login}. Объявления и показы не запустятся.`,
+                      actionLabel: "Добавить в Директ",
+                      action: () =>
+                        perform(async () => {
+                          const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
+                          const requestKey =
+                            safeStorage.getItem(storageKey) ||
+                            crypto.randomUUID();
+                          safeStorage.setItem(storageKey, requestKey);
+                          const result = await api(
+                            `/businesses/${ws.id}/creative-images/${id}/direct-upload`,
+                            { login, uploadConfirmed: true },
+                            "POST",
+                            requestKey,
+                          );
+                          if (result.status === "succeeded")
+                            safeStorage.removeItem(storageKey);
+                          await load(ws.id);
+                          setToast(
+                            "Изображение добавлено в Директ. Показы не запущены.",
+                          );
+                        }),
+                    })
+                  }
+                  inspectImage={(id, login) =>
+                    perform(async () => {
+                      const storageKey = `ritm:direct-image:${ws.id}:${id}:${login}`;
+                      const requestKey = safeStorage.getItem(storageKey);
+                      if (!requestKey)
+                        throw new Error(
+                          "Нет незавершённой загрузки для сверки.",
+                        );
+                      const result = await api(
+                        `/businesses/${ws.id}/creative-images/${id}/direct-upload/${requestKey}/inspect`,
+                        { login },
+                      );
+                      if (result.status === "succeeded") {
+                        safeStorage.removeItem(storageKey);
+                        setToast(
+                          "Изображение найдено и подтверждено в Директе.",
+                        );
+                      } else {
+                        setToast(
+                          "Изображение пока не найдено. Повторная отправка заблокирована.",
+                        );
+                      }
+                      await load(ws.id);
+                    })
+                  }
                   removeImage={(id) =>
                     setConfirmation({
                       title: "Удалить этот визуал?",
@@ -3640,8 +3692,7 @@ function Chart({
     y = (v: number) => plotBottom - (v / max) * plotHeight,
     barStep = plotWidth / data.length,
     barWidth = Math.min(compact ? 22 : 52, barStep * 0.62),
-    barX = (i: number) =>
-      plotLeft + i * barStep + (barStep - barWidth) / 2,
+    barX = (i: number) => plotLeft + i * barStep + (barStep - barWidth) / 2,
     labelY = compact ? 214 : 238;
   const points = data.map((d, i) => `${x(i)},${y(d.leads)}`).join(" ");
   return (
@@ -3810,11 +3861,28 @@ function HostedPlanReview({
   const approvedTexts = ws.state.creatives.filter(
     (item) => item.status === "approved",
   );
+  const yandex = ws.connections.find((item) => item.provider === "yandex");
+  const directLogin = yandex?.clients?.[0]?.Login || "";
+  const directReadyImages = ws.creativeImages.filter(
+    (image) =>
+      image.approvedAt &&
+      image.directUploads.some((upload) => upload.login === directLogin),
+  );
+  const [creativeAssetId, setCreativeAssetId] = useState(
+    directReadyImages[0]?.id || "",
+  );
+  useEffect(() => {
+    if (directReadyImages.some((image) => image.id === creativeAssetId)) return;
+    setCreativeAssetId(directReadyImages[0]?.id || "");
+  }, [directLogin, ws.creativeImages]);
   const directChange =
     ws.directChanges.find(
       (item) =>
         item.plan?.website === ws.state.website &&
         item.plan?.budget === ws.state.budget &&
+        (creativeAssetId
+          ? item.plan?.creativeAssetId === creativeAssetId
+          : !item.plan?.creativeAssetId) &&
         item.plan?.ads.every((ad) =>
           approvedTexts.some(
             (creative) =>
@@ -3827,12 +3895,11 @@ function HostedPlanReview({
     directChange?.preflight &&
     Date.parse(directChange.preflight.checkedAt) + 10 * 60_000 > Date.now(),
   );
-  const yandex = ws.connections.find((item) => item.provider === "yandex");
   const period = nextCampaignPeriod("", "");
   const regionId = /екатеринбург/i.test(ws.state.city) ? 54 : null;
 
   function prepareHeldDraft() {
-    if (!plan || !approvedTexts.length || !yandex?.clients?.[0] || !regionId)
+    if (!plan || approvedTexts.length < 3 || !yandex?.clients?.[0] || !regionId)
       return;
     dryRun({
       login: yandex.clients[0].Login,
@@ -3846,6 +3913,7 @@ function HostedPlanReview({
       periodEnd: period.end,
       ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
       ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ...(creativeAssetId ? { creativeAssetId } : {}),
       ads: approvedTexts.map((item) => ({
         title: item.title.slice(0, 56),
         text: item.text.slice(0, 81),
@@ -4071,10 +4139,15 @@ function HostedPlanReview({
                   <Images size={20} />
                 </span>
                 <div>
-                  <h3>Теперь подготовьте изображения</h3>
+                  <h3>
+                    {directReadyImages.length
+                      ? "Изображение готово для рекламы"
+                      : "Теперь подготовьте изображения"}
+                  </h3>
                   <p>
-                    Рита предложит сюжеты по вашему описанию. Вы сами выберете,
-                    какие варианты можно использовать в рекламе.
+                    {directReadyImages.length
+                      ? "Согласованный вариант добавлен в выбранный кабинет Директа."
+                      : "Рита предложит сюжеты по вашему описанию. Вы сами выберете, какие варианты можно использовать в рекламе."}
                   </p>
                   <small>
                     После подготовки материалов останется отдельный запуск в
@@ -4088,7 +4161,9 @@ function HostedPlanReview({
                   onClick={() => navigate("creatives")}
                 >
                   <Images size={16} />
-                  Подготовить изображения
+                  {directReadyImages.length
+                    ? "Проверить изображения"
+                    : "Подготовить изображения"}
                 </button>
               </div>
               <div className="hosted-direct-stage">
@@ -4105,13 +4180,13 @@ function HostedPlanReview({
                   </div>
                 </div>
 
-                {!approvedTexts.length ? (
+                {approvedTexts.length < 3 ? (
                   <div className="hosted-direct-action">
                     <div>
-                      <b>Сначала согласуйте текст объявления</b>
+                      <b>Согласуйте три варианта текста</b>
                       <small>
-                        В кампанию попадут только варианты, которые вы проверили
-                        сами.
+                        Готово {approvedTexts.length} из 3. Так Ритм сможет
+                        проверить разные причины обратиться к вам.
                       </small>
                     </div>
                     <button
@@ -4135,6 +4210,23 @@ function HostedPlanReview({
                         {approvedTexts.length} согласованных текстов · бюджет{" "}
                         {money(ws.state.budget)}
                       </small>
+                      {directReadyImages.length > 0 && (
+                        <label className="hosted-image-choice">
+                          Изображение
+                          <select
+                            value={creativeAssetId}
+                            onChange={(event) =>
+                              setCreativeAssetId(event.target.value)
+                            }
+                          >
+                            {directReadyImages.map((image, index) => (
+                              <option key={image.id} value={image.id}>
+                                Согласованный вариант {index + 1}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -4580,6 +4672,7 @@ function Campaigns({
       <DirectPlanBuilder
         ws={ws}
         busy={busy}
+        navigate={navigate}
         prepareAiPlan={prepareAiPlan}
         submit={dryRun}
         preflight={preflight}
@@ -4599,6 +4692,7 @@ function Campaigns({
       <DirectPlanBuilder
         ws={ws}
         busy={busy}
+        navigate={navigate}
         prepareAiPlan={prepareAiPlan}
         submit={dryRun}
         preflight={preflight}
@@ -5958,6 +6052,7 @@ function BudgetPreviewForm({
 function DirectPlanBuilder({
   ws,
   busy,
+  navigate,
   prepareAiPlan,
   submit,
   preflight,
@@ -5973,6 +6068,7 @@ function DirectPlanBuilder({
 }: {
   ws: Workspace;
   busy: boolean;
+  navigate: (page: string) => void;
   prepareAiPlan: () => void;
   submit: (plan: DirectPlan) => void;
   preflight: (id: string) => void;
@@ -6060,6 +6156,17 @@ function DirectPlanBuilder({
         savedDraft.adText || firstCreative?.text || ws.state.benefit,
       ).slice(0, 81),
     ),
+    [creativeAssetId, setCreativeAssetId] = useState(
+      String(
+        savedDraft.creativeAssetId ||
+          ws.creativeImages.find(
+            (image) =>
+              image.approvedAt &&
+              image.directUploads.some((upload) => upload.login === login),
+          )?.id ||
+          "",
+      ),
+    ),
     [keywords, setKeywords] = useState(
       String(
         savedDraft.keywords ||
@@ -6067,6 +6174,16 @@ function DirectPlanBuilder({
       ),
     ),
     [periodRenewed, setPeriodRenewed] = useState(savedPeriodIsStale);
+  const availableCreativeImages = ws.creativeImages.filter(
+    (image) =>
+      image.approvedAt &&
+      image.directUploads.some((upload) => upload.login === login),
+  );
+  useEffect(() => {
+    if (availableCreativeImages.some((image) => image.id === creativeAssetId))
+      return;
+    setCreativeAssetId(availableCreativeImages[0]?.id || "");
+  }, [login, ws.creativeImages]);
   useEffect(() => {
     if (!aiPlan) return;
     const firstAd = aiPlan.plan.ads[0];
@@ -6162,6 +6279,7 @@ function DirectPlanBuilder({
         periodEnd,
         title,
         adText,
+        creativeAssetId,
         keywords,
       }),
     );
@@ -6178,6 +6296,7 @@ function DirectPlanBuilder({
     periodEnd,
     title,
     adText,
+    creativeAssetId,
     keywords,
   ]);
   function goToStep(nextStep: number) {
@@ -6213,6 +6332,7 @@ function DirectPlanBuilder({
       periodEnd,
       ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
       ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ...(creativeAssetId ? { creativeAssetId } : {}),
       ads: aiPlan
         ? aiPlan.plan.ads.map((ad) => ({
             title: ad.title,
@@ -6413,6 +6533,33 @@ function DirectPlanBuilder({
                   </article>
                 ))}
               </div>
+              {availableCreativeImages.length ? (
+                <label className="plan-creative-choice">
+                  Изображение для объявлений
+                  <select
+                    value={creativeAssetId}
+                    onChange={(event) => setCreativeAssetId(event.target.value)}
+                  >
+                    {availableCreativeImages.map((image, index) => (
+                      <option key={image.id} value={image.id}>
+                        Согласованный вариант {index + 1}
+                      </option>
+                    ))}
+                  </select>
+                  <span>
+                    Изображение уже добавлено в кабинет и будет использовано во
+                    всех вариантах этого плана.
+                  </span>
+                </label>
+              ) : (
+                <button
+                  type="button"
+                  className="text-button plan-creative-link"
+                  onClick={() => navigate("creatives")}
+                >
+                  <Images size={16} /> Подготовить изображение для рекламы
+                </button>
+              )}
             </section>
             <section className="plan-review-section">
               <div className="plan-review-heading">
@@ -8087,6 +8234,8 @@ function Creatives({
   connectKie,
   disconnectKie,
   approveImage,
+  uploadImage,
+  inspectImage,
   removeImage,
   refresh,
 }: {
@@ -8106,6 +8255,8 @@ function Creatives({
   connectKie: (apiKey: string) => Promise<void>;
   disconnectKie: () => void;
   approveImage: (id: string) => void;
+  uploadImage: (id: string, login: string) => void;
+  inspectImage: (id: string, login: string) => void;
   removeImage: (id: string) => void;
   refresh: () => Promise<void>;
 }) {
@@ -8125,8 +8276,15 @@ function Creatives({
     [setupError, setSetupError] = useState(""),
     [approvingTextId, setApprovingTextId] = useState(""),
     [textApprovalError, setTextApprovalError] = useState(""),
-    [textApprovalErrorId, setTextApprovalErrorId] = useState("");
+    [textApprovalErrorId, setTextApprovalErrorId] = useState(""),
+    [directLogin, setDirectLogin] = useState(
+      ws.connections.find((connection) => connection.provider === "yandex")
+        ?.clients?.[0]?.Login || "",
+    );
   const kieConnected = ws.capabilities.creativeImageProvider === "kie";
+  const directClients =
+    ws.connections.find((connection) => connection.provider === "yandex")
+      ?.clients || [];
   const hasPendingImages = ws.creativeImages.some((image) =>
     ["pending", "running"].includes(image.status),
   );
@@ -8496,6 +8654,21 @@ function Creatives({
               <span className="eyebrow">Недавние генерации</span>
               <h2>Визуалы на проверке</h2>
             </div>
+            {!!directClients.length && (
+              <label className="creative-direct-account">
+                Кабинет для будущей рекламы
+                <select
+                  value={directLogin}
+                  onChange={(event) => setDirectLogin(event.target.value)}
+                >
+                  {directClients.map((client) => (
+                    <option key={client.Login} value={client.Login}>
+                      {client.Login}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <div className="generated-grid">
             {ws.creativeImages.map((image) => (
@@ -8595,6 +8768,61 @@ function Creatives({
                         >
                           <Trash2 size={15} /> Удалить вариант
                         </button>
+                      )}
+                    {image.approvedAt &&
+                      image.directUploads.some(
+                        (upload) => upload.login === directLogin,
+                      ) && (
+                        <p className="creative-direct-status" role="status">
+                          <CheckCircle2 size={16} /> Добавлено в Директ. Показы
+                          не запущены.
+                        </p>
+                      )}
+                    {image.approvedAt &&
+                      directLogin &&
+                      !image.directUploads.some(
+                        (upload) => upload.login === directLogin,
+                      ) &&
+                      ws.capabilities.directImageUploadPilot &&
+                      !safeStorage.getItem(
+                        `ritm:direct-image:${ws.id}:${image.id}:${directLogin}`,
+                      ) && (
+                        <button
+                          type="button"
+                          className="primary full"
+                          disabled={busy}
+                          onClick={() => uploadImage(image.id, directLogin)}
+                        >
+                          <Images size={16} /> Добавить в будущую рекламу
+                        </button>
+                      )}
+                    {image.approvedAt &&
+                      directLogin &&
+                      !image.directUploads.some(
+                        (upload) => upload.login === directLogin,
+                      ) &&
+                      !!safeStorage.getItem(
+                        `ritm:direct-image:${ws.id}:${image.id}:${directLogin}`,
+                      ) && (
+                        <button
+                          type="button"
+                          className="secondary full"
+                          disabled={busy}
+                          onClick={() => inspectImage(image.id, directLogin)}
+                        >
+                          <RefreshCw size={16} /> Сверить загрузку
+                        </button>
+                      )}
+                    {image.approvedAt &&
+                      directLogin &&
+                      !image.directUploads.some(
+                        (upload) => upload.login === directLogin,
+                      ) &&
+                      !ws.capabilities.directImageUploadPilot && (
+                        <p className="creative-direct-unavailable">
+                          Добавление в Директ отключено на этом сервере. Файл
+                          останется согласованным и не будет опубликован.
+                        </p>
                       )}
                   </div>
                 </div>

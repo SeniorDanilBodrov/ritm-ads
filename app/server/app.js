@@ -2,7 +2,6 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { resolve, sep } from "node:path";
 import { existsSync } from "node:fs";
-import ExcelJS from "exceljs";
 import { z } from "zod";
 import {
   AppError,
@@ -144,6 +143,7 @@ import {
   removeCreativeImage,
 } from "./creative-images.js";
 import { operationalSnapshot } from "./operations.js";
+import { exportReportXlsx } from "./report-xlsx.js";
 
 const text = z.string().trim().min(2).max(160);
 const money = z.number().int().positive().max(100000000);
@@ -157,140 +157,6 @@ const date = z
       parsed.toISOString().slice(0, 10) === v
     );
   }, "Укажите существующую календарную дату");
-
-const reportSourceLabel = (source) =>
-  source === "demo"
-    ? "Тестовый источник"
-    : source === "yandex-sandbox"
-      ? "Яндекс · Sandbox"
-      : "Яндекс Директ";
-
-const excelText = (value) => {
-  const text = String(value ?? "");
-  return /^[=+\-@]/.test(text) ? `'${text}` : text;
-};
-
-async function exportReportXlsx(report) {
-  const rows = JSON.parse(report.rows_json);
-  const totals = JSON.parse(report.totals_json);
-  const payload = JSON.parse(report.job_payload);
-  const reportType = payload.reportType || "campaign";
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Ритм";
-  workbook.created = new Date();
-  workbook.modified = new Date();
-  const sheet = workbook.addWorksheet("Отчёт", {
-    views: [{ state: "frozen", ySplit: 8 }],
-  });
-  sheet.columns = [
-    { key: "date", width: 14 },
-    { key: "campaignId", width: 16 },
-    { key: "campaign", width: 32 },
-    { key: "adId", width: 16 },
-    { key: "spent", width: 16 },
-    { key: "clicks", width: 13 },
-    { key: "impressions", width: 14 },
-    { key: "conversions", width: 16 },
-  ];
-  sheet.mergeCells("A1:H1");
-  const title = sheet.getCell("A1");
-  title.value = "Отчёт по рекламе";
-  title.font = {
-    name: "Aptos Display",
-    size: 18,
-    bold: true,
-    color: { argb: "FFFFFFFF" },
-  };
-  title.alignment = { vertical: "middle" };
-  title.fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF0D5D49" },
-  };
-  sheet.getRow(1).height = 30;
-
-  const receivedAt = new Date(report.received_at);
-  const summary = [
-    ["Источник", reportSourceLabel(report.source)],
-    ["Период", `${report.date_from} — ${report.date_to}`],
-    ["Кабинет", report.login || "Демо"],
-    ["Получен", receivedAt],
-  ];
-  summary.forEach(([label, value], index) => {
-    const row = index + 3;
-    sheet.getCell(row, 1).value = label;
-    sheet.getCell(row, 1).font = { bold: true, color: { argb: "FF48534C" } };
-    sheet.getCell(row, 2).value = value;
-  });
-  sheet.getCell("B6").numFmt = "dd.mm.yyyy hh:mm";
-
-  const headerRow = 8;
-  const header = sheet.getRow(headerRow);
-  header.values = [
-    "Дата",
-    "ID кампании",
-    "Кампания",
-    "ID объявления",
-    "Расход, ₽",
-    "Клики",
-    "Показы",
-    "Обращения",
-  ];
-  header.height = 24;
-  header.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { vertical: "middle" };
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF176A55" },
-    };
-  });
-
-  rows.forEach((row) => {
-    const target = sheet.addRow({
-      date: new Date(`${row.Date}T00:00:00Z`),
-      campaignId: excelText(row.CampaignId),
-      campaign: excelText(row.CampaignName || ""),
-      adId: excelText(row.AdId || ""),
-      spent: row.spent / 100,
-      clicks: row.clicks,
-      impressions: row.impressions,
-      conversions: row.conversions,
-    });
-    target.getCell("date").numFmt = "yyyy-mm-dd";
-    target.getCell("spent").numFmt = '#,##0.00 "₽"';
-    target.getCell("clicks").numFmt = "#,##0";
-    target.getCell("impressions").numFmt = "#,##0";
-    target.getCell("conversions").numFmt = "#,##0";
-  });
-
-  const totalsRow = headerRow + rows.length + 1;
-  sheet.getCell(totalsRow, 4).value = "Итого";
-  sheet.getCell(totalsRow, 5).value = totals.spent / 100;
-  sheet.getCell(totalsRow, 6).value = totals.clicks;
-  sheet.getCell(totalsRow, 7).value = totals.impressions;
-  sheet.getCell(totalsRow, 8).value = totals.conversions;
-  sheet.getRow(totalsRow).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FF17231F" } };
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE5F264" },
-    };
-  });
-  sheet.getCell(totalsRow, 5).numFmt = '#,##0.00 "₽"';
-  sheet.getCell(totalsRow, 6).numFmt = "#,##0";
-  sheet.getCell(totalsRow, 7).numFmt = "#,##0";
-  sheet.getCell(totalsRow, 8).numFmt = "#,##0";
-  if (rows.length) {
-    sheet.autoFilter = {
-      from: { row: headerRow, column: 1 },
-      to: { row: headerRow + rows.length, column: 8 },
-    };
-  }
-  return workbook.xlsx.writeBuffer();
-}
 
 export const businessSchema = z
   .object({

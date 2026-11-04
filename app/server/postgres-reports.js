@@ -60,14 +60,23 @@ async function event(tx, businessId, payload) {
   await tx.prepare("INSERT INTO events VALUES(?,?,?,?)").run(value.id, businessId, value.at, JSON.stringify(value));
 }
 
-export async function enqueuePostgresReport(db, userId, businessId, key, { login = "" } = {}, now = Date.now()) {
+export async function enqueuePostgresReport(
+  db,
+  userId,
+  businessId,
+  key,
+  { login = "" } = {},
+  now = Date.now(),
+  { includeEnqueueState = false } = {},
+) {
   return db.transaction(async (tx) => {
     const current = await business(tx, userId, businessId);
     const fingerprint = digest(JSON.stringify({ action: "report_sync", type: "campaign" }));
     const prior = await tx.prepare("SELECT * FROM commands WHERE business_id=? AND key=?").get(current.id, key);
     if (prior) {
       if (prior.fingerprint !== fingerprint) throw new AppError(409, "Ключ уже использован другой операцией.");
-      return JSON.parse(prior.response);
+      const response = JSON.parse(prior.response);
+      return includeEnqueueState ? { ...response, newlyQueued: false } : response;
     }
     const active = await tx.prepare("SELECT id FROM jobs WHERE business_id=? AND kind='report_sync' AND status IN ('pending','running')").get(current.id);
     if (active) throw new AppError(409, "Отчёт уже ожидает выполнения. Обновите статус позже.");
@@ -91,7 +100,7 @@ export async function enqueuePostgresReport(db, userId, businessId, key, { login
     await tx.prepare("INSERT INTO jobs(id,business_id,kind,status,available_at,payload) VALUES(?,?,'report_sync','pending',?,?)").run(id, current.id, now, JSON.stringify(payload));
     const response = { ok: true, jobId: id, message: "Отчёт поставлен в очередь. Реклама не меняется." };
     await tx.prepare("INSERT INTO commands VALUES(?,?,?,?)").run(current.id, key, fingerprint, JSON.stringify(response));
-    return response;
+    return includeEnqueueState ? { ...response, newlyQueued: true } : response;
   });
 }
 

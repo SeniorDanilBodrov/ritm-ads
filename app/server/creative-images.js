@@ -710,6 +710,13 @@ export function creativeImageView(row) {
     width: metadata.width || null,
     height: metadata.height || null,
     ratio: metadata.ratio || advertisingFormats[row.format]?.label || null,
+    directUploads: Object.values(metadata.directUploads || {}).map(
+      (upload) => ({
+        login: upload.login,
+        imageType: upload.imageType,
+        verifiedAt: upload.verifiedAt,
+      }),
+    ),
   };
 }
 

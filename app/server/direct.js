@@ -39,6 +39,7 @@ export const directPlanSchema = z
     periodEnd: isoDate,
     counterId: z.string().regex(/^\d+$/).optional(),
     goalId: z.string().regex(/^\d+$/).optional(),
+    creativeAssetId: z.string().uuid().optional(),
     ads: z
       .array(
         z.object({
@@ -46,6 +47,10 @@ export const directPlanSchema = z
           title2: z.string().trim().max(30).optional(),
           text: z.string().trim().min(2).max(81),
           href: httpUrl,
+          adImageHash: z
+            .string()
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
         }),
       )
       .min(1)
@@ -216,6 +221,7 @@ export function buildDirectCommands(input) {
             Text: ad.text,
             Href: ad.href,
             Mobile: "NO",
+            ...(ad.adImageHash ? { AdImageHash: ad.adImageHash } : {}),
           },
         })),
       },
@@ -462,7 +468,11 @@ export async function executeDirectCommands(
   };
 }
 
-export async function reconcileDirectObjects(client, calls) {
+export async function reconcileDirectObjects(
+  client,
+  calls,
+  expectedPlan = null,
+) {
   const ids = Object.fromEntries(calls.map((item) => [item.key, item.ids]));
   const campaignIds = ids.campaign || [],
     adGroupIds = ids.adgroup || [],
@@ -498,9 +508,15 @@ export async function reconcileDirectObjects(client, calls) {
         (item) => item.Id === id && item.AdGroupId === adGroupId,
       ),
     ),
-    adsMatched = adIds.every((id) =>
-      ads.Ads?.some((item) => item.Id === id && item.AdGroupId === adGroupId),
-    ),
+    adsMatched = adIds.every((id, index) => {
+      const item = ads.Ads?.find(
+        (candidate) => candidate.Id === id && candidate.AdGroupId === adGroupId,
+      );
+      const expectedHash = expectedPlan?.ads?.[index]?.adImageHash;
+      return (
+        !!item && (!expectedHash || item.TextAd?.AdImageHash === expectedHash)
+      );
+    }),
     matched =
       !!campaignMatched && !!groupMatched && keywordsMatched && adsMatched;
   return {

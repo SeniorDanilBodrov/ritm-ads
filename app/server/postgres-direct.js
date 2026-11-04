@@ -6,6 +6,7 @@ import {
   executeDirectCommands,
   reconcileDirectObjects,
 } from "./direct.js";
+import { approvedDirectImageHash } from "./postgres-direct-images.js";
 
 const fingerprint = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -177,6 +178,7 @@ export async function preparePostgresDirectPlan(
   businessId,
   requestKey,
   input,
+  directContext = null,
 ) {
   return db.transaction(async (tx) => {
     const business = await ownedBusiness(tx, userId, businessId);
@@ -213,7 +215,28 @@ export async function preparePostgresDirectPlan(
         "В плане можно использовать только согласованные тексты.",
         "creative_changed",
       );
-    const built = buildDirectCommands(input);
+    let resolvedInput = input;
+    if (input?.creativeAssetId) {
+      if (!directContext?.connectionId)
+        throw new AppError(
+          409,
+          "Сначала подключите кабинет Директа.",
+          "yandex_missing",
+        );
+      const adImageHash = await approvedDirectImageHash(
+        tx,
+        userId,
+        business.id,
+        input.creativeAssetId,
+        directContext.connectionId,
+        input.login,
+      );
+      resolvedInput = {
+        ...input,
+        ads: input.ads.map((ad) => ({ ...ad, adImageHash })),
+      };
+    }
+    const built = buildDirectCommands(resolvedInput);
     const existing = await tx
       .prepare(
         `SELECT dc.*,j.status,j.attempts,j.available_at,j.error
@@ -620,7 +643,11 @@ export async function executePostgresDirectPlan(
           ),
       },
     );
-    const reconciliation = await reconcileDirectObjects(client, result.calls);
+    const reconciliation = await reconcileDirectObjects(
+      client,
+      result.calls,
+      prepared.change.plan,
+    );
     if (!reconciliation.matched)
       throw new AppError(
         409,
@@ -716,7 +743,7 @@ export async function inspectPostgresDirectExecution(
       (key, index) => calls[index]?.key === key,
     )
   ) {
-    reconciliation = await reconcileDirectObjects(client, calls);
+    reconciliation = await reconcileDirectObjects(client, calls, change.plan);
   } else {
     const campaignId = calls.find((item) => item.key === "campaign")?.ids?.[0];
     const remote = campaignId

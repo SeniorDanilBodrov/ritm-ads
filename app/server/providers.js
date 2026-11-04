@@ -274,6 +274,31 @@ export class DirectClient {
   createAds(items) {
     return this.call("ads", "add", { Ads: items });
   }
+  createAdImages(items) {
+    if (!Array.isArray(items) || !items.length || items.length > 100)
+      throw new AppError(400, "Передайте от одного до ста изображений.");
+    return this.call("adimages", "add", { AdImages: items });
+  }
+  adImagesByHashes(hashes) {
+    if (
+      !Array.isArray(hashes) ||
+      !hashes.length ||
+      hashes.some((value) => !/^[A-Za-z0-9_-]+$/.test(String(value)))
+    )
+      throw new AppError(400, "Некорректные идентификаторы изображений.");
+    return this.call("adimages", "get", {
+      SelectionCriteria: { AdImageHashes: hashes.map(String) },
+      FieldNames: ["AdImageHash", "Name", "Type", "Associated"],
+      Page: { Limit: Math.min(hashes.length, 10_000) },
+    });
+  }
+  adImages() {
+    return this.call("adimages", "get", {
+      SelectionCriteria: {},
+      FieldNames: ["AdImageHash", "Name", "Type", "Associated"],
+      Page: { Limit: 10_000 },
+    });
+  }
   createKeywords(items) {
     return this.call("keywords", "add", { Keywords: items });
   }
@@ -363,6 +388,7 @@ export class DirectClient {
     return this.call("ads", "get", {
       SelectionCriteria: { AdGroupIds: [directId(id)] },
       FieldNames: ["Id", "AdGroupId", "State", "Status", "Type"],
+      TextAdFieldNames: ["Title", "Title2", "Text", "Href", "AdImageHash"],
       ResponsiveAdFieldNames: ["Titles", "Texts", "Href"],
     });
   }
@@ -378,7 +404,7 @@ export class DirectClient {
     return this.call("ads", "get", {
       SelectionCriteria: { Ids: ids.map(directId) },
       FieldNames: ["Id", "CampaignId", "AdGroupId", "State", "Status", "Type"],
-      TextAdFieldNames: ["Title", "Title2", "Text", "Href"],
+      TextAdFieldNames: ["Title", "Title2", "Text", "Href", "AdImageHash"],
       ResponsiveAdFieldNames: ["Titles", "Texts", "Href"],
     });
   }

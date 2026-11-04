@@ -16,6 +16,13 @@ import { markInterruptedBudgetActions } from "./direct-budget-action.js";
 import { markInterruptedAbActions } from "./direct-ab-action.js";
 import { markInterruptedAbDecisionActions } from "./direct-ab-decision.js";
 import { markInterruptedPostgresModerationActions } from "./postgres-direct-moderation.js";
+import { markInterruptedPostgresResumeActions } from "./postgres-direct-resume.js";
+import { markInterruptedPostgresAbActions } from "./postgres-ab.js";
+import { markInterruptedPostgresDirectImageUploads } from "./postgres-direct-images.js";
+import {
+  recoverPostgresOptimizerDispatches,
+  startPostgresAutopilotWorker,
+} from "./postgres-autopilot.js";
 import {
   startCreativeRetentionWorker,
   startCreativeWorker,
@@ -50,6 +57,7 @@ const config = {
   aiOllamaUrl: process.env.OLLAMA_URL || "http://127.0.0.1:11434",
   aiModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
   remoteAiWorkerToken: process.env.REMOTE_AI_WORKER_TOKEN,
+  autopilotWorkerToken: process.env.AUTOPILOT_WORKER_TOKEN,
   // Local advertising-photo generation is opt-in so a configured but stopped
   // worker cannot make the interface promise a capability that is unavailable.
   creativeImagesEnabled: process.env.CREATIVE_IMAGES_ENABLED === "true",
@@ -70,6 +78,9 @@ const config = {
   ),
   directWritePilot: process.env.DIRECT_WRITE_PILOT_ENABLED === "true",
   directModerationPilot: process.env.DIRECT_MODERATION_PILOT_ENABLED === "true",
+  directResumePilot: process.env.DIRECT_RESUME_PILOT_ENABLED === "true",
+  directImageUploadPilot:
+    process.env.DIRECT_IMAGE_UPLOAD_PILOT_ENABLED === "true",
   directArchivePilot: process.env.DIRECT_ARCHIVE_PILOT_ENABLED === "true",
   directAbVariantPilot: process.env.DIRECT_AB_VARIANT_PILOT_ENABLED === "true",
   directAbDecisionPilot:
@@ -162,6 +173,10 @@ if (!postgresPilot) {
   recoverOptimizerDispatches(db);
 } else {
   await markInterruptedPostgresModerationActions(db);
+  await markInterruptedPostgresResumeActions(db);
+  await markInterruptedPostgresAbActions(db);
+  await markInterruptedPostgresDirectImageUploads(db);
+  await recoverPostgresOptimizerDispatches(db);
 }
 const app = postgresPilot
   ? createPostgresApp({ db, config, key })
@@ -178,7 +193,7 @@ const stopCreativeRetention = postgresPilot
   ? async () => {}
   : startCreativeRetentionWorker(db, config);
 const stopLiveData = postgresPilot
-  ? async () => {}
+  ? startPostgresAutopilotWorker(db, { key, config })
   : startLiveDataWorker(db, key, config);
 const stopOperationsMonitor = postgresPilot
   ? async () => {}

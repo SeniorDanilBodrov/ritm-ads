@@ -5,6 +5,12 @@ dist/
 !.env.example
 data/
 output/
+!output/
+output/*
+!output/playwright/
+output/playwright/*
+!output/playwright/snapshots/
+!output/playwright/snapshots/**
 tmp/
 coverage/
 .impeccable/

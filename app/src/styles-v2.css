@@ -1919,6 +1919,34 @@ tbody tr:hover {
   gap: 4px;
 }
 
+.hosted-image-choice,
+.plan-creative-choice,
+.creative-direct-account {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hosted-image-choice {
+  max-width: 360px;
+  margin-top: 10px;
+}
+
+.hosted-image-choice select,
+.plan-creative-choice select,
+.creative-direct-account select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  color: var(--ink);
+  background-color: var(--surface);
+  font: inherit;
+}
+
 .hosted-direct-action small,
 .hosted-direct-progress-row small,
 .hosted-direct-gate small {
@@ -3766,6 +3794,15 @@ textarea.resize-none {
   gap: 14px;
 }
 
+.generated-section .section-heading.compact {
+  align-items: end;
+  gap: 18px;
+}
+
+.creative-direct-account {
+  width: min(320px, 100%);
+}
+
 .generated-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3856,6 +3893,51 @@ textarea.resize-none {
 .generated-actions {
   display: grid;
   gap: 8px;
+}
+
+.creative-direct-status,
+.creative-direct-unavailable {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.creative-direct-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.creative-direct-status svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.creative-direct-unavailable {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.plan-creative-choice {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.plan-creative-choice > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.plan-creative-link {
+  width: fit-content;
+  margin-top: 12px;
 }
 
 .generated-remove {
@@ -7170,6 +7252,16 @@ textarea::placeholder {
   .hosted-direct-progress > button {
     width: 100%;
     justify-content: center;
+  }
+
+  .hosted-image-choice,
+  .creative-direct-account {
+    width: 100%;
+    max-width: none;
+  }
+
+  .generated-section .section-heading.compact {
+    align-items: stretch;
   }
 
   .creative-next-step {

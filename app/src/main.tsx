@@ -10513,7 +10513,6 @@ type FormData = {
   benefit: string;
   price: number;
   budget: number;
-  targetCpa: number;
   timezone: string;
   periodStart: string;
   periodEnd: string;
@@ -10541,7 +10540,6 @@ function formFrom(s: Business): FormData {
     benefit: s.benefit,
     price: s.price,
     budget: s.budget / 100,
-    targetCpa: s.targetCpa / 100,
     timezone: s.timezone,
     periodStart: s.periodStart,
     periodEnd: s.periodEnd,
@@ -10759,7 +10757,6 @@ function BusinessModal({
             benefit: "",
             price: 0,
             budget: 0,
-            targetCpa: 450,
             timezone: "Asia/Yekaterinburg",
             periodStart: start,
             periodEnd: end,
@@ -10787,7 +10784,7 @@ function BusinessModal({
     form.city &&
     form.service &&
     form.benefit &&
-    form.budget,
+    form.budget >= 1_000,
   );
   const facts: Array<{
     key: Exclude<EditableBusinessFact, "website">;
@@ -10839,8 +10836,8 @@ function BusinessModal({
     if (!editingFact) return;
     if (editingFact === "budget") {
       const budget = Number(factDraft.replace(",", "."));
-      if (!Number.isFinite(budget) || budget <= 0) {
-        setFactError("Укажите бюджет больше нуля.");
+      if (!Number.isFinite(budget) || budget < 1_000) {
+        setFactError("Укажите бюджет не меньше 1 000 ₽.");
         return;
       }
       set((current) => ({ ...current, budget }));

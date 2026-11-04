@@ -147,6 +147,11 @@ import { exportReportXlsx } from "./report-xlsx.js";
 
 const text = z.string().trim().min(2).max(160);
 const money = z.number().int().positive().max(100000000);
+const businessBudget = z
+  .number()
+  .int()
+  .min(100_000, "Укажите рекламный бюджет не меньше 1 000 ₽")
+  .max(100_000_000);
 const date = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -182,7 +187,7 @@ export const businessSchema = z
     service: text,
     benefit: text,
     price: z.number().int().min(0).max(10000000),
-    budget: money,
+    budget: businessBudget,
     // This is an internal guardrail, not a field a business owner needs to
     // understand or configure during onboarding.
     targetCpa: money.optional(),

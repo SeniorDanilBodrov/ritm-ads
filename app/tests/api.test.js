@@ -396,6 +396,26 @@ test("live workspace can update its local profile without enabling ad writes", a
     "live_gate",
   );
 });
+test("profile update recalculates the hidden target when the form omits it", async () => {
+  const { cookie, ws } = await demo();
+  const legacy = { ...ws.state, targetCpa: 450 };
+  db.prepare("UPDATE businesses SET state=? WHERE id=?").run(
+    JSON.stringify(legacy),
+    ws.id,
+  );
+  const { targetCpa: _hidden, ...profile } = legacy;
+  const saved = await send(`/api/businesses/${ws.id}/command`, {
+    cookie,
+    body: {
+      action: "settings",
+      payload: { ...profile, budget: 4_000_000 },
+    },
+  });
+  assert.equal(saved.status, 200);
+  const current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
+  assert.equal(current.body.state.budget, 4_000_000);
+  assert.equal(current.body.state.targetCpa, 200_000);
+});
 test("live workspace can prepare a plan and test the autopilot without provider writes", async () => {
   const { cookie, ws } = await demo(),
     key = randomUUID(),

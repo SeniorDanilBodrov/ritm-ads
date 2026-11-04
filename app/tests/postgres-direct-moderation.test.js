@@ -357,6 +357,83 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
   data.sqlite.close();
 });
 
+test("moderation accepts a search campaign migrated by Direct to unified objects", async () => {
+  const data = fixture();
+  const client = {
+    campaignBudgetById: async () => ({
+      Campaigns: [
+        {
+          Id: 77,
+          State: "OFF",
+          Status: "DRAFT",
+          Type: "UNIFIED_CAMPAIGN",
+          Currency: "RUB",
+          UnifiedCampaign: {
+            BiddingStrategy: {
+              Search: {
+                BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                WbMaximumClicks: {
+                  CustomPeriodBudget: {
+                    SpendLimit: data.plan.budget * 10_000,
+                    StartDate: data.plan.periodStart,
+                    EndDate: data.plan.periodEnd,
+                    AutoContinue: "NO",
+                  },
+                },
+              },
+              Network: { BiddingStrategyType: "SERVING_OFF" },
+            },
+          },
+        },
+      ],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "DRAFT",
+          State: "OFF",
+          Type: "RESPONSIVE_AD",
+          ResponsiveAd: {
+            Titles: [{ Title: data.plan.ads[0].title, Status: "ACCEPTED" }],
+            Texts: [{ Text: data.plan.ads[0].text, Status: "ACCEPTED" }],
+            AdImages: { Items: [] },
+            Href: data.plan.ads[0].href,
+          },
+        },
+      ],
+    }),
+    keywordsByIds: async () => ({
+      Keywords: [{ Id: 111, CampaignId: 77, AdGroupId: 88 }],
+    }),
+    advertiserMarkingDetails: async () => ({
+      Clients: [
+        {
+          Type: "CLIENT",
+          TinInfo: { TinType: "LEGAL", Tin: "test-value" },
+          ErirAttributes: { Organization: { Name: "test-value" } },
+        },
+      ],
+    }),
+  };
+
+  const readiness = await inspectPostgresModerationReadiness(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    client,
+    data.connectionId,
+    Date.parse("2026-11-04T10:00:00.000Z"),
+  );
+
+  assert.equal(readiness.status, "technical_ready");
+  assert.deepEqual(readiness.blockers, []);
+  data.sqlite.close();
+});
+
 test("network moderation verifies responsive copy and image without keywords", async () => {
   const data = networkFixture();
   let keywordReads = 0;

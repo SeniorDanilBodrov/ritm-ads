@@ -157,6 +157,11 @@ function strategyMatchesPlan(strategy, network) {
   );
 }
 
+function campaignTypeMatchesPlan(type, network) {
+  if (network) return type === "UNIFIED_CAMPAIGN";
+  return type === "TEXT_CAMPAIGN" || type === "UNIFIED_CAMPAIGN";
+}
+
 function responsiveImageHashes(ad) {
   const source =
     ad?.ResponsiveAd?.AdImages || ad?.ResponsiveAd?.AdImageHashes || [];
@@ -288,13 +293,14 @@ export async function inspectPostgresDirectControl(
   );
   const blockers = [];
   const date = moscowDate(now);
-  const expectedCampaignType = bundle.network
-    ? "UNIFIED_CAMPAIGN"
-    : "TEXT_CAMPAIGN";
-  const expectedGroupType = bundle.network
-    ? "UNIFIED_AD_GROUP"
-    : "TEXT_AD_GROUP";
-  if (remote.Type !== expectedCampaignType || remote.Currency !== "RUB")
+  const expectedGroupType =
+    bundle.network || remote.Type === "UNIFIED_CAMPAIGN"
+      ? "UNIFIED_AD_GROUP"
+      : "TEXT_AD_GROUP";
+  if (
+    !campaignTypeMatchesPlan(remote.Type, bundle.network) ||
+    remote.Currency !== "RUB"
+  )
     blockers.push("campaign_contract_changed");
   if (date < bundle.plan.periodStart) blockers.push("period_not_started");
   if (date > bundle.plan.periodEnd) blockers.push("period_ended");
@@ -528,7 +534,7 @@ export async function inspectPostgresModerationReadiness(
   ))
     blockers.push("campaign_not_held");
   if (
-    remote.Type !== (bundle.network ? "UNIFIED_CAMPAIGN" : "TEXT_CAMPAIGN") ||
+    !campaignTypeMatchesPlan(remote.Type, bundle.network) ||
     remote.Currency !== "RUB" ||
     !strategyMatchesPlan(budget.strategy, bundle.network) ||
     budget.limitKopecks !== bundle.plan.budget ||
@@ -769,9 +775,7 @@ function adsSubmitted(adIds, response) {
   return (
     sameIds(adIds, response?.Ads) &&
     response.Ads.every((ad) =>
-      ["MODERATION", "PREACCEPTED", "ACCEPTED", "REJECTED"].includes(
-        ad.Status,
-      ),
+      ["MODERATION", "PREACCEPTED", "ACCEPTED", "REJECTED"].includes(ad.Status),
     )
   );
 }

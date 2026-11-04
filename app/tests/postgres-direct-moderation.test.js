@@ -378,7 +378,15 @@ test("network moderation verifies responsive copy and image without keywords", a
             Titles: data.plan.ads[0].titles.map((Title) => ({ Title })),
             Texts: data.plan.ads[0].texts.map((Text) => ({ Text })),
             Href: data.plan.ads[0].href,
-            AdImages: [{ AdImageHash: "approved_image_hash-1" }],
+            AdImages: {
+              Items: [
+                {
+                  ImageHash: "approved_image_hash-1",
+                  Status: "UNKNOWN",
+                  StatusClarification: null,
+                },
+              ],
+            },
           },
         },
       ],

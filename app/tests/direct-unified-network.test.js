@@ -199,7 +199,7 @@ test("network read-back verifies the responsive image hashes", async () => {
     { key: "campaign", ids: [101] },
     { key: "suspend", ids: [101], holdState: "OFF_DRAFT" },
     { key: "adgroup", ids: [202] },
-    { key: "ads", ids: [303] },
+    { key: "ads", ids: ["1926092011397773491"] },
   ];
   const client = {
     campaignsByIds: async () => ({
@@ -218,10 +218,18 @@ test("network read-back verifies the responsive image hashes", async () => {
     adsByIds: async () => ({
       Ads: [
         {
-          Id: 303,
+          Id: "1926092011397773491",
           AdGroupId: 202,
           ResponsiveAd: {
-            AdImages: [{ AdImageHash: input.ads[0].adImageHashes[0] }],
+            AdImages: {
+              Items: [
+                {
+                  ImageHash: input.ads[0].adImageHashes[0],
+                  Status: "UNKNOWN",
+                  StatusClarification: null,
+                },
+              ],
+            },
           },
         },
       ],

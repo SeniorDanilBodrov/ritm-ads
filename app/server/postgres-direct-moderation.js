@@ -158,11 +158,18 @@ function strategyMatchesPlan(strategy, network) {
 }
 
 function responsiveImageHashes(ad) {
-  const values =
+  const source =
     ad?.ResponsiveAd?.AdImages || ad?.ResponsiveAd?.AdImageHashes || [];
+  const values = Array.isArray(source)
+    ? source
+    : Array.isArray(source?.Items)
+      ? source.Items
+      : [];
   return values
     .map((item) =>
-      typeof item === "string" ? item : item?.AdImageHash || item?.Hash,
+      typeof item === "string"
+        ? item
+        : item?.ImageHash || item?.AdImageHash || item?.Hash,
     )
     .filter(Boolean);
 }

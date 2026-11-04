@@ -2697,14 +2697,26 @@ export function createPostgresApp({
       res.sendFile(resolve(dist, "index.html")),
     );
   }
-  app.use((error, _req, res, _next) => {
+  app.use((error, req, res, _next) => {
     if (error instanceof z.ZodError)
       return res
         .status(400)
         .json({ error: "Проверьте заполненные поля.", code: "validation" });
     if (!(error instanceof AppError)) {
+      const stackFrame = String(error?.stack || "")
+        .split("\n")
+        .slice(1, 3)
+        .map((line) => line.trim())
+        .join(" | ")
+        .slice(0, 500);
       console.error(
-        JSON.stringify({ event: "server_error", type: error.name }),
+        JSON.stringify({
+          event: "server_error",
+          type: error?.name || "Error",
+          message: String(error?.message || "unknown_error").slice(0, 300),
+          route: req?.originalUrl || req?.url || null,
+          stackFrame: stackFrame || null,
+        }),
       );
       if (process.env.DEBUG_POSTGRES_PILOT === "true") console.error(error);
     }

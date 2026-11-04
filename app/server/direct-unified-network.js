@@ -153,10 +153,17 @@ const heldCampaign = (campaign) =>
   (campaign?.State === "OFF" && campaign?.Status === "DRAFT");
 
 const responsiveImageHashes = (responsiveAd) => {
-  const values = responsiveAd?.AdImages || responsiveAd?.AdImageHashes || [];
+  const source = responsiveAd?.AdImages || responsiveAd?.AdImageHashes || [];
+  const values = Array.isArray(source)
+    ? source
+    : Array.isArray(source?.Items)
+      ? source.Items
+      : [];
   return values
     .map((item) =>
-      typeof item === "string" ? item : item?.AdImageHash || item?.Hash,
+      typeof item === "string"
+        ? item
+        : item?.ImageHash || item?.AdImageHash || item?.Hash,
     )
     .filter(Boolean);
 };
@@ -183,18 +190,29 @@ export async function reconcileUnifiedNetworkObjects(
   ]);
   const campaignId = campaignIds[0];
   const adGroupId = adGroupIds[0];
-  const campaignMatched = campaigns.Campaigns?.some(
+  const remoteCampaigns = Array.isArray(campaigns?.Campaigns)
+    ? campaigns.Campaigns
+    : [];
+  const remoteAdGroups = Array.isArray(adGroups?.AdGroups)
+    ? adGroups.AdGroups
+    : [];
+  const remoteAds = Array.isArray(ads?.Ads) ? ads.Ads : [];
+  const campaignMatched = remoteCampaigns.some(
     (item) =>
-      item.Id === campaignId &&
+      String(item.Id) === String(campaignId) &&
       heldCampaign(item) &&
       (!item.Type || item.Type === "UNIFIED_CAMPAIGN"),
   );
-  const groupMatched = adGroups.AdGroups?.some(
-    (item) => item.Id === adGroupId && item.CampaignId === campaignId,
+  const groupMatched = remoteAdGroups.some(
+    (item) =>
+      String(item.Id) === String(adGroupId) &&
+      String(item.CampaignId) === String(campaignId),
   );
   const adsMatched = adIds.every((id, index) => {
-    const item = ads.Ads?.find(
-      (candidate) => candidate.Id === id && candidate.AdGroupId === adGroupId,
+    const item = remoteAds.find(
+      (candidate) =>
+        String(candidate.Id) === String(id) &&
+        String(candidate.AdGroupId) === String(adGroupId),
     );
     if (!item?.ResponsiveAd) return false;
     const expectedHashes = expectedPlan?.ads?.[index]?.adImageHashes || [];
@@ -207,9 +225,9 @@ export async function reconcileUnifiedNetworkObjects(
     matched,
     externalCalls: 3,
     objects: {
-      campaign: campaigns.Campaigns || [],
-      adGroups: adGroups.AdGroups || [],
-      ads: ads.Ads || [],
+      campaign: remoteCampaigns,
+      adGroups: remoteAdGroups,
+      ads: remoteAds,
     },
   };
 }

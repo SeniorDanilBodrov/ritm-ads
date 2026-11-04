@@ -514,30 +514,42 @@ export async function reconcileDirectObjects(
   const campaignId = campaignIds[0],
     adGroupId = adGroupIds[0],
     campaignMatched = campaigns.Campaigns?.some(
-      (item) => item.Id === campaignId && heldCampaign(item),
+      (item) =>
+        String(item.Id) === String(campaignId) && heldCampaign(item),
     ),
     groupMatched = adGroups.AdGroups?.some(
-      (item) => item.Id === adGroupId && item.CampaignId === campaignId,
+      (item) =>
+        String(item.Id) === String(adGroupId) &&
+        String(item.CampaignId) === String(campaignId),
     ),
     keywordsMatched = keywordIds.every((id) =>
       keywords.Keywords?.some(
-        (item) => item.Id === id && item.AdGroupId === adGroupId,
+        (item) =>
+          String(item.Id) === String(id) &&
+          String(item.AdGroupId) === String(adGroupId),
       ),
     ),
     adsMatched = adIds.every((id, index) => {
       const item = ads.Ads?.find(
-        (candidate) => candidate.Id === id && candidate.AdGroupId === adGroupId,
+        (candidate) =>
+          String(candidate.Id) === String(id) &&
+          String(candidate.AdGroupId) === String(adGroupId),
       );
       const expectedHash = expectedPlan?.ads?.[index]?.adImageHash;
-      const responsiveHashes = (
+      const responsiveImages =
         item?.ResponsiveAd?.AdImages ||
         item?.ResponsiveAd?.AdImageHashes ||
-        []
+        [];
+      const responsiveHashes = (Array.isArray(responsiveImages)
+        ? responsiveImages
+        : Array.isArray(responsiveImages?.Items)
+          ? responsiveImages.Items
+          : []
       )
         .map((image) =>
           typeof image === "string"
             ? image
-            : image?.AdImageHash || image?.Hash,
+            : image?.ImageHash || image?.AdImageHash || image?.Hash,
         )
         .filter(Boolean);
       return (

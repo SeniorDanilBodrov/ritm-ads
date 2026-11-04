@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { openDatabase } from "../server/db.js";
-import { reservePostgresCampaignBudget } from "../server/postgres-direct.js";
+import {
+  releaseMissingPostgresDirectExecutions,
+  reservePostgresCampaignBudget,
+} from "../server/postgres-direct.js";
 
 class AsyncSqlite {
   constructor(database) {
@@ -160,4 +163,114 @@ test("production reservation locks the business before reading allocations", asy
   );
   assert.match(queries[0], /businesses[\s\S]+FOR UPDATE/i);
   assert.match(queries[1], /campaign_budget_allocations[\s\S]+FOR UPDATE/i);
+});
+
+test("a stale campaign add is released only after Direct proves it is absent", async () => {
+  const data = fixture();
+  const changeId = randomUUID();
+  const connectionId = randomUUID();
+  const campaignName = "Форма · Поиск · фото abcdef12";
+  const startedAt = "2026-11-04T12:00:00.000Z";
+  data.sqlite
+    .prepare(
+      "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload,error) VALUES(?,?,'direct_change','succeeded',0,0,'{}',NULL)",
+    )
+    .run(changeId, data.businessId);
+  data.sqlite
+    .prepare(
+      `INSERT INTO direct_changes
+       (id,business_id,idempotency_key,mode,plan_json,commands_json,result_json,reconciliation_json,created_at,updated_at)
+       VALUES(?,?,?,'dry_run',?,'[]',NULL,NULL,?,?)`,
+    )
+    .run(
+      changeId,
+      data.businessId,
+      randomUUID(),
+      JSON.stringify({ campaignName }),
+      startedAt,
+      startedAt,
+    );
+  data.sqlite
+    .prepare(
+      `INSERT INTO direct_executions
+       (change_id,business_id,connection_id,plan_fingerprint,status,inflight_key,suspend_verified,calls_json,started_at,updated_at,error_code,reconciliation_json)
+       VALUES(?,?,?,'fingerprint','needs_reconciliation','campaign',0,'[]',?,?,'provider_error',NULL)`,
+    )
+    .run(changeId, data.businessId, connectionId, startedAt, startedAt);
+  data.sqlite
+    .prepare("INSERT INTO campaign_ad_lifecycle VALUES(?,?,'needs_reconciliation',?,?)")
+    .run(data.businessId, changeId, "Нужна сверка.", startedAt);
+  data.sqlite
+    .prepare("INSERT INTO campaign_budget_allocations VALUES(?,?,?,?)")
+    .run(data.businessId, changeId, 1_000_000, startedAt);
+
+  const result = await releaseMissingPostgresDirectExecutions(
+    data.db,
+    data.userId,
+    data.businessId,
+    { campaigns: async () => ({ Campaigns: [] }) },
+    Date.parse(data.now),
+  );
+  assert.equal(result.released, 1);
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT status FROM direct_executions WHERE change_id=?")
+      .get(changeId).status,
+    "failed_no_write",
+  );
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM campaign_budget_allocations WHERE change_id=?")
+      .get(changeId).count,
+    0,
+  );
+});
+
+test("a campaign found in Direct keeps the uncertain execution fenced", async () => {
+  const data = fixture();
+  const changeId = randomUUID();
+  const connectionId = randomUUID();
+  const campaignName = "Форма · Поиск · фото abcdef12";
+  const startedAt = "2026-11-04T12:00:00.000Z";
+  data.sqlite
+    .prepare(
+      "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload,error) VALUES(?,?,'direct_change','succeeded',0,0,'{}',NULL)",
+    )
+    .run(changeId, data.businessId);
+  data.sqlite
+    .prepare(
+      `INSERT INTO direct_changes
+       (id,business_id,idempotency_key,mode,plan_json,commands_json,result_json,reconciliation_json,created_at,updated_at)
+       VALUES(?,?,?,'dry_run',?,'[]',NULL,NULL,?,?)`,
+    )
+    .run(
+      changeId,
+      data.businessId,
+      randomUUID(),
+      JSON.stringify({ campaignName }),
+      startedAt,
+      startedAt,
+    );
+  data.sqlite
+    .prepare(
+      `INSERT INTO direct_executions
+       (change_id,business_id,connection_id,plan_fingerprint,status,inflight_key,suspend_verified,calls_json,started_at,updated_at,error_code,reconciliation_json)
+       VALUES(?,?,?,'fingerprint','needs_reconciliation','campaign',0,'[]',?,?,'provider_error',NULL)`,
+    )
+    .run(changeId, data.businessId, connectionId, startedAt, startedAt);
+
+  const result = await releaseMissingPostgresDirectExecutions(
+    data.db,
+    data.userId,
+    data.businessId,
+    { campaigns: async () => ({ Campaigns: [{ Name: campaignName }] }) },
+    Date.parse(data.now),
+  );
+  assert.equal(result.released, 0);
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT status FROM direct_executions WHERE change_id=?")
+      .get(changeId).status,
+    "needs_reconciliation",
+  );
 });

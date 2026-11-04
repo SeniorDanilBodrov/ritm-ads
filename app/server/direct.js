@@ -435,6 +435,9 @@ export async function executeDirectCommands(
                     Titles: [ad.TextAd.Title.replace(/\s*·\s*/g, ", ")],
                     Texts: [ad.TextAd.Text],
                     Href: ad.TextAd.Href,
+                    ...(ad.TextAd.AdImageHash
+                      ? { AdImageHashes: [ad.TextAd.AdImageHash] }
+                      : {}),
                   },
                 }
             : ad,
@@ -526,8 +529,22 @@ export async function reconcileDirectObjects(
         (candidate) => candidate.Id === id && candidate.AdGroupId === adGroupId,
       );
       const expectedHash = expectedPlan?.ads?.[index]?.adImageHash;
+      const responsiveHashes = (
+        item?.ResponsiveAd?.AdImages ||
+        item?.ResponsiveAd?.AdImageHashes ||
+        []
+      )
+        .map((image) =>
+          typeof image === "string"
+            ? image
+            : image?.AdImageHash || image?.Hash,
+        )
+        .filter(Boolean);
       return (
-        !!item && (!expectedHash || item.TextAd?.AdImageHash === expectedHash)
+        !!item &&
+        (!expectedHash ||
+          item.TextAd?.AdImageHash === expectedHash ||
+          responsiveHashes.includes(expectedHash))
       );
     }),
     matched =

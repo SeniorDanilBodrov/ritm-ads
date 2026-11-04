@@ -538,6 +538,39 @@ test("live adapter resolves remote IDs in order and reconciles the campaign", as
   assert.equal(result.externalCalls, 7);
 });
 
+test("unified campaign keeps the selected image when converting a text ad", async () => {
+  const input = plan();
+  input.ads[0].adImageHash = "approved_image_hash-1";
+  let createdAds;
+  await executeDirectCommands(
+    {
+      createCampaigns: async () => ({ AddResults: [{ Id: 101 }] }),
+      campaignsByIds: async () => ({
+        Campaigns: [
+          {
+            Id: 101,
+            State: "OFF",
+            Status: "DRAFT",
+            Type: "UNIFIED_CAMPAIGN",
+          },
+        ],
+      }),
+      createAdGroups: async () => ({ AddResults: [{ Id: 202 }] }),
+      createKeywords: async (items) => ({
+        AddResults: items.map((_, index) => ({ Id: 300 + index })),
+      }),
+      createAds: async (items) => {
+        createdAds = items;
+        return { AddResults: [{ Id: 401 }] };
+      },
+    },
+    buildDirectCommands(input).commands,
+  );
+  assert.deepEqual(createdAds[0].ResponsiveAd.AdImageHashes, [
+    "approved_image_hash-1",
+  ]);
+});
+
 test("live adapter stops before ad objects if suspend state is not read back", async () => {
   const seen = [];
   await assert.rejects(
@@ -634,4 +667,40 @@ test("read-back does not accept a campaign that is serving", async () => {
   );
   assert.equal(result.matched, false);
   assert.equal(result.status, "mismatch");
+});
+
+test("read-back accepts the selected image on a responsive ad", async () => {
+  const calls = [
+    { key: "campaign", ids: [101] },
+    { key: "suspend", ids: [101] },
+    { key: "adgroup", ids: [202] },
+    { key: "keywords", ids: [303] },
+    { key: "ads", ids: [404] },
+  ];
+  const input = plan();
+  input.ads[0].adImageHash = "approved_image_hash-1";
+  const result = await reconcileDirectObjects(
+    {
+      campaignsByIds: async () => ({
+        Campaigns: [{ Id: 101, State: "OFF", Status: "DRAFT" }],
+      }),
+      adGroupsByIds: async () => ({ AdGroups: [{ Id: 202, CampaignId: 101 }] }),
+      keywordsByIds: async () => ({ Keywords: [{ Id: 303, AdGroupId: 202 }] }),
+      adsByIds: async () => ({
+        Ads: [
+          {
+            Id: 404,
+            AdGroupId: 202,
+            ResponsiveAd: {
+              AdImages: [{ AdImageHash: "approved_image_hash-1" }],
+            },
+          },
+        ],
+      }),
+    },
+    calls,
+    input,
+  );
+  assert.equal(result.matched, true);
+  assert.equal(result.status, "matched");
 });

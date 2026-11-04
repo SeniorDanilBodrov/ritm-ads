@@ -1922,6 +1922,9 @@ test("partially accepted keywords are read back before only the ad is created", 
           Titles: ["Кофе, рядом с вами"],
           Texts: [change.plan.ads[0].text],
           Href: change.plan.ads[0].href,
+          ...(change.plan.ads[0].adImageHash
+            ? { AdImageHashes: [change.plan.ads[0].adImageHash] }
+            : {}),
         });
         throw new Error("lost ad response");
       },

@@ -3901,6 +3901,7 @@ function HostedPlanReview({
   const searchCampaignName = versionedCampaignName(
     `${ws.state.name} · Поиск`,
     creativeAssetId,
+    "2",
   );
   const networkCampaignName = versionedCampaignName(
     `${ws.state.name} · Рекламная сеть`,
@@ -3939,6 +3940,7 @@ function HostedPlanReview({
     if (item.plan.channel === "network")
       return (
         useNetwork &&
+        item.plan.campaignName === networkCampaignName &&
         !isSupersededDuplicate(item, networkCampaignName) &&
         item.plan.budget === networkBudget &&
         item.plan.creativeAssetId === creativeAssetId &&
@@ -3957,6 +3959,7 @@ function HostedPlanReview({
         )
       );
     return (
+      item.plan.campaignName === searchCampaignName &&
       !isSupersededDuplicate(item, searchCampaignName) &&
       item.plan.budget === searchBudget &&
       (creativeAssetId
@@ -5345,10 +5348,16 @@ const daysBetween = (start: string, end: string) =>
     86_400_000 +
   1;
 
-function versionedCampaignName(base: string, creativeAssetId: string) {
+function versionedCampaignName(
+  base: string,
+  creativeAssetId: string,
+  adapterRevision = "",
+) {
   if (!creativeAssetId) return base.slice(0, 255);
   const revision = creativeAssetId.replace(/[^a-z0-9]/gi, "").slice(0, 8);
-  const suffix = ` · фото ${revision || "новое"}`;
+  const suffix = ` · фото ${revision || "новое"}${
+    adapterRevision ? ` · ${adapterRevision}` : ""
+  }`;
   return `${base.slice(0, 255 - suffix.length)}${suffix}`;
 }
 

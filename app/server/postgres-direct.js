@@ -127,6 +127,92 @@ function executionView(row) {
   };
 }
 
+// A lost response from Campaigns.add must never be replayed blindly. After a
+// quiet period we can, however, prove that no remote campaign exists by reading
+// the complete campaign list. Only that verified no-write case is released so
+// the owner can prepare a fresh, versioned plan.
+export async function releaseMissingPostgresDirectExecutions(
+  db,
+  userId,
+  businessId,
+  client,
+  now = Date.now(),
+) {
+  await ownedBusiness(db, userId, businessId);
+  const rows = await db
+    .prepare(
+      `SELECT de.change_id,de.calls_json,de.inflight_key,de.updated_at,dc.plan_json
+       FROM direct_executions de
+       JOIN direct_changes dc ON dc.id=de.change_id AND dc.business_id=de.business_id
+       WHERE de.business_id=? AND de.status='needs_reconciliation'`,
+    )
+    .all(businessId);
+  const candidates = rows.filter((row) => {
+    const calls = JSON.parse(row.calls_json || "[]");
+    const age = now - Date.parse(row.updated_at);
+    return (
+      calls.length === 0 &&
+      (!row.inflight_key || row.inflight_key === "campaign") &&
+      Number.isFinite(age) &&
+      age >= 10 * 60_000
+    );
+  });
+  if (!candidates.length) return { released: 0, externalReads: 0 };
+  const remote = await client.campaigns();
+  if (remote?.LimitedBy)
+    return { released: 0, externalReads: 1, incomplete: true };
+  const names = new Set((remote?.Campaigns || []).map((item) => item.Name));
+  const missing = candidates.filter((row) => {
+    const name = JSON.parse(row.plan_json || "{}")?.campaignName;
+    return typeof name === "string" && !names.has(name);
+  });
+  if (!missing.length) return { released: 0, externalReads: 1 };
+  await db.transaction(async (tx) => {
+    const at = new Date(now).toISOString();
+    for (const row of missing) {
+      const reconciliation = {
+        status: "verified_absent",
+        matched: false,
+        checkedAt: at,
+      };
+      await tx
+        .prepare(
+          `UPDATE direct_executions
+           SET status='failed_no_write',inflight_key=NULL,error_code='verified_no_remote_campaign',
+               reconciliation_json=?,updated_at=?
+           WHERE business_id=? AND change_id=? AND status='needs_reconciliation'`,
+        )
+        .run(JSON.stringify(reconciliation), at, businessId, row.change_id);
+      await tx
+        .prepare(
+          `UPDATE campaign_ad_lifecycle
+           SET status='draft',reason=?,updated_at=?
+           WHERE business_id=? AND change_id=?`,
+        )
+        .run(
+          "Директ подтвердил, что кампания не была создана. Можно подготовить новый вариант.",
+          at,
+          businessId,
+          row.change_id,
+        );
+      await tx
+        .prepare(
+          "DELETE FROM campaign_budget_allocations WHERE business_id=? AND change_id=?",
+        )
+        .run(businessId, row.change_id);
+      await addEvent(tx, businessId, {
+        kind: "direct_execution_absent",
+        title: "Неудачная попытка безопасно закрыта",
+        reason:
+          "Директ не нашёл удалённую кампанию. Повтор возможен только новым планом.",
+        rule: "direct/execution@2",
+        jobId: row.change_id,
+      });
+    }
+  });
+  return { released: missing.length, externalReads: 1 };
+}
+
 function changeViewWithDetails(
   row,
   { preflight = null, approval = null, execution = null } = {},
@@ -643,6 +729,13 @@ export async function executePostgresDirectPlan(
   client,
   now = Date.now(),
 ) {
+  await releaseMissingPostgresDirectExecutions(
+    db,
+    userId,
+    businessId,
+    client,
+    now,
+  );
   const prepared = await db.transaction(async (tx) => {
     const { business, change } = await directChange(
       tx,

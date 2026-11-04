@@ -8,6 +8,7 @@ import {
   LocalCreativePromptEnhancer,
   LocalImageClient,
   KieImageClient,
+  creativeImagePrompt,
   creativeImages,
   enqueueCreativeImage,
   prepareAdvertisingAsset,
@@ -66,6 +67,19 @@ const input = {
   brandPlacement: "bottom-left",
   seed: 42,
 };
+
+test("brand prompt reserves typography space without asking the model to draw letters", () => {
+  const prompt = creativeImagePrompt(input, {
+    state: {
+      category: "Салон красоты",
+      service: "Маникюр",
+      benefit: "Запись в день обращения",
+    },
+  });
+  assert.match(prompt, /exact Cyrillic wordmark added later/);
+  assert.match(prompt, /no text, letters/);
+  assert.match(prompt, /bottom-left corner/);
+});
 
 test("advertising processor creates Direct-ready JPEGs for every supported ratio", async () => {
   const expected = {

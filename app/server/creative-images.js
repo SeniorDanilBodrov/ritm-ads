@@ -32,10 +32,13 @@ const hookPrompts = {
   perspective: "bold close angle",
 };
 
+const brandTypographyPrompt =
+  "calm softly lit space for an exact Cyrillic wordmark added later; no text, letters, logo or watermark";
+
 const brandSpacePrompts = {
   none: "balanced composition",
-  "bottom-left": "empty dark bottom-left brand space",
-  "bottom-right": "empty dark bottom-right brand space",
+  "bottom-left": `${brandTypographyPrompt}, place this negative space in the bottom-left corner`,
+  "bottom-right": `${brandTypographyPrompt}, place this negative space in the bottom-right corner`,
 };
 
 const domainVisualRules = [
@@ -610,11 +613,11 @@ function brandOverlay(width, height, companyName, placement) {
     text = lines
       .map(
         (line, index) =>
-          `<text x="${textX}" y="${Math.round(firstBaseline + index * lineHeight)}" text-anchor="${anchor}" dominant-baseline="middle" fill="#17231f" font-family="Arial, DejaVu Sans, sans-serif" font-size="${fontSize}" font-weight="650">${xml(line)}</text>`,
+          `<text x="${textX}" y="${Math.round(firstBaseline + index * lineHeight)}" text-anchor="${anchor}" dominant-baseline="middle" fill="#254138" font-family="DejaVu Serif, Georgia, serif" font-size="${fontSize}" font-style="italic" font-weight="600" letter-spacing="0.3">${xml(line)}</text>`,
       )
       .join("");
   return Buffer.from(`<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-    <rect x="${x}" y="${y}" width="${panelWidth}" height="${panelHeight}" rx="${Math.round(panelHeight * 0.28)}" fill="#f7f4ec" fill-opacity="0.9" stroke="#ffffff" stroke-opacity="0.45"/>
+    <rect x="${x}" y="${y}" width="${panelWidth}" height="${panelHeight}" rx="${Math.round(panelHeight * 0.32)}" fill="#fffaf2" fill-opacity="0.88" stroke="#e4ddd0" stroke-opacity="0.72"/>
     ${text}
   </svg>`);
 }

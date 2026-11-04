@@ -394,6 +394,10 @@ export function createPostgresApp({
         paidWrites &&
         config.directWritePilot === true &&
         config.directImageUploadPilot === true,
+      directModeration:
+        paidWrites &&
+        config.directWritePilot === true &&
+        config.directModerationPilot === true,
       creativeImages: Boolean(config.encryptionConfigured),
       imageProvider: "kie",
       textApproval: true,

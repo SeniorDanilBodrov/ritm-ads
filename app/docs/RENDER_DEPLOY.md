@@ -106,6 +106,17 @@ Production-конфигурация использует функцию `autopil
 `ritm-autopilot-every-15-min` с выражением `*/15 * * * *`. Cron только будит
 очереди. Он не обходит `LIVE_ADS_ENABLED`, `AUTOPILOT_ENABLED` и pilot-флаги.
 
+Конфигурация хранится в `neon.ts`. Создайте локальный gitignored-файл
+`.env.neon` с `RITM_WORKER_URL` и `RITM_WORKER_TOKEN`, затем выполните:
+
+```sh
+neon link --no-env-pull
+neon config plan --env .env.neon
+neon deploy --env .env.neon
+```
+
+Не добавляйте `.env.neon` в Git и не передавайте токен в переписке.
+
 Проверяйте не только наличие trigger, но и реальную доставку:
 
 ```sh

@@ -4,6 +4,8 @@ import {
   buildDirectCommands,
   evaluateDirectPreflight,
   executeDirectCommands,
+  heldCampaign,
+  normalizeDirectKeyword,
   reconcileDirectObjects,
 } from "./direct.js";
 import { reconcileUnifiedNetworkObjects } from "./direct-unified-network.js";
@@ -974,6 +976,299 @@ export async function executePostgresDirectPlan(
     )
     .get(prepared.business.id, prepared.change.id);
   return executionView(row);
+}
+
+// Continue a search draft only after a complete read-back proves which
+// objects exist.  This is deliberately narrower than a generic retry: the
+// campaign and group must match the stored checkpoints, the campaign must be
+// held, and only phrases that are absent from the group may be written again.
+export async function continuePostgresDirectExecution(
+  db,
+  userId,
+  businessId,
+  changeId,
+  client,
+  { enabled = false, now = Date.now() } = {},
+) {
+  if (!enabled)
+    throw new AppError(409, "Реальная запись в Директ отключена.", "live_gate");
+  const { business, change } = await directChange(
+    db,
+    userId,
+    businessId,
+    changeId,
+  );
+  const current = await db
+    .prepare(
+      "SELECT * FROM direct_executions WHERE business_id=? AND change_id=?",
+    )
+    .get(business.id, change.id);
+  if (!current)
+    throw new AppError(404, "Создание кампании ещё не начиналось.");
+  const calls = JSON.parse(current.calls_json);
+  const campaignId = calls[0]?.ids?.[0];
+  const groupId = calls[2]?.ids?.[0];
+  const recoveringKeywords =
+    current.status === "needs_reconciliation" &&
+    current.inflight_key === "keywords" &&
+    calls.length === 3 &&
+    calls[0]?.key === "campaign" &&
+    calls[1]?.key === "suspend" &&
+    calls[1]?.holdState === "OFF_DRAFT" &&
+    calls[2]?.key === "adgroup" &&
+    !!current.suspend_verified;
+  if (
+    change.plan.channel === "network" ||
+    !recoveringKeywords ||
+    !Number.isSafeInteger(campaignId) ||
+    !Number.isSafeInteger(groupId)
+  )
+    throw new AppError(
+      409,
+      "Безопасное продолжение доступно только после остановки на ключевых фразах.",
+      "direct_continue_unavailable",
+    );
+
+  const plannedPhrases = change.plan.keywords.map(normalizeDirectKeyword);
+  if (
+    plannedPhrases.some((phrase) => !phrase) ||
+    new Set(plannedPhrases).size !== plannedPhrases.length
+  )
+    throw new AppError(
+      409,
+      "После нормализации ключевые фразы совпали. Подготовьте новый план.",
+      "direct_keyword_collision",
+    );
+
+  const [campaigns, groups, keywords, ads] = await Promise.all([
+    client.campaignsByIds([campaignId]),
+    client.adGroupsByIds([groupId]),
+    client.keywordsByAdGroupId(groupId),
+    client.adsByAdGroupId(groupId),
+  ]);
+  const campaign = campaigns.Campaigns?.find(
+    (item) => String(item.Id) === String(campaignId),
+  );
+  const group = groups.AdGroups?.find(
+    (item) => String(item.Id) === String(groupId),
+  );
+  const remoteKeywords = (keywords.Keywords || []).filter(
+    (item) => item.Keyword !== "---autotargeting",
+  );
+  const remoteByPhrase = new Map(
+    remoteKeywords.map((item) => [normalizeDirectKeyword(item.Keyword), item]),
+  );
+  const missingPhrases = plannedPhrases.filter(
+    (phrase) => !remoteByPhrase.has(phrase),
+  );
+  const previousReconciliation = current.reconciliation_json
+    ? JSON.parse(current.reconciliation_json)
+    : null;
+  if (
+    !campaign ||
+    !heldCampaign(campaign) ||
+    !group ||
+    String(group.CampaignId) !== String(campaignId) ||
+    groups.LimitedBy != null ||
+    keywords.LimitedBy != null ||
+    ads.LimitedBy != null ||
+    !Array.isArray(ads.Ads || []) ||
+    (ads.Ads || []).length !== 0 ||
+    remoteKeywords.length > plannedPhrases.length ||
+    remoteKeywords.some(
+      (item) =>
+        String(item.AdGroupId) !== String(groupId) ||
+        !plannedPhrases.includes(normalizeDirectKeyword(item.Keyword)),
+    ) ||
+    remoteByPhrase.size !== remoteKeywords.length ||
+    (missingPhrases.length > 0 &&
+      previousReconciliation?.keywordRepair?.attempted === true)
+  )
+    throw new AppError(
+      409,
+      "Кампания, группа или найденные фразы не совпадают с сохранённым планом.",
+      "direct_keyword_reconciliation",
+    );
+
+  const startedAt = new Date(now).toISOString();
+  await db.transaction(async (tx) => {
+    const latest = await tx
+      .prepare(
+        "SELECT status,inflight_key,calls_json,updated_at FROM direct_executions WHERE business_id=? AND change_id=?",
+      )
+      .get(business.id, change.id);
+    if (
+      latest?.status !== "needs_reconciliation" ||
+      latest.inflight_key !== "keywords" ||
+      latest.updated_at !== current.updated_at ||
+      latest.calls_json !== current.calls_json
+    )
+      throw new AppError(409, "Исполнение изменилось во время сверки.");
+    await tx
+      .prepare(
+        "UPDATE direct_executions SET status='running',error_code=NULL,reconciliation_json=?,updated_at=? WHERE change_id=?",
+      )
+      .run(
+        JSON.stringify({
+          status: missingPhrases.length
+            ? "keyword_repair_sending"
+            : "keywords_read_back",
+          keywordRepair: {
+            attempted: missingPhrases.length > 0,
+            attemptedAt: missingPhrases.length ? startedAt : null,
+            missingCount: missingPhrases.length,
+          },
+        }),
+        startedAt,
+        change.id,
+      );
+    await addEvent(tx, business.id, {
+      kind: missingPhrases.length
+        ? "direct_keywords_repair_started"
+        : "direct_keywords_reconciled",
+      title: missingPhrases.length
+        ? "Продолжаем создание с недостающих фраз"
+        : "Ключевые фразы найдены",
+      reason: missingPhrases.length
+        ? `Полное чтение группы подтвердило отсутствие ${missingPhrases.length} фраз. Повторяются только они.`
+        : "Все фразы найдены чтением API; повторного добавления не будет.",
+      rule: "direct/execution@2",
+      jobId: change.id,
+    });
+  });
+
+  try {
+    if (missingPhrases.length) {
+      let writeError = null;
+      try {
+        await client.createKeywords(
+          missingPhrases.map((Keyword) => ({
+            AdGroupId: groupId,
+            Keyword,
+            StrategyPriority: "NORMAL",
+          })),
+        );
+      } catch (error) {
+        // A transport error can arrive after Direct has accepted the write.
+        // Always read the complete group before deciding that repair failed.
+        writeError = error;
+      }
+      const repaired = await client.keywordsByAdGroupId(groupId);
+      const repairedKeywords = (repaired.Keywords || []).filter(
+        (item) => item.Keyword !== "---autotargeting",
+      );
+      remoteByPhrase.clear();
+      for (const item of repairedKeywords)
+        remoteByPhrase.set(normalizeDirectKeyword(item.Keyword), item);
+      if (
+        repaired.LimitedBy != null ||
+        repairedKeywords.length !== plannedPhrases.length ||
+        remoteByPhrase.size !== plannedPhrases.length ||
+        plannedPhrases.some((phrase) => !remoteByPhrase.has(phrase))
+      )
+        throw (
+          writeError ||
+          new AppError(
+            409,
+            "Директ не подтвердил недостающие ключевые фразы.",
+            "keyword_repair_unconfirmed",
+          )
+        );
+    }
+
+    const keywordIds = plannedPhrases.map(
+      (phrase) => remoteByPhrase.get(phrase).Id,
+    );
+    await checkpointExecution(db, business.id, change.id, {
+      phase: "acknowledged",
+      key: "keywords",
+      ids: keywordIds,
+    });
+    const initialCalls = [
+      ...calls,
+      { key: "keywords", ids: keywordIds },
+    ];
+    const result = await executeDirectCommands(client, change.commands, {
+      initialCalls,
+      initialResults: {
+        campaign: { Id: campaignId },
+        suspend: { Id: campaignId },
+        adgroup: { Id: groupId },
+        keywords: { Id: keywordIds[0] },
+        campaignType: campaign.Type,
+      },
+      checkpoint: (item) =>
+        checkpointExecution(db, business.id, change.id, item),
+    });
+    const reconciliation = await reconcileWithRetry(() =>
+      reconcileDirectObjects(client, result.calls, change.plan),
+    );
+    if (!reconciliation?.matched)
+      throw new AppError(
+        409,
+        "Созданные объявления не прошли полную сверку.",
+        "direct_reconciliation",
+      );
+    await db.transaction(async (tx) => {
+      const at = new Date().toISOString();
+      await tx
+        .prepare(
+          "UPDATE direct_executions SET status='succeeded',inflight_key=NULL,reconciliation_json=?,updated_at=? WHERE change_id=?",
+        )
+        .run(JSON.stringify(reconciliation), at, change.id);
+      await tx
+        .prepare(
+          "UPDATE campaign_ad_lifecycle SET status='paused',reason=?,updated_at=? WHERE business_id=? AND change_id=?",
+        )
+        .run(
+          "Все фразы и объявления созданы и подтверждены чтением Директа. Показы не идут.",
+          at,
+          business.id,
+          change.id,
+        );
+      await addEvent(tx, business.id, {
+        kind: "direct_execution_verified",
+        title: "Создание объявлений завершено",
+        reason:
+          "Недостающие объекты добавлены, затем вся кампания сверена чтением API.",
+        rule: "direct/execution@2",
+        jobId: change.id,
+      });
+    });
+  } catch (error) {
+    await db.transaction(async (tx) => {
+      const at = new Date().toISOString();
+      await tx
+        .prepare(
+          "UPDATE direct_executions SET status='needs_reconciliation',error_code=?,updated_at=? WHERE change_id=?",
+        )
+        .run(error?.code || "unknown_result", at, change.id);
+      await tx
+        .prepare(
+          "UPDATE campaign_ad_lifecycle SET status='needs_reconciliation',reason=?,updated_at=? WHERE business_id=? AND change_id=?",
+        )
+        .run(
+          "Продолжение остановлено: ответ Директа снова требует сверки.",
+          at,
+          business.id,
+          change.id,
+        );
+      await addEvent(tx, business.id, {
+        kind: "direct_execution_uncertain",
+        title: "Продолжение остановлено для сверки",
+        reason: "Неподтверждённый внешний шаг не повторяется автоматически.",
+        rule: "direct/execution@2",
+        jobId: change.id,
+      });
+    });
+    throw error;
+  }
+  const completed = await db
+    .prepare(
+      "SELECT * FROM direct_executions WHERE business_id=? AND change_id=?",
+    )
+    .get(business.id, change.id);
+  return executionView(completed);
 }
 
 export async function inspectPostgresDirectExecution(

@@ -1579,12 +1579,24 @@ function App() {
                     }
                     inspectExecution={(id) =>
                       perform(async () => {
+                        const execution = ws.directChanges?.find(
+                          (item) => item.id === id,
+                        )?.execution;
+                        const canContinue =
+                          execution?.inflightKey === "keywords" &&
+                          execution.calls?.length === 3;
                         try {
                           await api(
-                            `/businesses/${ws.id}/direct/${id}/execution/inspect`,
+                            `/businesses/${ws.id}/direct/${id}/execution/${
+                              canContinue ? "continue" : "inspect"
+                            }`,
                             {},
                           );
-                          setToast("Известные объекты проверены в Директе");
+                          setToast(
+                            canContinue
+                              ? "Объявления созданы и сверены в Директе"
+                              : "Известные объекты проверены в Директе",
+                          );
                         } finally {
                           await load(ws.id);
                         }
@@ -5003,8 +5015,9 @@ function HostedPlanReview({
                       "needs_reconciliation" && (
                       <div className="inline-error" role="alert">
                         <p>
-                          Ответ Директа нужно сверить. Повторная отправка
-                          заблокирована, чтобы не создать дубликат.
+                          {directChange.execution.inflightKey === "keywords"
+                            ? "Кампания и группа созданы. Ритм сверит ключевые фразы, добавит отсутствующие и создаст объявления."
+                            : "Ответ Директа нужно сверить. Повторная отправка заблокирована, чтобы не создать дубликат."}
                         </p>
                         <button
                           type="button"
@@ -5012,7 +5025,9 @@ function HostedPlanReview({
                           disabled={busy}
                           onClick={() => inspectExecution(directChange.id)}
                         >
-                          Сверить с Директом
+                          {directChange.execution.inflightKey === "keywords"
+                            ? "Продолжить создание объявлений"
+                            : "Сверить с Директом"}
                         </button>
                       </div>
                     )}

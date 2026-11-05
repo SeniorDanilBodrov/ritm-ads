@@ -132,6 +132,12 @@ const ref = (command, field) => ({ $ref: `${command}.${field}` });
 const fingerprint = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+// Direct treats commas as keyword separators in parts of its UI, but the
+// Keywords API rejects them inside a single phrase.  Keep the plan readable
+// for the owner and normalise only the value sent to the provider.
+export const normalizeDirectKeyword = (value) =>
+  value.replaceAll(",", "").replace(/\s+/gu, " ").trim();
+
 // A command plan contains dependency references instead of guessed remote IDs.
 // The live executor must resolve each reference from the preceding API result.
 export function buildDirectCommands(input) {
@@ -205,8 +211,8 @@ export function buildDirectCommands(input) {
       method: "add",
       dependsOn: ["adgroup"],
       params: {
-        Keywords: plan.keywords.map((Keyword) => ({
-          Keyword,
+        Keywords: plan.keywords.map((keyword) => ({
+          Keyword: normalizeDirectKeyword(keyword),
           AdGroupId: ref("adgroup", "Id"),
           StrategyPriority: "NORMAL",
         })),

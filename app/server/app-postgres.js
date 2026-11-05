@@ -70,6 +70,7 @@ import {
 } from "./live-ads.js";
 import {
   confirmPostgresDirectPlan,
+  continuePostgresDirectExecution,
   executePostgresDirectPlan,
   inspectPostgresDirectExecution,
   postgresDirectChanges,
@@ -1816,6 +1817,37 @@ export function createPostgresApp({
             login: change.plan.login,
             sandbox: false,
           }),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/businesses/:id/direct/:changeId/execution/continue",
+    authenticated,
+    async (req, res) => {
+      if (!canWritePaidAdvertising(config) || config.directWritePilot !== true)
+        throw new AppError(
+          409,
+          "Продолжение создания объявлений отключено на этом сервере.",
+          "live_gate",
+        );
+      const business = await requireBusiness(db, req.user.id, req.params.id);
+      const connection = await directConnectionForBusiness(db, key, business);
+      const changes = await postgresDirectChanges(db, req.user.id, business.id);
+      const change = changes.find((item) => item.id === req.params.changeId);
+      if (!change) throw new AppError(404, "Подготовленный план не найден.");
+      res.json(
+        await continuePostgresDirectExecution(
+          db,
+          req.user.id,
+          business.id,
+          change.id,
+          directFactory({
+            accessToken: connection.credentials.access_token,
+            login: change.plan.login,
+            sandbox: false,
+          }),
+          { enabled: true },
         ),
       );
     },

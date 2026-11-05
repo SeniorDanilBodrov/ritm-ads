@@ -81,6 +81,39 @@ test("brand prompt reserves typography space without asking the model to draw le
   assert.match(prompt, /bottom-left corner/);
 });
 
+test("computer store prompt shows working devices instead of packaging", () => {
+  const prompt = creativeImagePrompt(
+    { ...input, brandPlacement: "none" },
+    {
+      state: {
+        category: "Магазин компьютерной техники",
+        service: "Ноутбуки, компьютеры и комплектующие",
+        benefit: "Поможем подобрать технику под задачи",
+      },
+    },
+  );
+  assert.match(prompt, /actual powered-on laptop or desktop PC/);
+  assert.match(prompt, /clearly visible monitor, keyboard and peripherals/);
+  assert.match(prompt, /absolutely no cardboard box/);
+  assert.match(prompt, /no .*closed packaging/);
+});
+
+test("generic retail prompt keeps the advertised product out of packaging", () => {
+  const prompt = creativeImagePrompt(
+    { ...input, brandPlacement: "none" },
+    {
+      state: {
+        category: "Розничный магазин",
+        service: "Товары для дома",
+        benefit: "Помощь консультанта",
+      },
+    },
+  );
+  assert.match(prompt, /exact advertised product clearly visible/);
+  assert.match(prompt, /out of its packaging/);
+  assert.match(prompt, /never use a cardboard box/);
+});
+
 test("advertising processor creates Direct-ready JPEGs for every supported ratio", async () => {
   const expected = {
     standard: [1200, 900],

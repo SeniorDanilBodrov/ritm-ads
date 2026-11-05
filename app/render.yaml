@@ -36,7 +36,7 @@ services:
       - key: LIVE_ADS_ENABLED
         value: "true"
       - key: AUTOPILOT_ENABLED
-        value: "false"
+        value: "true"
       - key: AUTOPILOT_WORKER_TOKEN
         generateValue: true
       - key: LIVE_PILOT_BUSINESS_ID

@@ -63,7 +63,11 @@ import {
   inspectPostgresDirectImageUpload,
   uploadApprovedPostgresCreativeToDirect,
 } from "./postgres-direct-images.js";
-import { canRunAutopilot, canWritePaidAdvertising } from "./live-ads.js";
+import {
+  canRunAutopilotForBusiness,
+  canRunLivePilotForBusiness,
+  canWritePaidAdvertising,
+} from "./live-ads.js";
 import {
   confirmPostgresDirectPlan,
   executePostgresDirectPlan,
@@ -104,6 +108,7 @@ import {
   applyPostgresOptimizerAction,
   createPostgresManualSuspendAction,
   postgresAutopilotView,
+  postgresAutopilotRuntimeView,
   rollbackPostgresOptimizerAction,
   runPostgresAutopilotTick,
 } from "./postgres-autopilot.js";
@@ -383,13 +388,15 @@ export function createPostgresApp({
   app.get("/api/health", async (_req, res) => {
     await db.prepare("SELECT 1").get();
     const paidWrites = canWritePaidAdvertising(config);
+    const worker = postgresAutopilotRuntimeView(config);
     res.json({
       ok: true,
       mode: "postgres-pilot",
       liveLaunch:
         paidWrites &&
         config.directWritePilot === true &&
-        config.directResumePilot === true,
+        config.directResumePilot === true &&
+        Boolean(config.livePilotBusinessId),
       directImageUpload:
         paidWrites &&
         config.directWritePilot === true &&
@@ -401,19 +408,23 @@ export function createPostgresApp({
       creativeImages: Boolean(config.encryptionConfigured),
       imageProvider: "kie",
       textApproval: true,
+      autopilotWorker: worker,
     });
   });
   app.get("/api/ready", async (_req, res) => {
     const version = await db
       .prepare("SELECT MAX(version) AS version FROM schema_version")
       .get();
-    res.status(Number(version?.version) === 31 ? 200 : 503).json({
-      ok: Number(version?.version) === 31,
-      ready: Number(version?.version) === 31,
+    const worker = postgresAutopilotRuntimeView(config);
+    const ready = Number(version?.version) === 31 && worker.healthy;
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      ready,
       database: {
         reachable: true,
         schemaVersion: Number(version?.version) || null,
       },
+      autopilotWorker: worker,
     });
   });
   app.get("/api/session", async (req, res) => {
@@ -1288,7 +1299,9 @@ export function createPostgresApp({
     const directModerationEnabled =
       directWriteEnabled && config.directModerationPilot === true;
     const directResumeEnabled =
-      directWriteEnabled && config.directResumePilot === true;
+      directWriteEnabled &&
+      config.directResumePilot === true &&
+      canRunLivePilotForBusiness(config, business.id);
     const directAbVariantEnabled =
       directWriteEnabled && config.directAbVariantPilot === true;
     const directAbDecisionEnabled =
@@ -1328,6 +1341,8 @@ export function createPostgresApp({
         directArchivePilot: false,
         directModerationPilot: directModerationEnabled,
         directResumePilot: directResumeEnabled,
+        livePilotEligible: canRunLivePilotForBusiness(config, business.id),
+        autopilot: canRunAutopilotForBusiness(config, business.id),
         directImageUploadPilot:
           directWriteEnabled && config.directImageUploadPilot === true,
         directBudgetPilot: false,
@@ -1962,7 +1977,8 @@ export function createPostgresApp({
       if (
         !canWritePaidAdvertising(config) ||
         config.directWritePilot !== true ||
-        config.directResumePilot !== true
+        config.directResumePilot !== true ||
+        !canRunLivePilotForBusiness(config, req.params.id)
       )
         throw new AppError(
           409,
@@ -2044,7 +2060,7 @@ export function createPostgresApp({
     "/api/businesses/:id/direct/:changeId/suspend",
     authenticated,
     async (req, res) => {
-      if (!canRunAutopilot(config))
+      if (!canRunAutopilotForBusiness(config, req.params.id))
         throw new AppError(
           409,
           "Защитные действия отключены на этом сервере.",

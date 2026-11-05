@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "./db.js";
-import { canRunAutopilot } from "./live-ads.js";
+import { canRunAutopilot, canRunAutopilotForBusiness } from "./live-ads.js";
 import { DirectClient, MetricaClient } from "./providers.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
 import { decrypt } from "./security.js";
@@ -33,6 +33,72 @@ const defaultPolicy = Object.freeze({
   efficientCpaTargetMultiple: 0.8,
   minGoalsForReallocation: 10,
 });
+
+async function monitoredTick(config, action, now = Date.now()) {
+  const runtime = config?.autopilotRuntime;
+  if (runtime) {
+    runtime.running = true;
+    runtime.attempts = Number(runtime.attempts || 0) + 1;
+    runtime.lastStartedAt = new Date(now).toISOString();
+  }
+  try {
+    const result = await action();
+    if (runtime) {
+      runtime.running = false;
+      runtime.consecutiveFailures = 0;
+      runtime.lastSucceededAt = new Date(now).toISOString();
+      runtime.lastResult = result;
+      runtime.lastError = null;
+    }
+    return result;
+  } catch (error) {
+    if (runtime) {
+      runtime.running = false;
+      runtime.consecutiveFailures =
+        Number(runtime.consecutiveFailures || 0) + 1;
+      runtime.lastFailedAt = new Date(now).toISOString();
+      runtime.lastError =
+        error instanceof Error ? error.message : "unknown_error";
+    }
+    throw error;
+  }
+}
+
+export function postgresAutopilotRuntimeView(config = {}, now = Date.now()) {
+  const runtime = config.autopilotRuntime || {};
+  const lastSuccess = Date.parse(runtime.lastSucceededAt || "");
+  const startedAt = Date.parse(runtime.startedAt || "");
+  const maximumSilenceMs = Math.max(
+    15 * 60_000,
+    (Number(config.liveDataScheduleMs) || 300_000) * 2,
+  );
+  const heartbeatFresh =
+    Number.isFinite(lastSuccess) &&
+    lastSuccess <= now &&
+    now - lastSuccess <= maximumSilenceMs;
+  const starting =
+    !Number.isFinite(lastSuccess) &&
+    Number.isFinite(startedAt) &&
+    startedAt <= now &&
+    now - startedAt <= 2 * 60_000;
+  return {
+    configured: Boolean(config.autopilotWorkerToken),
+    writeEnabled: canRunAutopilot(config),
+    pilotBusinessConfigured: Boolean(config.livePilotBusinessId),
+    running: runtime.running === true,
+    attempts: Number(runtime.attempts || 0),
+    consecutiveFailures: Number(runtime.consecutiveFailures || 0),
+    startedAt: runtime.startedAt || null,
+    lastStartedAt: runtime.lastStartedAt || null,
+    lastSucceededAt: runtime.lastSucceededAt || null,
+    lastFailedAt: runtime.lastFailedAt || null,
+    heartbeatFresh,
+    starting,
+    healthy:
+      Number(runtime.consecutiveFailures || 0) === 0 &&
+      (!canRunAutopilot(config) || heartbeatFresh || starting),
+  };
+}
 
 async function writeEvent(tx, businessId, payload, now = Date.now()) {
   const value = {
@@ -693,6 +759,33 @@ async function updateBudget(client, id, before, limitKopecks) {
   return after;
 }
 
+async function freshOptimizerEvidence(db, action, now) {
+  const guard = json(action.guard_json, {});
+  if (guard.manual === true) return true;
+  const snapshotIds = [
+    guard.sourceSnapshotId,
+    guard.reallocation?.recipient?.snapshotId,
+    guard.reallocation?.donor?.snapshotId,
+  ].filter(Boolean);
+  if (!snapshotIds.length) return false;
+  for (const snapshotId of new Set(snapshotIds)) {
+    const snapshot = await db
+      .prepare(
+        "SELECT source,received_at FROM report_snapshots WHERE id=? AND business_id=?",
+      )
+      .get(snapshotId, action.business_id);
+    const receivedAt = Date.parse(snapshot?.received_at || "");
+    if (
+      snapshot?.source !== "yandex" ||
+      !Number.isFinite(receivedAt) ||
+      receivedAt > now ||
+      now - receivedAt > 48 * 60 * 60 * 1000
+    )
+      return false;
+  }
+  return true;
+}
+
 async function applyPause(db, action, client) {
   let writeAttempted = false;
   try {
@@ -882,6 +975,12 @@ async function executeClaimedPostgresOptimizerAction(
 ) {
   let result;
   try {
+    if (!(await freshOptimizerEvidence(db, action, now)))
+      throw new AppError(
+        409,
+        "Отчёт устарел; сначала нужно получить свежие данные Директа.",
+        "optimizer_report_stale",
+      );
     const { metadata, credentials } = await currentConnection(
       db,
       action.business_id,
@@ -914,11 +1013,13 @@ async function executeClaimedPostgresOptimizerAction(
       action.action === "pause_campaign"
         ? await applyPause(db, action, client)
         : await applyReallocation(db, action, client, metadata.connectionId);
-  } catch {
+  } catch (error) {
     result = {
       status: "failed_no_write",
       reason:
-        "Подключение или контрольные данные изменились; внешняя команда не отправлялась.",
+        error instanceof AppError && error.code === "optimizer_report_stale"
+          ? "Свежий отчёт не найден; реклама не изменена."
+          : "Подключение или контрольные данные изменились; внешняя команда не отправлялась.",
     };
   }
   return db.transaction(async (tx) => {
@@ -1044,7 +1145,8 @@ export async function applyPostgresOptimizerAction(
   options = {},
 ) {
   await ownedBusiness(db, userId, businessId);
-  if (!canRunAutopilot(options.config)) return { status: "disabled" };
+  if (!canRunAutopilotForBusiness(options.config, businessId))
+    return { status: "disabled" };
   const now = options.now ?? Date.now();
   const action = await db.transaction(async (tx) => {
     const row = await tx
@@ -1091,7 +1193,7 @@ export async function rollbackPostgresOptimizerAction(
   } = {},
 ) {
   await ownedBusiness(db, userId, businessId);
-  if (!canRunAutopilot(config))
+  if (!canRunAutopilotForBusiness(config, businessId))
     throw new AppError(
       409,
       "Откат защитного действия отключён.",
@@ -1315,14 +1417,18 @@ export async function runPostgresOptimizerCycle(
   } = {},
 ) {
   if (!canRunAutopilot(config)) return { status: "disabled" };
+  if (config.production === true && !config.livePilotBusinessId)
+    return { status: "disabled" };
   const action = await db.transaction(async (tx) => {
+    const productionScope = config.production === true;
     const row = await tx
       .prepare(
         `SELECT * FROM optimizer_actions WHERE status='proposed'
          AND action IN ('pause_campaign','consider_reallocation')
+         ${productionScope ? "AND business_id=?" : ""}
          ORDER BY created_at,ctid LIMIT 1 FOR UPDATE SKIP LOCKED`,
       )
-      .get();
+      .get(...(productionScope ? [config.livePilotBusinessId] : []));
     if (!row) return null;
     await tx
       .prepare(
@@ -1396,17 +1502,27 @@ export async function runPostgresAutopilotTick(
   db,
   { key, config, now = Date.now() } = {},
 ) {
-  const reportsQueued = await schedulePostgresAutopilotReports(db, now);
-  const reviewsQueued = await schedulePostgresShadowReviews(db, now);
-  const shadow = await runPostgresShadowCycle(db, { key, config, now });
-  const optimizer = await runPostgresOptimizerCycle(db, { key, config, now });
-  return {
-    reportsQueued,
-    reviewsQueued,
-    shadow: shadow.status,
-    optimizer: optimizer.status,
-    paidWritesEnabled: canRunAutopilot(config),
-  };
+  return monitoredTick(
+    config,
+    async () => {
+      const reportsQueued = await schedulePostgresAutopilotReports(db, now);
+      const reviewsQueued = await schedulePostgresShadowReviews(db, now);
+      const shadow = await runPostgresShadowCycle(db, { key, config, now });
+      const optimizer = await runPostgresOptimizerCycle(db, {
+        key,
+        config,
+        now,
+      });
+      return {
+        reportsQueued,
+        reviewsQueued,
+        shadow: shadow.status,
+        optimizer: optimizer.status,
+        paidWritesEnabled: canRunAutopilot(config),
+      };
+    },
+    now,
+  );
 }
 
 export function startPostgresAutopilotWorker(db, { key, config } = {}) {
@@ -1420,16 +1536,33 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
   const tickEvery = Math.max(5_000, Number(config?.liveDataTickMs) || 15_000);
   const tick = () => {
     if (stopped || pending) return;
-    pending = (async () => {
-      const now = Date.now();
-      if (now - lastScheduled >= scheduleEvery) {
-        await schedulePostgresAutopilotReports(db, now);
-        await schedulePostgresShadowReviews(db, now);
-        lastScheduled = now;
-      }
-      await runPostgresShadowCycle(db, { key, config, now });
-      await runPostgresOptimizerCycle(db, { key, config, now });
-    })()
+    const now = Date.now();
+    pending = monitoredTick(
+      config,
+      async () => {
+        let reportsQueued = 0;
+        let reviewsQueued = 0;
+        if (now - lastScheduled >= scheduleEvery) {
+          reportsQueued = await schedulePostgresAutopilotReports(db, now);
+          reviewsQueued = await schedulePostgresShadowReviews(db, now);
+          lastScheduled = now;
+        }
+        const shadow = await runPostgresShadowCycle(db, { key, config, now });
+        const optimizer = await runPostgresOptimizerCycle(db, {
+          key,
+          config,
+          now,
+        });
+        return {
+          reportsQueued,
+          reviewsQueued,
+          shadow: shadow.status,
+          optimizer: optimizer.status,
+          paidWritesEnabled: canRunAutopilot(config),
+        };
+      },
+      now,
+    )
       .catch(() =>
         console.error(
           JSON.stringify({ event: "postgres_autopilot_worker_error" }),

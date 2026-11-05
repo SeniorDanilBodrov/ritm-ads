@@ -58,6 +58,18 @@ const config = {
   aiModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
   remoteAiWorkerToken: process.env.REMOTE_AI_WORKER_TOKEN,
   autopilotWorkerToken: process.env.AUTOPILOT_WORKER_TOKEN,
+  livePilotBusinessId: String(process.env.LIVE_PILOT_BUSINESS_ID || "").trim(),
+  autopilotRuntime: {
+    startedAt: new Date().toISOString(),
+    running: false,
+    attempts: 0,
+    consecutiveFailures: 0,
+    lastStartedAt: null,
+    lastSucceededAt: null,
+    lastFailedAt: null,
+    lastResult: null,
+    lastError: null,
+  },
   // Local advertising-photo generation is opt-in so a configured but stopped
   // worker cannot make the interface promise a capability that is unavailable.
   creativeImagesEnabled: process.env.CREATIVE_IMAGES_ENABLED === "true",
@@ -128,6 +140,16 @@ if (production && !isPilotOrigin(config.origin))
   throw new Error("APP_ORIGIN must use HTTPS or HTTP localhost in production");
 if (config.autopilotEnabled && !config.liveAdsEnabled)
   throw new Error("AUTOPILOT_ENABLED requires LIVE_ADS_ENABLED=true.");
+if (
+  production &&
+  (config.directResumePilot || config.autopilotEnabled) &&
+  !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    config.livePilotBusinessId,
+  )
+)
+  throw new Error(
+    "DIRECT_RESUME_PILOT_ENABLED/AUTOPILOT_ENABLED в production требуют LIVE_PILOT_BUSINESS_ID с ID единственного пилотного бизнеса.",
+  );
 const databaseTarget =
   process.env.DATABASE_URL || process.env.DATABASE_PATH || "./data/ritm.sqlite";
 if (

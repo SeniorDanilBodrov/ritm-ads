@@ -90,6 +90,17 @@ Production-trigger `ritm-autopilot-every-15-min` вызывает функцию
 `autopilotcron` каждые 15 минут. Если `AUTOPILOT_ENABLED=false`, функция будит
 чтение и очереди, но optimizer не применяет изменения к рекламе.
 
+Production-запуск и optimizer дополнительно требуют
+`LIVE_PILOT_BUSINESS_ID=<UUID бизнеса>`. На этапе пилота допускается ровно один
+UUID. Другие подключённые бизнесы получают отчёты и shadow-review, но ни
+`Campaigns.resume`, ни действие optimizer для них не выполняются. Сервер
+отказывается запускаться, если production write-флаги включены без UUID.
+
+`/api/health` публикует `autopilotWorker` без токенов и идентификаторов бизнеса:
+последний успешный tick, последнюю ошибку и свежесть heartbeat. Если
+`AUTOPILOT_ENABLED=true`, а успешного heartbeat нет дольше двух интервалов
+расписания (но не менее 15 минут), `/api/ready` отвечает 503.
+
 ## Ежедневная проверка во время пилота
 
 - `/api/health` и `/api/ready`;

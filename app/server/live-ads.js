@@ -21,6 +21,28 @@ export function canWritePaidAdvertising(config = {}) {
 }
 
 export function canRunAutopilot(config = {}) {
-  if (config.autopilotEnabled === undefined) return canWritePaidAdvertising(config);
+  if (config.autopilotEnabled === undefined)
+    return canWritePaidAdvertising(config);
   return canWritePaidAdvertising(config) && config.autopilotEnabled === true;
+}
+
+// Live launch and optimizer writes are deliberately scoped to one business
+// during the production pilot. Read-only reporting and shadow reviews stay
+// available for every connected business, but no paid write may escape this
+// allowlist. Local/test environments keep their existing behavior so isolated
+// contract tests do not need production identifiers.
+export function canRunLivePilotForBusiness(config = {}, businessId) {
+  if (!canWritePaidAdvertising(config)) return false;
+  if (config.production !== true) return true;
+  return (
+    typeof config.livePilotBusinessId === "string" &&
+    config.livePilotBusinessId.length > 0 &&
+    config.livePilotBusinessId === businessId
+  );
+}
+
+export function canRunAutopilotForBusiness(config = {}, businessId) {
+  return (
+    canRunAutopilot(config) && canRunLivePilotForBusiness(config, businessId)
+  );
 }

@@ -39,6 +39,8 @@ services:
         value: "false"
       - key: AUTOPILOT_WORKER_TOKEN
         generateValue: true
+      - key: LIVE_PILOT_BUSINESS_ID
+        sync: false
       - key: DIRECT_WRITE_PILOT_ENABLED
         value: "true"
       - key: DIRECT_MODERATION_PILOT_ENABLED

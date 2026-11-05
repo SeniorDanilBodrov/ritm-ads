@@ -116,6 +116,81 @@ test("unavailable local assistant asks a safe non-technical follow-up", async ()
   assert.doesNotMatch(result.reply, /ставк|ключев/iu);
 });
 
+test("fallback accepts a short business name as the answer to Rita's question", async () => {
+  const latin = await onboardingAssistant({
+    message: "Frank",
+    profile: {},
+    config: { aiProvider: "remote-ollama" },
+  });
+  assert.equal(latin.profile.name, "Frank");
+  assert.equal(latin.reply, "К какой сфере относится ваш бизнес?");
+
+  const cyrillic = await onboardingAssistant({
+    message: "Франк",
+    profile: {},
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(cyrillic.profile.name, "Франк");
+  assert.equal(cyrillic.reply, "К какой сфере относится ваш бизнес?");
+});
+
+test("fallback advances through short answers instead of repeating a question", async () => {
+  const category = await onboardingAssistant({
+    message: "Ремонт телефонов",
+    profile: { name: "Франк" },
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(category.profile.category, "Ремонт телефонов");
+  assert.equal(category.reply, "В каком городе вы работаете?");
+
+  const city = await onboardingAssistant({
+    message: "В Екатеринбурге",
+    profile: category.profile,
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(city.profile.city, "Екатеринбург");
+  assert.equal(city.reply, "Какую услугу или направление вы хотите продвигать?");
+
+  const budget = await onboardingAssistant({
+    message: "40 000 ₽",
+    profile: {
+      ...city.profile,
+      service: "Ремонт экранов",
+      benefit: "Гарантия и быстрый срок",
+    },
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(budget.profile.budget, 40_000);
+  assert.equal(budget.complete, true);
+});
+
+test("local Ollama response cannot lose a direct answer to the pending question", async () => {
+  const result = await onboardingAssistant({
+    message: "Frank",
+    profile: {},
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply: "Как называется ваш бизнес?",
+              profile: {},
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.provider, "ollama");
+  assert.equal(result.profile.name, "Frank");
+  assert.equal(result.reply, "К какой сфере относится ваш бизнес?");
+});
+
 test("fallback completes a clearly stated first profile when the local model is unavailable", async () => {
   const result = await onboardingAssistant({
     message:

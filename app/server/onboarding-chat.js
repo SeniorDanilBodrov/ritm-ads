@@ -121,6 +121,69 @@ function budgetFromMessage(source) {
     : null;
 }
 
+function directBudgetFromMessage(source) {
+  const match = source.match(
+    /^\s*(\d[\d\s\u00a0\u202f]*)\s*(?:руб(?:лей|ля|ль)?\.?|₽)?\s*(?:в\s+месяц)?\s*$/iu,
+  );
+  if (!match) return null;
+  const value = Number(match[1].replace(/[^\d]/gu, ""));
+  return Number.isSafeInteger(value) && value >= 1_000 && value <= 1_000_000
+    ? value
+    : null;
+}
+
+function cleanDirectAnswer(source, field) {
+  const value = source
+    .trim()
+    .replace(/^[«"']|[»"']$/gu, "")
+    .replace(/[.!]+$/gu, "")
+    .trim();
+  if (value.length < 2 || value.length > 240 || /[?\n\r]/u.test(value)) return null;
+  if (
+    /^(?:не\s+знаю|неизвестно|не\s+указано|нет\s+данных|пока\s+нет|хочу\s+рекламу|нужна\s+реклама|помоги(?:те)?)$/iu.test(
+      value,
+    )
+  )
+    return null;
+  if (field === "city") {
+    const city = value.replace(/^в\s+/iu, "").trim();
+    const normalized = {
+      москве: "Москва",
+      петербурге: "Санкт-Петербург",
+      "санкт-петербурге": "Санкт-Петербург",
+      екатеринбурге: "Екатеринбург",
+      казани: "Казань",
+      новосибирске: "Новосибирск",
+      перми: "Пермь",
+      самаре: "Самара",
+      сочи: "Сочи",
+      уфе: "Уфа",
+    };
+    return normalized[city.toLocaleLowerCase("ru-RU")] || city;
+  }
+  return value;
+}
+
+function answerForMissingField(source, profile) {
+  const field = nextMissingField(profile);
+  if (!field) return {};
+  if (field === "budget") {
+    const budget = directBudgetFromMessage(source);
+    return budget === null ? {} : { budget };
+  }
+  const value = cleanDirectAnswer(source, field);
+  if (!value) return {};
+  const limits = {
+    name: 120,
+    category: 160,
+    city: 160,
+    service: 240,
+    benefit: 240,
+  };
+  if (value.length > limits[field]) return {};
+  return { [field]: value };
+}
+
 function fallbackProfile(message, profile) {
   const source = message.trim();
   const parsed = {};
@@ -164,7 +227,11 @@ function fallbackProfile(message, profile) {
   if (benefit) parsed.benefit = benefit;
   const website = source.match(/https?:\/\/[^\s,;]+/iu)?.[0]?.replace(/[.!?]+$/u, "");
   if (website) parsed.website = website;
-  return { ...profile, ...parsed };
+  return {
+    ...profile,
+    ...answerForMissingField(source, { ...profile, ...parsed }),
+    ...parsed,
+  };
 }
 
 function fallbackReply(message, profile) {
@@ -194,6 +261,7 @@ export async function onboardingAssistant({
 }) {
   const base = config.aiOllamaUrl || "http://127.0.0.1:11434";
   if (config.aiProvider !== "ollama" || !localUrl(base)) return fallbackReply(message, profile);
+  const deterministicProfile = fallbackProfile(message, profile);
   try {
     let lastError = new Error("local model unavailable");
     for (const candidate of localCandidates(base)) {
@@ -231,7 +299,7 @@ export async function onboardingAssistant({
           JSON.parse(raw.message?.content || ""),
         );
         const merged = {
-          ...profile,
+          ...deterministicProfile,
           ...Object.fromEntries(
             Object.entries(result.profile).filter(([, value]) =>
               isMeaningful(value),

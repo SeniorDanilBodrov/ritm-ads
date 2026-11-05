@@ -81,6 +81,12 @@ curl https://<домен>/api/ready
 `ready=true` означает, что приложение подключилось к ожидаемой версии схемы.
 Это не разрешение на рекламные расходы.
 
+Перед первым контролируемым запуском добавьте
+`LIVE_PILOT_BUSINESS_ID=<UUID бизнеса>` в Render. Не включайте
+`DIRECT_RESUME_PILOT_ENABLED` или `AUTOPILOT_ENABLED` без этого значения:
+production-процесс намеренно завершится с ошибкой, чтобы write-действия не
+распространились на все подключённые кабинеты.
+
 ## 4. Фоновый запуск через Neon Function
 
 Render Free засыпает при простое, поэтому встроенный таймер не считается
@@ -104,7 +110,8 @@ RITM_WORKER_URL=https://<домен>/api/internal/autopilot/tick
 
 Production-конфигурация использует функцию `autopilotcron` и schedule-trigger
 `ritm-autopilot-every-15-min` с выражением `*/15 * * * *`. Cron только будит
-очереди. Он не обходит `LIVE_ADS_ENABLED`, `AUTOPILOT_ENABLED` и pilot-флаги.
+очереди. Он не обходит `LIVE_ADS_ENABLED`, `AUTOPILOT_ENABLED`,
+`LIVE_PILOT_BUSINESS_ID` и pilot-флаги.
 
 Конфигурация хранится в `neon.ts`. Создайте локальный gitignored-файл
 `.env.neon` с `RITM_WORKER_URL` и `RITM_WORKER_TOKEN`, затем выполните:

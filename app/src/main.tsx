@@ -9568,6 +9568,7 @@ function Creatives({
               {editingTextId === c.id ? (
                 <form
                   className="creative-text-editor"
+                  noValidate
                   onSubmit={(event) => void submitTextEdit(event, c.id)}
                 >
                   <label htmlFor={`creative-title-${c.id}`}>
@@ -9591,6 +9592,7 @@ function Creatives({
                     Основной текст
                     <textarea
                       id={`creative-body-${c.id}`}
+                      className="resize-none"
                       value={editBody}
                       maxLength={81}
                       rows={4}

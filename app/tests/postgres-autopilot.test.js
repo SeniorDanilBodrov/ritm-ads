@@ -6,7 +6,9 @@ import {
   applyPostgresOptimizerAction,
   createPostgresManualSuspendAction,
   queuePostgresOptimizerAction,
+  postgresAutopilotRuntimeView,
   rollbackPostgresOptimizerAction,
+  runPostgresAutopilotTick,
   runPostgresOptimizerCycle,
   runPostgresShadowCycle,
   schedulePostgresAutopilotReports,
@@ -54,6 +56,11 @@ const CONFIG = {
   encryptionConfigured: true,
   origin: "https://ritm.example",
 };
+const configFor = (data, overrides = {}) => ({
+  ...CONFIG,
+  livePilotBusinessId: data.businessId,
+  ...overrides,
+});
 
 function fixture() {
   const sqlite = openDatabase(":memory:");
@@ -309,18 +316,19 @@ test("PostgreSQL shadow review uses exact campaign attribution and queues a paus
 test("PostgreSQL Budget Guard suspends once and verifies read-back", async () => {
   const data = fixture();
   const campaign = installCampaign(data, { campaignId: 77 });
+  const snapshotId = storeSnapshot(data, 77);
   await queuePostgresOptimizerAction(
     data.db,
     data.businessId,
     campaign.changeId,
-    review({ spent: 180_000, clicks: 150, goals: 0 }),
+    review({ spent: 180_000, clicks: 150, goals: 0, snapshotId }),
     data.state.targetCpa,
   );
   let writes = 0;
   let suspended = false;
   const result = await runPostgresOptimizerCycle(data.db, {
     key: KEY,
-    config: CONFIG,
+    config: configFor(data),
     now: NOW,
     directFactory: () => ({
       campaignsByIds: async () => ({
@@ -353,7 +361,7 @@ test("PostgreSQL Budget Guard suspends once and verifies read-back", async () =>
     (
       await runPostgresOptimizerCycle(data.db, {
         key: KEY,
-        config: CONFIG,
+        config: configFor(data),
         directFactory: () => {
           throw new Error("must not execute");
         },
@@ -362,6 +370,37 @@ test("PostgreSQL Budget Guard suspends once and verifies read-back", async () =>
     "idle",
   );
   assert.equal(writes, 1);
+  data.sqlite.close();
+});
+
+test("PostgreSQL Budget Guard refuses a write without a fresh stored report", async () => {
+  const data = fixture();
+  const campaign = installCampaign(data, { campaignId: 77 });
+  await queuePostgresOptimizerAction(
+    data.db,
+    data.businessId,
+    campaign.changeId,
+    review({ spent: 180_000, clicks: 150, goals: 0 }),
+    data.state.targetCpa,
+  );
+  const result = await runPostgresOptimizerCycle(data.db, {
+    key: KEY,
+    config: configFor(data),
+    now: NOW,
+    directFactory: () => {
+      throw new Error("provider write must not be attempted");
+    },
+  });
+  assert.equal(result.status, "failed_no_write");
+  assert.match(result.reason, /свежий отчёт/i);
+  assert.equal(
+    data.sqlite
+      .prepare(
+        "SELECT status FROM campaign_ad_lifecycle WHERE business_id=? AND change_id=?",
+      )
+      .get(data.businessId, campaign.changeId).status,
+    "active",
+  );
   data.sqlite.close();
 });
 
@@ -385,7 +424,7 @@ test("owner-requested PostgreSQL suspension is journaled and applied once", asyn
     action.id,
     {
       key: KEY,
-      config: CONFIG,
+      config: configFor(data),
       now: NOW,
       directFactory: () => ({
         campaignsByIds: async () => ({
@@ -412,7 +451,7 @@ test("owner-requested PostgreSQL suspension is journaled and applied once", asyn
     data.userId,
     data.businessId,
     action.id,
-    { key: KEY, config: CONFIG },
+    { key: KEY, config: configFor(data) },
   );
   assert.equal(replay.status, "applied");
   assert.equal(writes, 1);
@@ -426,7 +465,20 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
     channel: "network",
   });
   const donor = installCampaign(data, { campaignId: 88 });
-  const donorReview = review({ spent: 180_000, clicks: 250, goals: 4 });
+  const recipientSnapshotId = storeSnapshot(data, 77, {
+    spent: 300_000,
+    clicks: 400,
+  });
+  const donorSnapshotId = storeSnapshot(data, 88, {
+    spent: 180_000,
+    clicks: 250,
+  });
+  const donorReview = review({
+    spent: 180_000,
+    clicks: 250,
+    goals: 4,
+    snapshotId: donorSnapshotId,
+  });
   data.sqlite
     .prepare(
       `INSERT INTO direct_shadow_reviews
@@ -446,7 +498,12 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
     data.db,
     data.businessId,
     recipient.changeId,
-    review({ spent: 300_000, clicks: 400, goals: 10 }),
+    review({
+      spent: 300_000,
+      clicks: 400,
+      goals: 10,
+      snapshotId: recipientSnapshotId,
+    }),
     data.state.targetCpa,
   );
   assert.equal(queued.action, "consider_reallocation");
@@ -471,7 +528,7 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
   };
   const result = await runPostgresOptimizerCycle(data.db, {
     key: KEY,
-    config: CONFIG,
+    config: configFor(data),
     now: NOW,
     directFactory: () => client,
   });
@@ -497,7 +554,7 @@ test("PostgreSQL autopilot transfers only the donor remainder and preserves the 
     randomUUID(),
     {
       key: KEY,
-      config: CONFIG,
+      config: configFor(data),
       directFactory: () => client,
       spendConfirmed: true,
       launchConfirmed: true,
@@ -525,7 +582,7 @@ test("PostgreSQL optimizer remains read-only while autopilot is disabled", async
   );
   const result = await runPostgresOptimizerCycle(data.db, {
     key: KEY,
-    config: { ...CONFIG, autopilotEnabled: false },
+    config: configFor(data, { autopilotEnabled: false }),
     directFactory: () => {
       throw new Error("must remain read-only");
     },
@@ -535,5 +592,60 @@ test("PostgreSQL optimizer remains read-only while autopilot is disabled", async
     data.sqlite.prepare("SELECT status FROM optimizer_actions").get().status,
     "proposed",
   );
+  data.sqlite.close();
+});
+
+test("PostgreSQL optimizer ignores a business outside the production pilot", async () => {
+  const data = fixture();
+  const campaign = installCampaign(data, { campaignId: 77 });
+  await queuePostgresOptimizerAction(
+    data.db,
+    data.businessId,
+    campaign.changeId,
+    review({ spent: 180_000, clicks: 150, goals: 0 }),
+    data.state.targetCpa,
+  );
+  const result = await runPostgresOptimizerCycle(data.db, {
+    key: KEY,
+    config: { ...CONFIG, livePilotBusinessId: randomUUID() },
+    directFactory: () => {
+      throw new Error("must remain read-only");
+    },
+  });
+  assert.equal(result.status, "idle");
+  assert.equal(
+    data.sqlite.prepare("SELECT status FROM optimizer_actions").get().status,
+    "proposed",
+  );
+  data.sqlite.close();
+});
+
+test("PostgreSQL autopilot tick publishes a bounded worker heartbeat", async () => {
+  const data = fixture();
+  const config = {
+    ...configFor(data, { autopilotEnabled: false }),
+    autopilotWorkerToken: "x".repeat(32),
+    liveDataScheduleMs: 300_000,
+    autopilotRuntime: {
+      startedAt: new Date(NOW - 1_000).toISOString(),
+      running: false,
+      attempts: 0,
+      consecutiveFailures: 0,
+    },
+  };
+  const result = await runPostgresAutopilotTick(data.db, {
+    key: KEY,
+    config,
+    now: NOW,
+  });
+  assert.equal(result.paidWritesEnabled, false);
+  const runtime = postgresAutopilotRuntimeView(config, NOW + 1_000);
+  assert.equal(runtime.configured, true);
+  assert.equal(runtime.writeEnabled, false);
+  assert.equal(runtime.attempts, 1);
+  assert.equal(runtime.consecutiveFailures, 0);
+  assert.equal(runtime.heartbeatFresh, true);
+  assert.equal(runtime.healthy, true);
+  assert.equal("lastResult" in runtime, false);
   data.sqlite.close();
 });

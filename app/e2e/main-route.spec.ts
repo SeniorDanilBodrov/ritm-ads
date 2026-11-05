@@ -17,6 +17,29 @@ async function openDemo(page: Page) {
   ).toBeVisible();
 }
 
+function shortRevision(value: string) {
+  let result = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index);
+    result = Math.imul(result, 16_777_619);
+  }
+  return (result >>> 0).toString(36);
+}
+
+function currentSearchCampaignName(
+  businessName: string,
+  imageIds: string[],
+  creatives: Array<{ id: string; title: string; text: string }>,
+) {
+  const revision = shortRevision(
+    JSON.stringify({
+      images: [...imageIds].sort(),
+      texts: creatives.map(({ id, title, text }) => ({ id, title, text })),
+    }),
+  );
+  return `${businessName} · Поиск · версия ${revision} · 3`;
+}
+
 async function mockApprovedAdPreview(
   page: Page,
   {
@@ -161,7 +184,13 @@ async function mockApprovedAdPreview(
             (connection: { provider: string }) =>
               connection.provider === "yandex",
           )?.clients?.[0]?.Login,
-          campaignName: "Форма · Поиск",
+          campaignName: duplicateBlocked
+            ? "Форма · Поиск"
+            : currentSearchCampaignName(
+                data.state.name,
+                ["image-1"],
+                data.state.creatives,
+              ),
           website: data.state.website,
           audience: "Ищут маникюр рядом",
           regionIds: [54],
@@ -464,6 +493,8 @@ test("обновлённый план с фотографией не повто�
 
   await expect.poll(() => preparedPlan).not.toBeNull();
   const campaignName = String(preparedPlan?.campaignName || "");
-  expect(campaignName).toMatch(/ · Поиск · фото /);
+  expect(campaignName).toMatch(
+    /^Студия «Форма» · Поиск · версия [a-z0-9]+ · 3$/,
+  );
   expect(campaignName).not.toBe("Студия «Форма» · Поиск");
 });

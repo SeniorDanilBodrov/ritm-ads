@@ -106,6 +106,7 @@ npm start
 | `DIRECT_RESUME_PILOT_ENABLED`              | Подтверждённый запуск показов                    |
 | `AUTOPILOT_ENABLED`                        | Budget Guard и действия optimizer                |
 | `AUTOPILOT_WORKER_TOKEN`                   | Bearer внешнего schedule-trigger                 |
+| `LIVE_PILOT_BUSINESS_ID`                   | Единственный бизнес с правом запуска/автопилота  |
 | `DIRECT_AB_VARIANT_PILOT_ENABLED`          | Создание варианта Б                              |
 | `DIRECT_AB_DECISION_PILOT_ENABLED`         | Применение финального A/B-решения                |
 | `CREATIVE_IMAGES_ENABLED`                  | Доступность генерации изображений                |
@@ -124,6 +125,9 @@ Neon trigger -> /api/internal/autopilot/tick -> PostgreSQL jobs
 ```
 
 Токен триггера не включает автопилот и не обходит write-gates.
+`/api/health` и `/api/ready` показывают последний успешный heartbeat, число
+последовательных ошибок и свежесть worker. При включённом автопилоте устаревший
+heartbeat переводит readiness в 503.
 
 ## Google и Яндекс
 

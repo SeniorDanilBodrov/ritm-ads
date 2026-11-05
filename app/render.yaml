@@ -46,7 +46,7 @@ services:
       - key: DIRECT_MODERATION_PILOT_ENABLED
         value: "true"
       - key: DIRECT_RESUME_PILOT_ENABLED
-        value: "false"
+        value: "true"
       - key: DIRECT_IMAGE_UPLOAD_PILOT_ENABLED
         value: "true"
       - key: DIRECT_ARCHIVE_PILOT_ENABLED

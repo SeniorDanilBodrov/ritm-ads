@@ -391,6 +391,14 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
 test("moderation accepts a search campaign migrated by Direct to unified objects", async () => {
   const data = fixture();
   let adReads = 0;
+  const execution = data.sqlite
+    .prepare("SELECT calls_json FROM direct_executions WHERE change_id=?")
+    .get(data.changeId);
+  const calls = JSON.parse(execution.calls_json);
+  calls.find((item) => item.key === "keywords").ids = [111, 112];
+  data.sqlite
+    .prepare("UPDATE direct_executions SET calls_json=? WHERE change_id=?")
+    .run(JSON.stringify(calls), data.changeId);
   const client = {
     campaignBudgetById: async () => ({
       Campaigns: [
@@ -466,6 +474,8 @@ test("moderation accepts a search campaign migrated by Direct to unified objects
 
   assert.equal(readiness.status, "technical_ready");
   assert.deepEqual(readiness.blockers, []);
+  assert.deepEqual(readiness.warnings, ["keyword_coverage_reduced"]);
+  assert.deepEqual(readiness.keywordCoverage, { planned: 2, active: 1 });
   assert.equal(adReads, 2);
   data.sqlite.close();
 });

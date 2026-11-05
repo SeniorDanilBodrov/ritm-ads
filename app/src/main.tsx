@@ -5995,6 +5995,8 @@ type ModerationReadiness = {
   adIds: (number | string)[];
   status: "blocked" | "technical_ready";
   blockers: string[];
+  warnings?: string[];
+  keywordCoverage?: { planned: number; active: number };
   marking: {
     basicFieldsPresent: boolean;
     findings: string[];
@@ -6194,6 +6196,14 @@ function ModerationCard({
                 <li key={code}>{moderationBlockerText[code] || code}</li>
               ))}
             </ul>
+          )}
+          {readiness.warnings?.includes("keyword_coverage_reduced") && (
+            <small>
+              Яндекс сохранил ключевых фраз: {readiness.keywordCoverage?.active}
+              {" из "}
+              {readiness.keywordCoverage?.planned}. Объявления готовы к
+              модерации; охват по фразам уменьшен.
+            </small>
           )}
           {readiness.blockers.includes("advertiser_data_incomplete") &&
             readiness.marking.findings.length > 0 && (

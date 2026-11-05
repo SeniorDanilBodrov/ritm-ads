@@ -18,6 +18,13 @@ const sameIds = (expected, actual) =>
   actual.length === expected.length &&
   expected.every((id) => actual.some((item) => String(item.Id) === String(id)));
 
+const knownKeywordSubset = (expected, actual) =>
+  Array.isArray(actual) &&
+  actual.length > 0 &&
+  actual.every((item) =>
+    expected.some((id) => String(id) === String(item.Id)),
+  );
+
 const wait = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -46,7 +53,9 @@ async function readModerationObjects(client, bundle, attempts = 4) {
       sameIds([bundle.campaignId], result.campaigns) &&
       (!bundle.network || sameIds(bundle.groupIds, result.groups)) &&
       sameIds(bundle.adIds, result.ads) &&
-      sameIds(bundle.keywordIds, result.keywords)
+      (bundle.network
+        ? sameIds(bundle.keywordIds, result.keywords)
+        : knownKeywordSubset(bundle.keywordIds, result.keywords))
     )
       return result;
   }
@@ -314,7 +323,9 @@ export async function inspectPostgresDirectControl(
   if (
     !sameIds(bundle.groupIds, groups) ||
     !sameIds(bundle.adIds, ads) ||
-    !sameIds(bundle.keywordIds, keywords)
+    (bundle.network
+      ? !sameIds(bundle.keywordIds, keywords)
+      : !knownKeywordSubset(bundle.keywordIds, keywords))
   )
     throw new AppError(502, "Директ не вернул полный состав кампании.");
   const remote = campaigns[0];
@@ -546,7 +557,12 @@ export async function inspectPostgresModerationReadiness(
     throw new AppError(502, "Директ не вернул созданную кампанию.");
   if (bundle.network && !sameIds(bundle.groupIds, groups))
     throw new AppError(502, "Директ не вернул группу сетевой кампании.");
-  if (!sameIds(bundle.adIds, ads) || !sameIds(bundle.keywordIds, keywords))
+  if (
+    !sameIds(bundle.adIds, ads) ||
+    (bundle.network
+      ? !sameIds(bundle.keywordIds, keywords)
+      : !knownKeywordSubset(bundle.keywordIds, keywords))
+  )
     throw new AppError(
       502,
       `Директ вернул не все объекты: объявления ${ads?.length || 0} из ${bundle.adIds.length}, фразы ${keywords?.length || 0} из ${bundle.keywordIds.length}. Повторите проверку через минуту.`,
@@ -555,6 +571,13 @@ export async function inspectPostgresModerationReadiness(
   const budget = periodBudget(remote, bundle.network);
   const marking = summarizeDirectMarking(markingResponse, now);
   const blockers = [];
+  const warnings = [];
+  if (
+    !bundle.network &&
+    Array.isArray(keywords) &&
+    keywords.length < bundle.keywordIds.length
+  )
+    warnings.push("keyword_coverage_reduced");
   if (!(
     remote.State === "SUSPENDED" ||
     (remote.State === "OFF" && remote.Status === "DRAFT")
@@ -656,6 +679,11 @@ export async function inspectPostgresModerationReadiness(
     checkedAt: new Date(now).toISOString(),
     status: blockers.length ? "blocked" : "technical_ready",
     blockers,
+    warnings,
+    keywordCoverage: {
+      planned: bundle.keywordIds.length,
+      active: keywords.length,
+    },
     marking: {
       basicFieldsPresent: marking.basicFieldsPresent,
       findings: marking.findings,

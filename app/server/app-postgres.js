@@ -1303,9 +1303,13 @@ export function createPostgresApp({
       config.directResumePilot === true &&
       canRunLivePilotForBusiness(config, business.id);
     const directAbVariantEnabled =
-      directWriteEnabled && config.directAbVariantPilot === true;
+      directWriteEnabled &&
+      config.directAbVariantPilot === true &&
+      canRunLivePilotForBusiness(config, business.id);
     const directAbDecisionEnabled =
-      directWriteEnabled && config.directAbDecisionPilot === true;
+      directWriteEnabled &&
+      config.directAbDecisionPilot === true &&
+      canRunLivePilotForBusiness(config, business.id);
     const autopilot = await postgresAutopilotView(db, req.user.id, business.id);
     res.json({
       id: business.id,
@@ -1479,10 +1483,12 @@ export function createPostgresApp({
     "/api/businesses/:id/direct/ab-plans/:planId/decision",
     authenticated,
     async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
       if (
         !canWritePaidAdvertising(config) ||
         config.directWritePilot !== true ||
-        config.directAbDecisionPilot !== true
+        config.directAbDecisionPilot !== true ||
+        !canRunLivePilotForBusiness(config, business.id)
       )
         throw new AppError(
           409,
@@ -1502,7 +1508,6 @@ export function createPostgresApp({
         })
         .strict()
         .parse(req.body);
-      const business = await requireBusiness(db, req.user.id, req.params.id);
       const plan = await postgresDirectAbPlanView(
         db,
         req.user.id,
@@ -1582,10 +1587,12 @@ export function createPostgresApp({
     "/api/businesses/:id/direct/:changeId/ab-variant",
     authenticated,
     async (req, res) => {
+      const business = await requireBusiness(db, req.user.id, req.params.id);
       if (
         !canWritePaidAdvertising(config) ||
         config.directWritePilot !== true ||
-        config.directAbVariantPilot !== true
+        config.directAbVariantPilot !== true ||
+        !canRunLivePilotForBusiness(config, business.id)
       )
         throw new AppError(
           409,
@@ -1604,7 +1611,6 @@ export function createPostgresApp({
         })
         .strict()
         .parse(req.body);
-      const business = await requireBusiness(db, req.user.id, req.params.id);
       const change = (
         await postgresDirectChanges(db, req.user.id, business.id)
       ).find((item) => item.id === req.params.changeId);

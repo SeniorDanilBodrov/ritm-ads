@@ -158,7 +158,7 @@ function installCampaign(
 function storeSnapshot(
   data,
   campaignId,
-  { spent = 180_000, clicks = 150 } = {},
+  { spent = 180_000, clicks = 150, conversions = 0 } = {},
 ) {
   const jobId = randomUUID();
   const snapshotId = randomUUID();
@@ -174,7 +174,7 @@ function storeSnapshot(
       spent,
       clicks,
       impressions: clicks * 10,
-      conversions: 0,
+      conversions,
     },
   ];
   data.sqlite
@@ -517,6 +517,47 @@ test("PostgreSQL shadow review uses exact campaign attribution and queues a paus
       .get(campaign.changeId).status,
     "proposed",
   );
+  data.sqlite.close();
+});
+
+test("Yandex landing shadow review uses exact Direct conversions without Metrica", async () => {
+  const data = fixture();
+  const state = { ...data.state };
+  state.landingMode = "yandex_landing";
+  state.website = "https://forma.clients.site/";
+  delete state.counterId;
+  delete state.goalId;
+  data.sqlite
+    .prepare("UPDATE businesses SET state=? WHERE id=?")
+    .run(JSON.stringify(state), data.businessId);
+  const campaign = installCampaign(data, { campaignId: 77 });
+  delete campaign.plan.counterId;
+  delete campaign.plan.goalId;
+  campaign.plan.website = state.website;
+  data.sqlite
+    .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+    .run(JSON.stringify(campaign.plan), campaign.changeId);
+  storeSnapshot(data, 77, { conversions: 12 });
+  assert.equal(await schedulePostgresShadowReviews(data.db, NOW), 1);
+  const result = await runPostgresShadowCycle(data.db, {
+    key: KEY,
+    now: NOW,
+    directFactory: () => ({
+      campaignsByIds: async () => ({
+        Campaigns: [{ Id: 77, State: "ON", Status: "ACCEPTED" }],
+      }),
+    }),
+    metricaFactory: () => ({
+      campaignStatistics: async () => {
+        throw new Error("Yandex landing must not call Metrica");
+      },
+    }),
+  });
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.review.source.attribution, "direct_report_conversions");
+  assert.equal(result.review.source.direct.conversions, 12);
+  assert.equal(result.review.source.campaignGoalReaches, 12);
+  assert.equal(result.review.source.campaignVisits, null);
   data.sqlite.close();
 });
 

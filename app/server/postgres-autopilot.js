@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AppError } from "./db.js";
+import {
+  analyticsAttribution,
+  usesDirectConversions,
+} from "./analytics-attribution.js";
 import { canRunAutopilot, canRunAutopilotForBusiness } from "./live-ads.js";
 import { DirectClient, MetricaClient } from "./providers.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
@@ -380,7 +384,9 @@ function observedPerformance(review, policy) {
   if (
     review?.status !== "observed" ||
     review?.executed !== false ||
-    source?.attribution !== "direct_campaign_last_significant" ||
+    !["direct_campaign_last_significant", "direct_report_conversions"].includes(
+      source?.attribution,
+    ) ||
     !Number.isSafeInteger(source?.direct?.spentKopecks) ||
     !Number.isSafeInteger(source?.direct?.clicks) ||
     !Number.isSafeInteger(source?.campaignGoalReaches) ||
@@ -628,14 +634,15 @@ async function createShadowReview(
   const plan = json(row.plan_json, {});
   const metadata = json(row.metadata, {});
   const remoteId = campaignId(row.calls_json);
+  const attribution = analyticsAttribution(state, plan);
   if (
     row.lifecycle_status !== "active" ||
     remoteId === null ||
     row.connection_id !== payload.connectionId ||
     metadata.connectionId !== payload.connectionId ||
     metadata.sandbox === true ||
-    String(state.counterId || "") !== String(plan.counterId || "") ||
-    String(state.goalId || "") !== String(plan.goalId || "")
+    !attribution.ready ||
+    attribution.changed
   )
     throw new AppError(409, "Кампания, аналитика или подключение изменились.");
   const receivedAt = Date.parse(row.received_at);
@@ -656,33 +663,37 @@ async function createShadowReview(
     spentKopecks: safeSum(rows, "spent"),
     clicks: safeSum(rows, "clicks"),
     impressions: safeSum(rows, "impressions"),
+    conversions: safeSum(rows, "conversions"),
   };
   const credentials = decrypt(row.encrypted, key, `${job.business_id}:yandex`);
-  const metrica = metricaFactory(credentials.access_token);
   const directClient = directFactory({
     accessToken: credentials.access_token,
     login: plan.login,
     sandbox: false,
   });
+  const directAttribution = usesDirectConversions(state);
   const [stats, remote] = await Promise.all([
-    metrica.campaignStatistics(
-      plan.counterId,
-      plan.goalId,
-      remoteId,
-      plan.periodStart,
-      row.date_to,
-    ),
+    directAttribution
+      ? Promise.resolve(null)
+      : metricaFactory(credentials.access_token).campaignStatistics(
+          plan.counterId,
+          plan.goalId,
+          remoteId,
+          plan.periodStart,
+          row.date_to,
+        ),
     directClient.campaignsByIds([remoteId]),
   ]);
   const totals = stats?.totals;
   const campaign = remote?.Campaigns?.length === 1 ? remote.Campaigns[0] : null;
   if (
-    !Array.isArray(totals) ||
-    totals.length !== 2 ||
-    totals.some(
-      (value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0,
-    ) ||
-    stats.sampled === true ||
+    (!directAttribution &&
+      (!Array.isArray(totals) ||
+        totals.length !== 2 ||
+        totals.some(
+          (value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0,
+        ) ||
+        stats.sampled === true)) ||
     campaign?.Id !== remoteId ||
     campaign.State !== "ON"
   )
@@ -705,10 +716,14 @@ async function createShadowReview(
         ? "Расход и обращения сопоставлены только с этой кампанией; решение ограничено защитными правилами."
         : "Расхода пока нет; реклама не менялась.",
     source: {
-      attribution: "direct_campaign_last_significant",
+      attribution: directAttribution
+        ? "direct_report_conversions"
+        : "direct_campaign_last_significant",
       direct,
-      campaignGoalReaches: Number(totals[1]),
-      campaignVisits: Number(totals[0]),
+      campaignGoalReaches: directAttribution
+        ? direct.conversions
+        : Number(totals[1]),
+      campaignVisits: directAttribution ? null : Number(totals[0]),
       campaignState: { state: campaign.State, status: campaign.Status },
     },
   };

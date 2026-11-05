@@ -434,6 +434,8 @@ test("live workspace can update its local profile without enabling ad writes", a
   const current = await send(`/api/workspace?businessId=${ws.id}`, { cookie });
   assert.equal(current.body.state.website, website);
   assert.equal(current.body.state.landingMode, "yandex_landing");
+  assert.equal(current.body.state.counterId, undefined);
+  assert.equal(current.body.state.goalId, undefined);
   assert.equal(
     (
       await send(`/api/businesses/${ws.id}/command`, {

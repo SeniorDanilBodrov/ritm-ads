@@ -384,6 +384,40 @@ test("PostgreSQL launch resumes one verified campaign once", async () => {
   data.sqlite.close();
 });
 
+test("PostgreSQL launch accepts a Yandex landing with Direct conversion attribution", async () => {
+  const data = fixture();
+  const state = {
+    mode: "live",
+    name: "Форма",
+    website: data.plan.website,
+    landingMode: "yandex_landing",
+    budget: data.plan.budget,
+  };
+  data.sqlite
+    .prepare("UPDATE businesses SET state=? WHERE id=?")
+    .run(JSON.stringify(state), data.businessId);
+  delete data.plan.counterId;
+  delete data.plan.goalId;
+  data.sqlite
+    .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+    .run(JSON.stringify(data.plan), data.changeId);
+  const client = directClient(data);
+  const result = await resumePostgresVerifiedCampaign(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    confirmations(data),
+  );
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.afterState, "ON");
+  assert.equal(client.writes, 1);
+  data.sqlite.close();
+});
+
 test("PostgreSQL launch resumes a verified network campaign without keywords", async () => {
   const data = networkFixture();
   const client = directClient(data);

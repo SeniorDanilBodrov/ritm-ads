@@ -2719,6 +2719,10 @@ export function createApp({
               targetCpa: s.targetCpa,
             };
             Object.assign(s, parsed);
+            if (parsed.landingMode === "yandex_landing") {
+              delete s.counterId;
+              delete s.goalId;
+            }
             if (budgetChanged) rebalance(s);
             s.settingsRevision++;
             entries = [

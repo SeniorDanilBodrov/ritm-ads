@@ -372,6 +372,46 @@ test("мобильное меню ведёт к бизнесу, странице
   ).toBeVisible();
 });
 
+test("страница Яндекса показывает источник обращений без Метрики", async ({
+  page,
+}) => {
+  await openDemo(page);
+  await page.route("**/api/workspace?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.state.mode = "live";
+    data.state.landingMode = "yandex_landing";
+    data.state.website = "https://forma.clients.site/";
+    delete data.state.counterId;
+    delete data.state.goalId;
+    data.connections = [
+      {
+        provider: "yandex",
+        connectedAt: "2026-11-05T09:00:00.000Z",
+        sandbox: false,
+        validation: "verified",
+        clients: [{ Login: "e2e-direct", ClientId: 101, Currency: "RUB" }],
+      },
+    ];
+    await route.fulfill({ response, json: data });
+  });
+  await page.reload();
+  await page
+    .getByRole("button", { name: /^Страница(?: и Директ)?$/ })
+    .first()
+    .click();
+
+  await expect(
+    page.getByText("Обращения подключены без Метрики", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Источник — показатель «Конверсии» в отчёте Директа/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Найти сайт в Метрике" }),
+  ).toHaveCount(0);
+});
+
 test("согласованные текст и изображение заменяют пустую рамку готовым объявлением", async ({
   page,
 }) => {

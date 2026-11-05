@@ -2656,6 +2656,10 @@ export function createPostgresApp({
             );
           const budgetChanged = parsed.budget !== state.budget;
           Object.assign(state, parsed);
+          if (parsed.landingMode === "yandex_landing") {
+            delete state.counterId;
+            delete state.goalId;
+          }
           if (budgetChanged) rebalance(state);
           state.postgresPilot = {
             ...(state.postgresPilot || {}),

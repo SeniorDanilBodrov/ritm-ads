@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "./db.js";
+import { analyticsAttribution } from "./analytics-attribution.js";
 import { summarizeDirectMarking } from "./direct-marking.js";
 
 const activeStatuses = "('checking','sending','needs_reconciliation')";
@@ -297,14 +298,9 @@ export async function inspectPostgresDirectControl(
     bundle.network || remote.Type === "UNIFIED_CAMPAIGN"
       ? "UNIFIED_AD_GROUP"
       : "TEXT_AD_GROUP";
-  const stateCounterId = String(bundle.business.state.counterId || "");
-  const stateGoalId = String(bundle.business.state.goalId || "");
-  const planCounterId = String(bundle.plan.counterId || "");
-  const planGoalId = String(bundle.plan.goalId || "");
-  if (!/^\d+$/.test(stateCounterId) || !/^\d+$/.test(stateGoalId))
-    blockers.push("analytics_not_configured");
-  else if (stateCounterId !== planCounterId || stateGoalId !== planGoalId)
-    blockers.push("analytics_changed");
+  const attribution = analyticsAttribution(bundle.business.state, bundle.plan);
+  if (!attribution.ready) blockers.push("analytics_not_configured");
+  else if (attribution.changed) blockers.push("analytics_changed");
   if (
     !campaignTypeMatchesPlan(remote.Type, bundle.network) ||
     remote.Currency !== "RUB"
@@ -389,6 +385,10 @@ export async function inspectPostgresDirectControl(
       spentKopecks: spend?.spentKopecks ?? null,
       reportReceivedAt: spend?.receivedAt ?? null,
       reportDateTo: spend?.dateTo ?? null,
+    },
+    analytics: {
+      source: attribution.source,
+      ready: attribution.ready && !attribution.changed,
     },
     remote: {
       state: remote.State,

@@ -4951,6 +4951,19 @@ textarea.resize-none {
   text-underline-offset: 3px;
 }
 
+.direct-conversion-source > span {
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.direct-conversion-source small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .no-site-limit {
   margin-top: 13px;
 }

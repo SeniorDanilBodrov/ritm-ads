@@ -436,6 +436,10 @@ export type DirectControlReview = {
     reportReceivedAt: string | null;
     reportDateTo: string | null;
   };
+  analytics?: {
+    source: "metrica" | "direct_conversions";
+    ready: boolean;
+  };
   remote: {
     state: string;
     status: string;

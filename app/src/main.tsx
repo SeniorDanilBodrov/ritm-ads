@@ -4113,8 +4113,12 @@ function HostedPlanReview({
       targetCpa: ws.state.targetCpa,
       periodStart: period.start,
       periodEnd: period.end,
-      ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
-      ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.counterId
+        ? { counterId: ws.state.counterId }
+        : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.goalId
+        ? { goalId: ws.state.goalId }
+        : {}),
       creativeAssetIds,
       ads: Array.from({ length: searchAdCount }, (_, index) => {
         const item = approvedTexts[index % approvedTexts.length];
@@ -4137,8 +4141,12 @@ function HostedPlanReview({
       budget: networkBudget,
       periodStart: period.start,
       periodEnd: period.end,
-      ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
-      ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.counterId
+        ? { counterId: ws.state.counterId }
+        : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.goalId
+        ? { goalId: ws.state.goalId }
+        : {}),
       creativeAssetIds,
       ads: [
         {
@@ -6988,8 +6996,12 @@ function DirectPlanBuilder({
       targetCpa: Math.round(targetCpa * 100),
       periodStart,
       periodEnd,
-      ...(ws.state.counterId ? { counterId: ws.state.counterId } : {}),
-      ...(ws.state.goalId ? { goalId: ws.state.goalId } : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.counterId
+        ? { counterId: ws.state.counterId }
+        : {}),
+      ...(ws.state.landingMode !== "yandex_landing" && ws.state.goalId
+        ? { goalId: ws.state.goalId }
+        : {}),
       ...(creativeAssetId ? { creativeAssetId } : {}),
       ads: aiPlan
         ? aiPlan.plan.ads.map((ad) => ({
@@ -10539,6 +10551,16 @@ function Connections({
                         обращения из отчёта Директа.
                       </small>
                     </form>
+                    <div className="destination-saved direct-conversion-source">
+                      <CheckCircle2 size={17} />
+                      <span>
+                        <b>Обращения подключены без Метрики</b>
+                        <small>
+                          Источник — показатель «Конверсии» в отчёте Директа по
+                          этой кампании.
+                        </small>
+                      </span>
+                    </div>
                     {ws.state.landingMode === "yandex_landing" &&
                       ws.state.website && (
                         <div className="destination-saved" role="status">

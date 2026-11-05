@@ -18,6 +18,41 @@ const sameIds = (expected, actual) =>
   actual.length === expected.length &&
   expected.every((id) => actual.some((item) => String(item.Id) === String(id)));
 
+const wait = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function readModerationObjects(client, bundle, attempts = 4) {
+  let result = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await wait(300 * 2 ** (attempt - 1));
+    const [campaignResult, groupsResult, adsResult, keywordsResult] =
+      await Promise.all([
+        client.campaignBudgetById(bundle.campaignId),
+        bundle.network
+          ? client.adGroupsByIds(bundle.groupIds)
+          : Promise.resolve({ AdGroups: [] }),
+        client.adsByIds(bundle.adIds),
+        bundle.keywordIds.length
+          ? client.keywordsByIds(bundle.keywordIds)
+          : Promise.resolve({ Keywords: [] }),
+      ]);
+    result = {
+      campaigns: campaignResult?.Campaigns,
+      groups: groupsResult?.AdGroups,
+      ads: adsResult?.Ads,
+      keywords: keywordsResult?.Keywords,
+    };
+    if (
+      sameIds([bundle.campaignId], result.campaigns) &&
+      (!bundle.network || sameIds(bundle.groupIds, result.groups)) &&
+      sameIds(bundle.adIds, result.ads) &&
+      sameIds(bundle.keywordIds, result.keywords)
+    )
+      return result;
+  }
+  return result;
+}
+
 function actionView(row) {
   return {
     id: row.id,
@@ -502,27 +537,11 @@ export async function inspectPostgresModerationReadiness(
     changeId,
     currentConnectionId,
   );
-  const [
-    campaignResult,
-    groupsResult,
-    adsResult,
-    keywordsResult,
-    markingResponse,
-  ] = await Promise.all([
-    client.campaignBudgetById(bundle.campaignId),
-    bundle.network
-      ? client.adGroupsByIds(bundle.groupIds)
-      : Promise.resolve({ AdGroups: [] }),
-    client.adsByIds(bundle.adIds),
-    bundle.keywordIds.length
-      ? client.keywordsByIds(bundle.keywordIds)
-      : Promise.resolve({ Keywords: [] }),
+  const [objects, markingResponse] = await Promise.all([
+    readModerationObjects(client, bundle),
     client.advertiserMarkingDetails(),
   ]);
-  const campaigns = campaignResult?.Campaigns;
-  const groups = groupsResult?.AdGroups;
-  const ads = adsResult?.Ads;
-  const keywords = keywordsResult?.Keywords;
+  const { campaigns, groups, ads, keywords } = objects || {};
   if (!sameIds([bundle.campaignId], campaigns))
     throw new AppError(502, "Директ не вернул созданную кампанию.");
   if (bundle.network && !sameIds(bundle.groupIds, groups))
@@ -530,7 +549,7 @@ export async function inspectPostgresModerationReadiness(
   if (!sameIds(bundle.adIds, ads) || !sameIds(bundle.keywordIds, keywords))
     throw new AppError(
       502,
-      "Директ не вернул полный состав объявлений и фраз.",
+      `Директ вернул не все объекты: объявления ${ads?.length || 0} из ${bundle.adIds.length}, фразы ${keywords?.length || 0} из ${bundle.keywordIds.length}. Повторите проверку через минуту.`,
     );
   const remote = campaigns[0];
   const budget = periodBudget(remote, bundle.network);

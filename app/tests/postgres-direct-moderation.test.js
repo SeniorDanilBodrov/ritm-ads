@@ -390,6 +390,7 @@ test("PostgreSQL moderation sends a verified draft once and keeps shows off", as
 
 test("moderation accepts a search campaign migrated by Direct to unified objects", async () => {
   const data = fixture();
+  let adReads = 0;
   const client = {
     campaignBudgetById: async () => ({
       Campaigns: [
@@ -419,7 +420,10 @@ test("moderation accepts a search campaign migrated by Direct to unified objects
       ],
     }),
     adsByIds: async () => ({
-      Ads: [
+      Ads:
+        ++adReads === 1
+          ? []
+          : [
         {
           Id: 99,
           CampaignId: 77,
@@ -462,6 +466,7 @@ test("moderation accepts a search campaign migrated by Direct to unified objects
 
   assert.equal(readiness.status, "technical_ready");
   assert.deepEqual(readiness.blockers, []);
+  assert.equal(adReads, 2);
   data.sqlite.close();
 });
 

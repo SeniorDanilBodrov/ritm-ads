@@ -1061,6 +1061,7 @@ export async function continuePostgresDirectExecution(
   const missingPhrases = plannedPhrases.filter(
     (phrase) => !remoteByPhrase.has(phrase),
   );
+  const keywordRepairVersion = 2;
   const previousReconciliation = current.reconciliation_json
     ? JSON.parse(current.reconciliation_json)
     : null;
@@ -1082,7 +1083,9 @@ export async function continuePostgresDirectExecution(
     ) ||
     remoteByPhrase.size !== remoteKeywords.length ||
     (missingPhrases.length > 0 &&
-      previousReconciliation?.keywordRepair?.attempted === true)
+      previousReconciliation?.keywordRepair?.attempted === true &&
+      Number(previousReconciliation.keywordRepair.version || 0) >=
+        keywordRepairVersion)
   )
     throw new AppError(
       409,
@@ -1115,6 +1118,7 @@ export async function continuePostgresDirectExecution(
             : "keywords_read_back",
           keywordRepair: {
             attempted: missingPhrases.length > 0,
+            version: keywordRepairVersion,
             attemptedAt: missingPhrases.length ? startedAt : null,
             missingCount: missingPhrases.length,
           },

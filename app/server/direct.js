@@ -132,11 +132,17 @@ const ref = (command, field) => ({ $ref: `${command}.${field}` });
 const fingerprint = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-// Direct treats commas as keyword separators in parts of its UI, but the
-// Keywords API rejects them inside a single phrase.  Keep the plan readable
-// for the owner and normalise only the value sent to the provider.
+// Direct accepts letters, numbers and its match operators in keyword phrases,
+// but generated retail queries often contain separators such as commas,
+// slashes or ampersands.  Operators are not generated intentionally, so send
+// a conservative phrase made only from words, numbers and internal hyphens.
 export const normalizeDirectKeyword = (value) =>
-  value.replaceAll(",", "").replace(/\s+/gu, " ").trim();
+  value
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+    .replace(/(^|\s)-+|-+(?=\s|$)/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
 
 // A command plan contains dependency references instead of guessed remote IDs.
 // The live executor must resolve each reference from the preceding API result.

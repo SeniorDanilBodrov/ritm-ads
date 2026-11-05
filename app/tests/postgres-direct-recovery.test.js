@@ -56,8 +56,8 @@ function fixture() {
     goalId: "456",
     keywords: [
       "купить компьютер, Екатеринбург",
-      "магазин компьютерной техники",
-      "игровой компьютер Екатеринбург",
+      "ПК/ноутбук & комплектующие",
+      "игровой компьютер — Екатеринбург",
     ],
     ads: [
       {
@@ -118,7 +118,11 @@ function fixture() {
       ]),
       now,
       now,
-      JSON.stringify({ status: "incomplete", unresolvedStep: "keywords" }),
+      JSON.stringify({
+        status: "keyword_repair_sending",
+        unresolvedStep: "keywords",
+        keywordRepair: { attempted: true, missingCount: 3 },
+      }),
     );
   sqlite
     .prepare(
@@ -195,6 +199,8 @@ test("PostgreSQL recovery adds only missing normalized phrases and then creates 
     ["keywords", "ads"],
   );
   assert.equal(writes[0][1][0].Keyword, "купить компьютер Екатеринбург");
+  assert.equal(writes[0][1][1].Keyword, "ПК ноутбук комплектующие");
+  assert.equal(writes[0][1][2].Keyword, "игровой компьютер Екатеринбург");
   assert.equal(writes[0][1].length, 3);
   assert.equal(writes[1][1].length, 2);
   const stored = data.sqlite

@@ -3896,17 +3896,20 @@ function HostedPlanReview({
       image.approvedAt &&
       image.directUploads.some((upload) => upload.login === directLogin),
   );
+  const [imagesSkipped, setImagesSkipped] = useState(false);
   const [creativeAssetIds, setCreativeAssetIds] = useState<string[]>(() =>
     directReadyImages.slice(0, 5).map((image) => image.id),
   );
-  const selectedCreativeImages = directReadyImages.filter((image) =>
-    creativeAssetIds.includes(image.id),
-  );
+  useEffect(() => setImagesSkipped(false), [ws.id]);
+  const selectedCreativeImages = imagesSkipped
+    ? []
+    : directReadyImages.filter((image) => creativeAssetIds.includes(image.id));
   const selectedCreativeImage =
     selectedCreativeImages[0] || directReadyImages[0] || null;
   const searchAdCount = Math.max(approvedTexts.length, creativeAssetIds.length);
-  const previewCreativeImage =
-    selectedCreativeImage || approvedImages[0] || null;
+  const previewCreativeImage = imagesSkipped
+    ? null
+    : selectedCreativeImage || approvedImages[0] || null;
   const previewText = approvedTexts[0] || null;
   const previewImageIsInDirect = Boolean(
     previewCreativeImage?.directUploads.some(
@@ -3946,13 +3949,14 @@ function HostedPlanReview({
     );
   useEffect(() => {
     setCreativeAssetIds((current) => {
+      if (imagesSkipped) return current.length ? [] : current;
       const available = new Set(directReadyImages.map((image) => image.id));
       const valid = current.filter((id) => available.has(id)).slice(0, 5);
       return valid.length
         ? valid
         : directReadyImages.slice(0, 5).map((image) => image.id);
     });
-  }, [directLogin, ws.creativeImages]);
+  }, [directLogin, ws.creativeImages, imagesSkipped]);
   const sameImageSelection = (item: DirectChange) => {
     const planIds = item.plan?.creativeAssetIds?.length
       ? item.plan.creativeAssetIds
@@ -3965,7 +3969,9 @@ function HostedPlanReview({
     );
   };
   const allocation = plan?.plan.budgetAllocation || [];
-  const useNetwork = Boolean(plan?.plan.channels.includes("network"));
+  const useNetwork = Boolean(
+    plan?.plan.channels.includes("network") && creativeAssetIds.length,
+  );
   const expectedChannelCount = useNetwork ? 2 : 1;
   const networkPercent = useNetwork
     ? Math.min(
@@ -4084,6 +4090,11 @@ function HostedPlanReview({
   const period = nextCampaignPeriod("", "");
   const regionId = /екатеринбург/i.test(ws.state.city) ? 54 : null;
 
+  function continueWithoutImages() {
+    setCreativeAssetIds([]);
+    setImagesSkipped(true);
+  }
+
   async function prepareHeldDraft() {
     if (!plan) {
       setLocalError("Сначала подготовьте рекламный план.");
@@ -4107,12 +4118,6 @@ function HostedPlanReview({
       );
       return;
     }
-    if (!creativeAssetIds.length) {
-      setLocalError(
-        "Выберите хотя бы одно изображение. Можно выбрать до пяти вариантов.",
-      );
-      return;
-    }
     setPreparingCampaigns(true);
     setLocalError("");
     const searchPlan: DirectPlan = {
@@ -4131,7 +4136,7 @@ function HostedPlanReview({
       ...(ws.state.landingMode !== "yandex_landing" && ws.state.goalId
         ? { goalId: ws.state.goalId }
         : {}),
-      creativeAssetIds,
+      ...(creativeAssetIds.length ? { creativeAssetIds } : {}),
       ads: Array.from({ length: searchAdCount }, (_, index) => {
         const item = approvedTexts[index % approvedTexts.length];
         return {
@@ -4423,18 +4428,22 @@ function HostedPlanReview({
                 </span>
                 <div>
                   <h3>
-                    {directReadyImages.length
-                      ? "Изображение готово для Директа"
-                      : approvedImages.length
-                        ? "Изображение согласовано"
-                        : "Теперь подготовьте изображения"}
+                    {imagesSkipped
+                      ? "Можно запустить без изображения"
+                      : directReadyImages.length
+                        ? "Изображение готово для Директа"
+                        : approvedImages.length
+                          ? "Изображение согласовано"
+                          : "Теперь подготовьте изображения"}
                   </h3>
                   <p>
-                    {directReadyImages.length
-                      ? "Согласованный вариант добавлен в выбранный кабинет Директа."
-                      : approvedImages.length
-                        ? "Ниже уже собрана реклама с выбранной фотографией и текстом. Осталось добавить изображение в Директ."
-                        : "Рита предложит сюжеты по вашему описанию. Вы сами выберете, какие варианты можно использовать в рекламе."}
+                    {imagesSkipped
+                      ? "Ритм подготовит текстовые объявления в поиске. Изображение можно добавить позже новым запуском."
+                      : directReadyImages.length
+                        ? "Согласованный вариант добавлен в выбранный кабинет Директа."
+                        : approvedImages.length
+                          ? "Ниже уже собрана реклама с выбранной фотографией и текстом. Осталось добавить изображение в Директ."
+                          : "Изображения необязательны для поиска. Рита может предложить варианты, если вы захотите добавить Рекламную сеть."}
                   </p>
                   <small>
                     После подготовки материалов останется отдельный запуск в
@@ -4475,7 +4484,7 @@ function HostedPlanReview({
                   </div>
                 </div>
 
-                {previewText && previewCreativeImage && (
+                {previewText && (previewCreativeImage || imagesSkipped) && (
                   <section
                     className="hosted-moderation-preview"
                     aria-labelledby="moderation-preview-title"
@@ -4536,13 +4545,17 @@ function HostedPlanReview({
                         </small>
                       </div>
                     </div>
-                    <div className="hosted-ad-preview">
-                      <figure className="hosted-ad-preview-image">
-                        <img
-                          src={previewCreativeImage.imageUrl || ""}
-                          alt={`Согласованное изображение для рекламы «${ws.state.name}»`}
-                        />
-                      </figure>
+                    <div
+                      className={`hosted-ad-preview ${imagesSkipped ? "text-only" : ""}`}
+                    >
+                      {previewCreativeImage && (
+                        <figure className="hosted-ad-preview-image">
+                          <img
+                            src={previewCreativeImage.imageUrl || ""}
+                            alt={`Согласованное изображение для рекламы «${ws.state.name}»`}
+                          />
+                        </figure>
+                      )}
                       <div className="hosted-ad-preview-copy">
                         <div className="hosted-ad-source">
                           <span>Реклама</span>
@@ -4592,17 +4605,22 @@ function HostedPlanReview({
                       <div>
                         <dt>Изображение</dt>
                         <dd>
-                          {previewCreativeImage.width &&
-                          previewCreativeImage.height
-                            ? `${previewCreativeImage.width} × ${previewCreativeImage.height}`
-                            : "Готовый файл"}
-                          {previewCreativeImage.brandPlacement === "none"
-                            ? " · без названия"
-                            : ` · название ${previewCreativeImage.brandPlacement === "bottom-left" ? "слева" : "справа"}`}
+                          {previewCreativeImage
+                            ? `${
+                                previewCreativeImage.width &&
+                                previewCreativeImage.height
+                                  ? `${previewCreativeImage.width} × ${previewCreativeImage.height}`
+                                  : "Готовый файл"
+                              }${
+                                previewCreativeImage.brandPlacement === "none"
+                                  ? " · без названия"
+                                  : ` · название ${previewCreativeImage.brandPlacement === "bottom-left" ? "слева" : "справа"}`
+                              }`
+                            : "Без изображения · только поиск"}
                         </dd>
                       </div>
                     </dl>
-                    {!previewImageIsInDirect && (
+                    {previewCreativeImage && !previewImageIsInDirect && (
                       <footer className="hosted-ad-preview-next">
                         <div>
                           <b>
@@ -4677,24 +4695,51 @@ function HostedPlanReview({
                       Перейти к текстам <ArrowRight size={15} />
                     </button>
                   </div>
-                ) : approvedImages.length === 0 ? (
+                ) : !imagesSkipped && approvedImages.length === 0 ? (
                   <div className="hosted-direct-action">
                     <div>
-                      <b>Выберите изображение для рекламы</b>
+                      <b>Изображение можно добавить, но это необязательно</b>
                       <small>
-                        Ритм прикрепит его к объявлениям в Директе. Без
-                        выбранного изображения новый запуск не подготовится.
+                        Без изображения Ритм подготовит текстовые объявления в
+                        поиске и направит туда весь лимит. Рекламная сеть будет
+                        доступна после добавления изображения.
+                      </small>
+                    </div>
+                    <div className="hosted-direct-action-buttons">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => navigate("creatives")}
+                      >
+                        Подготовить изображение
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={continueWithoutImages}
+                      >
+                        Продолжить без изображения <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ) : !imagesSkipped && directReadyImages.length === 0 ? (
+                  <div className="hosted-direct-action">
+                    <div>
+                      <b>Изображение ещё не добавлено в Direct</b>
+                      <small>
+                        Добавьте согласованный файл кнопкой выше или продолжите
+                        с текстовыми объявлениями в поиске.
                       </small>
                     </div>
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() => navigate("creatives")}
+                      onClick={continueWithoutImages}
                     >
-                      Подготовить изображение <ArrowRight size={15} />
+                      Продолжить без изображения <ArrowRight size={15} />
                     </button>
                   </div>
-                ) : directReadyImages.length === 0 ? null : !regionId ? (
+                ) : !regionId ? (
                   <div className="inline-error" role="alert">
                     Для города «{ws.state.city}» пока не найден точный регион
                     Директа. Добавьте выбор региона перед подготовкой кампании.
@@ -4709,57 +4754,82 @@ function HostedPlanReview({
                             ? `Поиск ${money(searchBudget)} · Рекламная сеть ${money(networkBudget)} · общий лимит ${money(ws.state.budget)}`
                             : `Поиск · общий лимит ${money(ws.state.budget)}`}
                         </small>
-                        <fieldset className="hosted-image-picker">
-                          <legend>Изображения для объявлений</legend>
-                          <small>
-                            Выбрано {creativeAssetIds.length} из{" "}
-                            {Math.min(5, directReadyImages.length)}. В поиске
-                            Ритм соберёт отдельные варианты с выбранными
-                            кадрами, а в Рекламной сети передаст весь набор.
-                          </small>
-                          <div className="hosted-image-picker-grid">
-                            {directReadyImages
-                              .slice(0, 5)
-                              .map((image, index) => {
-                                const selected = creativeAssetIds.includes(
-                                  image.id,
-                                );
-                                return (
-                                  <label
-                                    className={`hosted-image-option ${selected ? "selected" : ""}`}
-                                    key={image.id}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selected}
-                                      disabled={
-                                        selected &&
-                                        creativeAssetIds.length === 1
-                                      }
-                                      onChange={() =>
-                                        setCreativeAssetIds((current) =>
-                                          current.includes(image.id)
-                                            ? current.length === 1
-                                              ? current
-                                              : current.filter(
-                                                  (id) => id !== image.id,
-                                                )
-                                            : current.length >= 5
-                                              ? current
-                                              : [...current, image.id],
-                                        )
-                                      }
-                                    />
-                                    <img
-                                      src={image.imageUrl || ""}
-                                      alt={`Вариант изображения ${index + 1}`}
-                                    />
-                                    <span>Вариант {index + 1}</span>
-                                  </label>
-                                );
-                              })}
+                        {imagesSkipped ? (
+                          <div className="hosted-text-only-choice">
+                            <b>Текстовые объявления без изображения</b>
+                            <small>
+                              Будет создан только поиск. Весь лимит останется в
+                              этом направлении.
+                            </small>
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => {
+                                if (!directReadyImages.length) {
+                                  navigate("creatives");
+                                  return;
+                                }
+                                setImagesSkipped(false);
+                              }}
+                            >
+                              {directReadyImages.length
+                                ? "Добавить готовые изображения"
+                                : "Подготовить изображения"}
+                            </button>
                           </div>
-                        </fieldset>
+                        ) : (
+                          <fieldset className="hosted-image-picker">
+                            <legend>Изображения для объявлений</legend>
+                            <small>
+                              Выбрано {creativeAssetIds.length} из{" "}
+                              {Math.min(5, directReadyImages.length)}. В поиске
+                              Ритм соберёт отдельные варианты с выбранными
+                              кадрами, а в Рекламной сети передаст весь набор.
+                            </small>
+                            <div className="hosted-image-picker-grid">
+                              {directReadyImages
+                                .slice(0, 5)
+                                .map((image, index) => {
+                                  const selected = creativeAssetIds.includes(
+                                    image.id,
+                                  );
+                                  return (
+                                    <label
+                                      className={`hosted-image-option ${selected ? "selected" : ""}`}
+                                      key={image.id}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        disabled={
+                                          selected &&
+                                          creativeAssetIds.length === 1
+                                        }
+                                        onChange={() =>
+                                          setCreativeAssetIds((current) =>
+                                            current.includes(image.id)
+                                              ? current.length === 1
+                                                ? current
+                                                : current.filter(
+                                                    (id) => id !== image.id,
+                                                  )
+                                              : current.length >= 5
+                                                ? current
+                                                : [...current, image.id],
+                                          )
+                                        }
+                                      />
+                                      <img
+                                        src={image.imageUrl || ""}
+                                        alt={`Вариант изображения ${index + 1}`}
+                                      />
+                                      <span>Вариант {index + 1}</span>
+                                    </label>
+                                  );
+                                })}
+                            </div>
+                          </fieldset>
+                        )}
                       </div>
                       <button
                         type="button"

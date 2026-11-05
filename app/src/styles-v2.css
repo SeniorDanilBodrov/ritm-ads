@@ -1919,6 +1919,28 @@ tbody tr:hover {
   gap: 4px;
 }
 
+.hosted-direct-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hosted-text-only-choice {
+  margin-top: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.hosted-text-only-choice .text-button {
+  width: fit-content;
+  margin-top: 3px;
+}
+
 .hosted-direct-ready {
   margin-top: 16px;
   display: grid;
@@ -1977,6 +1999,15 @@ tbody tr:hover {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-panel);
   background: var(--surface-soft);
+}
+
+.hosted-ad-preview.text-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hosted-ad-preview.text-only .hosted-ad-preview-copy {
+  min-height: 220px;
+  border-left: 0;
 }
 
 .hosted-ad-direct-state {
@@ -7755,6 +7786,17 @@ textarea::placeholder {
   .hosted-direct-action > button,
   .hosted-direct-confirmation > button,
   .hosted-direct-progress > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hosted-direct-action-buttons {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hosted-direct-action-buttons > button {
     width: 100%;
     justify-content: center;
   }

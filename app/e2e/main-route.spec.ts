@@ -45,7 +45,12 @@ async function mockApprovedAdPreview(
   {
     inDirect = true,
     duplicateBlocked = false,
-  }: { inDirect?: boolean; duplicateBlocked?: boolean } = {},
+    withoutImages = false,
+  }: {
+    inDirect?: boolean;
+    duplicateBlocked?: boolean;
+    withoutImages?: boolean;
+  } = {},
 ) {
   const approvedAt = "2026-11-04T10:00:00.000Z";
   const image = encodeURIComponent(`
@@ -90,11 +95,16 @@ async function mockApprovedAdPreview(
         audiences: [
           { name: "Ищут маникюр рядом", need: "Записаться на удобное время" },
         ],
-        channels: ["search"],
+        channels: withoutImages ? ["search", "network"] : ["search"],
         keywords: ["маникюр с покрытием екатеринбург"],
         negativeKeywords: [],
         ads: [],
-        budgetAllocation: [{ channel: "search", percent: 100 }],
+        budgetAllocation: withoutImages
+          ? [
+              { channel: "search", percent: 65 },
+              { channel: "network", percent: 35 },
+            ]
+          : [{ channel: "search", percent: 100 }],
         abHypotheses: [],
         assumptions: [],
         warnings: [],
@@ -236,6 +246,10 @@ async function mockApprovedAdPreview(
         },
       },
     ];
+    if (withoutImages) {
+      data.creativeImages = [];
+      data.directChanges = [];
+    }
     if (duplicateBlocked) {
       data.directChanges[0].execution = null;
       data.directChanges[0].preflight = {
@@ -452,6 +466,44 @@ test("согласованные текст и изображение замен
     viewport: document.documentElement.clientWidth,
   }));
   expect(layout.right).toBeLessThanOrEqual(layout.viewport + 1);
+});
+
+test("поисковое объявление можно подготовить без генерации изображения", async ({
+  page,
+}) => {
+  await openDemo(page);
+  await mockApprovedAdPreview(page, { withoutImages: true });
+
+  const preparedPlans: Record<string, unknown>[] = [];
+  await page.route("**/api/businesses/*/direct/dry-run", async (route) => {
+    preparedPlans.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "queued" }),
+    });
+  });
+  await page.reload();
+
+  await page
+    .getByRole("button", { name: "План и запуск", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: /Продолжить без изображения/ })
+    .click();
+
+  await expect(
+    page.getByText("Текстовые объявления без изображения", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Подготовить именно эти материалы" })
+    .click();
+
+  await expect.poll(() => preparedPlans.length).toBe(1);
+  expect(preparedPlans[0]).not.toHaveProperty("creativeAssetId");
+  expect(preparedPlans[0]).not.toHaveProperty("creativeAssetIds");
+  expect(preparedPlans[0]).not.toHaveProperty("channel", "network");
 });
 
 test("кнопка в готовом объявлении добавляет изображение в Директ без возврата к генерации", async ({

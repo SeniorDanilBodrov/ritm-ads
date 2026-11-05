@@ -162,6 +162,36 @@ async function activeCampaigns(db) {
     .all();
 }
 
+async function moderationPilotCampaigns(db, config = {}) {
+  const pilotBusinessId = String(config?.livePilotBusinessId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(pilotBusinessId)) return [];
+  return db
+    .prepare(
+      `SELECT cl.business_id,cl.change_id,b.user_id,b.state,
+              dc.plan_json,de.calls_json,de.connection_id,c.metadata
+       FROM campaign_ad_lifecycle cl
+       JOIN businesses b ON b.id=cl.business_id
+       JOIN direct_changes dc ON dc.id=cl.change_id AND dc.business_id=cl.business_id
+       JOIN direct_executions de ON de.change_id=cl.change_id AND de.business_id=cl.business_id
+       JOIN connections c ON c.business_id=cl.business_id AND c.provider='yandex'
+       WHERE cl.business_id=? AND cl.status='moderation'
+         AND de.status='succeeded' AND de.suspend_verified=1`,
+    )
+    .all(pilotBusinessId);
+}
+
+async function reportableCampaigns(db, config = {}) {
+  const rows = [
+    ...(await activeCampaigns(db)),
+    ...(await moderationPilotCampaigns(db, config)),
+  ];
+  return [
+    ...new Map(
+      rows.map((row) => [`${row.business_id}:${row.change_id}`, row]),
+    ).values(),
+  ];
+}
+
 // Moderation polling is deliberately read-only. It is restricted to the exact
 // production pilot and stores only an internal control review; it never resumes
 // a campaign or repeats a moderation submission.
@@ -210,7 +240,18 @@ export async function pollPostgresPilotModeration(
       )
         throw new AppError(409, "Подключение или кампания изменились.");
       const requestKey = stableUuid(
-        `postgres-moderation-poll:${row.business_id}:${row.change_id}:${bucket}`,
+        `postgres-moderation-poll:${row.business_id}:${row.change_id}:${bucket}:${
+          (
+            await db
+              .prepare(
+                `SELECT id FROM report_snapshots
+                 WHERE business_id=? AND scope='campaign'
+                   AND source='yandex' AND login=?
+                 ORDER BY received_at DESC,ctid DESC LIMIT 1`,
+              )
+              .get(row.business_id, plan.login)
+          )?.id || "no-report"
+        }`,
       );
       await inspectPostgresDirectControl(
         db,
@@ -240,18 +281,26 @@ export async function pollPostgresPilotModeration(
 
 // Report scheduling is safe while write-autopilot is disabled: it performs only
 // provider reads and gives every business one idempotent daily report request.
-export async function schedulePostgresAutopilotReports(db, now = Date.now()) {
+export async function schedulePostgresAutopilotReports(
+  db,
+  now = Date.now(),
+  config = {},
+) {
   let queued = 0;
-  for (const row of await activeCampaigns(db)) {
+  for (const row of await reportableCampaigns(db, config)) {
     const state = json(row.state, {});
     const plan = json(row.plan_json, {});
     const metadata = json(row.metadata, {});
+    const account = Array.isArray(metadata.clients)
+      ? metadata.clients.find((item) => item?.Login === plan.login)
+      : null;
     const date = localDate(now, state.timezone);
     if (
       state.mode !== "live" ||
       metadata.sandbox === true ||
       metadata.connectionId !== row.connection_id ||
-      !plan.login ||
+      !account?.Login ||
+      account.Currency !== "RUB" ||
       date < plan.periodStart ||
       date > plan.periodEnd
     )
@@ -267,7 +316,11 @@ export async function schedulePostgresAutopilotReports(db, now = Date.now()) {
         requestKey,
         { login: plan.login },
         now,
-        { includeEnqueueState: true },
+        {
+          includeEnqueueState: true,
+          periodStart: plan.periodStart,
+          periodEnd: plan.periodEnd,
+        },
       );
       queued += response.newlyQueued ? 1 : 0;
     } catch (error) {
@@ -1588,7 +1641,11 @@ export async function runPostgresAutopilotTick(
         now,
         ...(directFactory ? { directFactory } : {}),
       });
-      const reportsQueued = await schedulePostgresAutopilotReports(db, now);
+      const reportsQueued = await schedulePostgresAutopilotReports(
+        db,
+        now,
+        config,
+      );
       const reviewsQueued = await schedulePostgresShadowReviews(db, now);
       const shadow = await runPostgresShadowCycle(db, { key, config, now });
       const optimizer = await runPostgresOptimizerCycle(db, {
@@ -1634,7 +1691,11 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
             config,
             now,
           });
-          reportsQueued = await schedulePostgresAutopilotReports(db, now);
+          reportsQueued = await schedulePostgresAutopilotReports(
+            db,
+            now,
+            config,
+          );
           reviewsQueued = await schedulePostgresShadowReviews(db, now);
           lastScheduled = now;
         }

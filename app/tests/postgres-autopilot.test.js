@@ -15,6 +15,10 @@ import {
   schedulePostgresAutopilotReports,
   schedulePostgresShadowReviews,
 } from "../server/postgres-autopilot.js";
+import {
+  enqueuePostgresReport,
+  runPostgresReportCycle,
+} from "../server/postgres-reports.js";
 import { encrypt } from "../server/security.js";
 
 class AsyncSqlite {
@@ -185,7 +189,7 @@ function storeSnapshot(
       snapshotId,
       data.businessId,
       jobId,
-      randomUUID(),
+      "campaign",
       "yandex",
       "client",
       "2026-11-01",
@@ -281,6 +285,208 @@ test("PostgreSQL autopilot schedules one safe report per campaign day", async ()
       .get().count,
     1,
   );
+  data.sqlite.close();
+});
+
+test("pilot moderation schedules a read-only prelaunch report", async () => {
+  const data = fixture();
+  const campaign = installCampaign(data, { campaignId: 77 });
+  data.sqlite
+    .prepare(
+      "UPDATE campaign_ad_lifecycle SET status='moderation' WHERE business_id=? AND change_id=?",
+    )
+    .run(data.businessId, campaign.changeId);
+  assert.equal(
+    await schedulePostgresAutopilotReports(
+      data.db,
+      NOW,
+      configFor(data, { autopilotEnabled: false }),
+    ),
+    1,
+  );
+  assert.equal(
+    await schedulePostgresAutopilotReports(data.db, NOW, {
+      livePilotBusinessId: randomUUID(),
+    }),
+    0,
+  );
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM jobs WHERE kind='report_sync'")
+      .get().count,
+    1,
+  );
+  data.sqlite.close();
+});
+
+test("prelaunch reports reject unsafe or stale moderation candidates", async () => {
+  const cases = [
+    {
+      name: "sandbox",
+      mutate(data) {
+        const metadata = JSON.parse(
+          data.sqlite
+            .prepare("SELECT metadata FROM connections WHERE business_id=?")
+            .get(data.businessId).metadata,
+        );
+        data.sqlite
+          .prepare("UPDATE connections SET metadata=? WHERE business_id=?")
+          .run(JSON.stringify({ ...metadata, sandbox: true }), data.businessId);
+      },
+    },
+    {
+      name: "connection mismatch",
+      mutate(data) {
+        const metadata = JSON.parse(
+          data.sqlite
+            .prepare("SELECT metadata FROM connections WHERE business_id=?")
+            .get(data.businessId).metadata,
+        );
+        data.sqlite
+          .prepare("UPDATE connections SET metadata=? WHERE business_id=?")
+          .run(
+            JSON.stringify({ ...metadata, connectionId: randomUUID() }),
+            data.businessId,
+          );
+      },
+    },
+    {
+      name: "missing login",
+      mutate(data, campaign) {
+        data.sqlite
+          .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+          .run(
+            JSON.stringify({ ...campaign.plan, login: "" }),
+            campaign.changeId,
+          );
+      },
+    },
+    {
+      name: "login is not available in the connected account",
+      mutate(data) {
+        const metadata = JSON.parse(
+          data.sqlite
+            .prepare("SELECT metadata FROM connections WHERE business_id=?")
+            .get(data.businessId).metadata,
+        );
+        data.sqlite
+          .prepare("UPDATE connections SET metadata=? WHERE business_id=?")
+          .run(JSON.stringify({ ...metadata, clients: [] }), data.businessId);
+      },
+    },
+    {
+      name: "execution not suspended",
+      mutate(data, campaign) {
+        data.sqlite
+          .prepare(
+            "UPDATE direct_executions SET suspend_verified=0 WHERE change_id=?",
+          )
+          .run(campaign.changeId);
+      },
+    },
+    {
+      name: "execution not succeeded",
+      mutate(data, campaign) {
+        data.sqlite
+          .prepare(
+            "UPDATE direct_executions SET status='failed' WHERE change_id=?",
+          )
+          .run(campaign.changeId);
+      },
+    },
+    {
+      name: "period ended",
+      mutate(data, campaign) {
+        data.sqlite
+          .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+          .run(
+            JSON.stringify({ ...campaign.plan, periodEnd: "2026-11-09" }),
+            campaign.changeId,
+          );
+      },
+    },
+    {
+      name: "period not started",
+      mutate(data, campaign) {
+        data.sqlite
+          .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+          .run(
+            JSON.stringify({ ...campaign.plan, periodStart: "2026-11-11" }),
+            campaign.changeId,
+          );
+      },
+    },
+  ];
+  for (const candidate of cases) {
+    const data = fixture();
+    const campaign = installCampaign(data, { campaignId: 77 });
+    data.sqlite
+      .prepare(
+        "UPDATE campaign_ad_lifecycle SET status='moderation' WHERE business_id=? AND change_id=?",
+      )
+      .run(data.businessId, campaign.changeId);
+    candidate.mutate(data, campaign);
+    assert.equal(
+      await schedulePostgresAutopilotReports(
+        data.db,
+        NOW,
+        configFor(data, { autopilotEnabled: false }),
+      ),
+      0,
+      candidate.name,
+    );
+    data.sqlite.close();
+  }
+});
+
+test("identical successful report fetches create fresh immutable evidence", async () => {
+  const data = fixture();
+  const rawTsv =
+    "Date\tCampaignId\tCampaignName\tImpressions\tClicks\tConversions\tCost\n";
+  let reads = 0;
+  const directFactory = () => ({
+    report: async (dateFrom, dateTo) => {
+      reads++;
+      assert.equal(dateFrom, "2026-11-01");
+      assert.equal(dateTo, "2026-11-10");
+      return { pending: false, includeVat: true, rawTsv };
+    },
+  });
+  const metricaFactory = () => ({
+    statistics: async () => ({ totals: [0, 0], sampled: false }),
+  });
+  for (const [index, at] of [NOW, NOW + 60_000].entries()) {
+    await enqueuePostgresReport(
+      data.db,
+      data.userId,
+      data.businessId,
+      randomUUID(),
+      { login: "client" },
+      at,
+      {
+        periodStart: "2026-11-01",
+        periodEnd: "2026-11-30",
+      },
+    );
+    const result = await runPostgresReportCycle(data.db, {
+      key: KEY,
+      now: at,
+      directFactory,
+      metricaFactory,
+    });
+    assert.equal(result.status, "succeeded", `fetch ${index + 1}`);
+  }
+  const snapshots = data.sqlite
+    .prepare(
+      "SELECT id,scope,received_at,previous_id FROM report_snapshots ORDER BY received_at,rowid",
+    )
+    .all();
+  assert.equal(reads, 2);
+  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots[0].scope, "campaign");
+  assert.equal(snapshots[1].scope, "campaign");
+  assert.equal(snapshots[1].previous_id, snapshots[0].id);
+  assert.notEqual(snapshots[1].received_at, snapshots[0].received_at);
   data.sqlite.close();
 });
 
@@ -769,6 +975,32 @@ test("pilot worker polls moderation by read and deduplicates each time bucket", 
       .prepare("SELECT COUNT(*) AS count FROM direct_control_reviews")
       .get().count,
     1,
+  );
+  const unrelatedSnapshot = storeSnapshot(data, 77);
+  data.sqlite
+    .prepare("UPDATE report_snapshots SET source='demo' WHERE id=?")
+    .run(unrelatedSnapshot);
+  const afterUnrelatedReport = await pollPostgresPilotModeration(
+    data.db,
+    options,
+  );
+  assert.deepEqual(afterUnrelatedReport, first);
+  assert.equal(reads, 1);
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM direct_control_reviews")
+      .get().count,
+    1,
+  );
+  storeSnapshot(data, 77);
+  const afterReport = await pollPostgresPilotModeration(data.db, options);
+  assert.deepEqual(afterReport, first);
+  assert.equal(reads, 2);
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM direct_control_reviews")
+      .get().count,
+    2,
   );
   data.sqlite.close();
 });

@@ -5,6 +5,7 @@ import { DirectClient, MetricaClient } from "./providers.js";
 import { enqueuePostgresReport } from "./postgres-reports.js";
 import { decrypt } from "./security.js";
 import { resumePostgresVerifiedCampaign } from "./postgres-direct-resume.js";
+import { inspectPostgresDirectControl } from "./postgres-direct-moderation.js";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const stableUuid = (value) => {
@@ -159,6 +160,82 @@ async function activeCampaigns(db) {
        WHERE cl.status='active' AND de.status='succeeded'`,
     )
     .all();
+}
+
+// Moderation polling is deliberately read-only. It is restricted to the exact
+// production pilot and stores only an internal control review; it never resumes
+// a campaign or repeats a moderation submission.
+export async function pollPostgresPilotModeration(
+  db,
+  {
+    key,
+    config,
+    now = Date.now(),
+    directFactory = (options) => new DirectClient(options),
+  } = {},
+) {
+  const pilotBusinessId = String(config?.livePilotBusinessId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(pilotBusinessId))
+    return { status: "disabled", checked: 0, failed: 0 };
+  const rows = await db
+    .prepare(
+      `SELECT cl.business_id,cl.change_id,b.user_id,dc.plan_json,
+              de.connection_id,c.metadata
+       FROM campaign_ad_lifecycle cl
+       JOIN businesses b ON b.id=cl.business_id
+       JOIN direct_changes dc ON dc.id=cl.change_id AND dc.business_id=cl.business_id
+       JOIN direct_executions de ON de.change_id=cl.change_id AND de.business_id=cl.business_id
+       JOIN connections c ON c.business_id=cl.business_id AND c.provider='yandex'
+       WHERE cl.business_id=? AND cl.status='moderation'
+         AND de.status='succeeded' AND de.suspend_verified=1
+       ORDER BY cl.updated_at,cl.change_id LIMIT 5`,
+    )
+    .all(pilotBusinessId);
+  if (!rows.length) return { status: "idle", checked: 0, failed: 0 };
+  let checked = 0;
+  let failed = 0;
+  const bucket = Math.floor(now / (15 * 60_000));
+  for (const row of rows) {
+    try {
+      const plan = json(row.plan_json, {});
+      const { metadata, credentials } = await currentConnection(
+        db,
+        row.business_id,
+        key,
+      );
+      if (
+        metadata.sandbox === true ||
+        metadata.connectionId !== row.connection_id ||
+        !plan.login
+      )
+        throw new AppError(409, "Подключение или кампания изменились.");
+      const requestKey = stableUuid(
+        `postgres-moderation-poll:${row.business_id}:${row.change_id}:${bucket}`,
+      );
+      await inspectPostgresDirectControl(
+        db,
+        row.user_id,
+        row.business_id,
+        row.change_id,
+        requestKey,
+        directFactory({
+          accessToken: credentials.access_token,
+          login: plan.login,
+          sandbox: false,
+        }),
+        row.connection_id,
+        now,
+      );
+      checked++;
+    } catch {
+      failed++;
+    }
+  }
+  return {
+    status: failed ? (checked ? "partial" : "failed") : "succeeded",
+    checked,
+    failed,
+  };
 }
 
 // Report scheduling is safe while write-autopilot is disabled: it performs only
@@ -1500,11 +1577,17 @@ export async function postgresAutopilotView(db, userId, businessId) {
 
 export async function runPostgresAutopilotTick(
   db,
-  { key, config, now = Date.now() } = {},
+  { key, config, now = Date.now(), directFactory } = {},
 ) {
   return monitoredTick(
     config,
     async () => {
+      const moderation = await pollPostgresPilotModeration(db, {
+        key,
+        config,
+        now,
+        ...(directFactory ? { directFactory } : {}),
+      });
       const reportsQueued = await schedulePostgresAutopilotReports(db, now);
       const reviewsQueued = await schedulePostgresShadowReviews(db, now);
       const shadow = await runPostgresShadowCycle(db, { key, config, now });
@@ -1514,6 +1597,8 @@ export async function runPostgresAutopilotTick(
         now,
       });
       return {
+        moderation: moderation.status,
+        moderationChecked: moderation.checked,
         reportsQueued,
         reviewsQueued,
         shadow: shadow.status,
@@ -1542,7 +1627,13 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
       async () => {
         let reportsQueued = 0;
         let reviewsQueued = 0;
+        let moderation = { status: "idle", checked: 0 };
         if (now - lastScheduled >= scheduleEvery) {
+          moderation = await pollPostgresPilotModeration(db, {
+            key,
+            config,
+            now,
+          });
           reportsQueued = await schedulePostgresAutopilotReports(db, now);
           reviewsQueued = await schedulePostgresShadowReviews(db, now);
           lastScheduled = now;
@@ -1554,6 +1645,8 @@ export function startPostgresAutopilotWorker(db, { key, config } = {}) {
           now,
         });
         return {
+          moderation: moderation.status,
+          moderationChecked: moderation.checked,
           reportsQueued,
           reviewsQueued,
           shadow: shadow.status,

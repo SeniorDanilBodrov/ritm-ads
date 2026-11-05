@@ -5491,7 +5491,13 @@ function nextCampaignPeriod(previousStart = "", previousEnd = "") {
 const controlBlockers: Record<string, string> = {
   period_not_started: "Период кампании ещё не начался.",
   period_ended: "Период кампании завершён.",
+  analytics_not_configured:
+    "Сначала выберите, какое действие считать обращением, и подключите его в Метрике.",
+  analytics_changed:
+    "Настройка обращений изменилась после подготовки плана. Обновите рекламный план.",
   website_changed: "Сайт бизнеса отличается от сайта кампании.",
+  campaign_contract_changed:
+    "Тип кампании или валюта отличаются от подготовленного плана.",
   budget_drift: "Лимит или стратегия отличаются от утверждённого плана.",
   campaign_not_suspended: "Кампания не находится в безопасном режиме ожидания.",
   campaign_under_review: "Яндекс ещё проверяет кампанию.",

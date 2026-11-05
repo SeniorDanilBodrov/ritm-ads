@@ -7,6 +7,7 @@ import {
   createPostgresManualSuspendAction,
   queuePostgresOptimizerAction,
   postgresAutopilotRuntimeView,
+  pollPostgresPilotModeration,
   rollbackPostgresOptimizerAction,
   runPostgresAutopilotTick,
   runPostgresOptimizerCycle,
@@ -647,5 +648,127 @@ test("PostgreSQL autopilot tick publishes a bounded worker heartbeat", async () 
   assert.equal(runtime.heartbeatFresh, true);
   assert.equal(runtime.healthy, true);
   assert.equal("lastResult" in runtime, false);
+  data.sqlite.close();
+});
+
+test("pilot worker polls moderation by read and deduplicates each time bucket", async () => {
+  const data = fixture();
+  const campaign = installCampaign(data, { campaignId: 77 });
+  const plan = {
+    ...campaign.plan,
+    name: "Форма · Поиск",
+    website: "https://forma.example/",
+    ads: [
+      {
+        title: "Маникюр с покрытием",
+        text: "Бережный уход и удобная запись",
+        href: "https://forma.example/",
+      },
+    ],
+  };
+  data.sqlite
+    .prepare("UPDATE businesses SET state=? WHERE id=?")
+    .run(
+      JSON.stringify({ ...data.state, website: plan.website }),
+      data.businessId,
+    );
+  data.sqlite
+    .prepare("UPDATE direct_changes SET plan_json=? WHERE id=?")
+    .run(JSON.stringify(plan), campaign.changeId);
+  data.sqlite
+    .prepare(
+      "UPDATE direct_executions SET calls_json=? WHERE business_id=? AND change_id=?",
+    )
+    .run(
+      JSON.stringify([
+        { key: "campaign", ids: [77] },
+        { key: "adgroup", ids: [88] },
+        { key: "ads", ids: [99] },
+        { key: "keywords", ids: [111] },
+      ]),
+      data.businessId,
+      campaign.changeId,
+    );
+  data.sqlite
+    .prepare(
+      "UPDATE campaign_ad_lifecycle SET status='moderation' WHERE business_id=? AND change_id=?",
+    )
+    .run(data.businessId, campaign.changeId);
+  let reads = 0;
+  const directFactory = () => ({
+    campaignBudgetById: async () => {
+      reads++;
+      return {
+        Campaigns: [
+          {
+            Id: 77,
+            State: "OFF",
+            Status: "MODERATION",
+            StatusPayment: "ALLOWED",
+            Type: "TEXT_CAMPAIGN",
+            Currency: "RUB",
+            TextCampaign: {
+              BiddingStrategy: {
+                Search: {
+                  BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+                  WbMaximumClicks: {
+                    CustomPeriodBudget: {
+                      SpendLimit: plan.budget * 10_000,
+                      StartDate: plan.periodStart,
+                      EndDate: plan.periodEnd,
+                      AutoContinue: "NO",
+                    },
+                  },
+                },
+                Network: { BiddingStrategyType: "SERVING_OFF" },
+              },
+            },
+          },
+        ],
+      };
+    },
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77 }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "MODERATION",
+          State: "OFF",
+        },
+      ],
+    }),
+    keywordsByIds: async () => ({
+      Keywords: [
+        {
+          Id: 111,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "SUSPENDED",
+        },
+      ],
+    }),
+  });
+  const options = {
+    key: KEY,
+    config: configFor(data, { autopilotEnabled: false }),
+    now: NOW,
+    directFactory,
+  };
+  const first = await pollPostgresPilotModeration(data.db, options);
+  const replay = await pollPostgresPilotModeration(data.db, options);
+  assert.deepEqual(first, { status: "succeeded", checked: 1, failed: 0 });
+  assert.deepEqual(replay, first);
+  assert.equal(reads, 1);
+  assert.equal(
+    data.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM direct_control_reviews")
+      .get().count,
+    1,
+  );
   data.sqlite.close();
 });

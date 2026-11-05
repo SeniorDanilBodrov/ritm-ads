@@ -53,6 +53,8 @@ function fixture() {
     name: "Форма · Поиск",
     website: "https://forma.example/",
     budget: 30_000,
+    counterId: "123",
+    goalId: "456",
     periodStart: "2026-11-05",
     periodEnd: "2026-11-18",
     ads: [
@@ -73,6 +75,8 @@ function fixture() {
       mode: "live",
       name: "Форма",
       website: plan.website,
+      counterId: plan.counterId,
+      goalId: plan.goalId,
     }),
   );
   sqlite
@@ -135,6 +139,8 @@ function networkFixture() {
     audience: "Женщины, которые ищут маникюр рядом",
     regionIds: [54],
     budget: 12_000,
+    counterId: "123",
+    goalId: "456",
     periodStart: "2026-11-05",
     periodEnd: "2026-11-18",
     creativeAssetId: randomUUID(),
@@ -192,6 +198,31 @@ const networkCampaign = (plan, overrides = {}) => ({
           },
         },
       },
+    },
+  },
+  ...overrides,
+});
+
+const searchCampaign = (plan, overrides = {}) => ({
+  Id: 77,
+  State: "OFF",
+  Status: "DRAFT",
+  Type: "TEXT_CAMPAIGN",
+  Currency: "RUB",
+  TextCampaign: {
+    BiddingStrategy: {
+      Search: {
+        BiddingStrategyType: "WB_MAXIMUM_CLICKS",
+        WbMaximumClicks: {
+          CustomPeriodBudget: {
+            SpendLimit: plan.budget * 10_000,
+            StartDate: plan.periodStart,
+            EndDate: plan.periodEnd,
+            AutoContinue: "NO",
+          },
+        },
+      },
+      Network: { BiddingStrategyType: "SERVING_OFF" },
     },
   },
   ...overrides,
@@ -751,5 +782,84 @@ test("accepted network ad reaches launch readiness without keyword objects", asy
   assert.deepEqual(result.blockers, []);
   assert.equal(result.remote.keywords, 0);
   assert.equal(keywordReads, 0);
+  data.sqlite.close();
+});
+
+test("missing analytics keeps an accepted campaign blocked", async () => {
+  const data = fixture();
+  data.sqlite.prepare("UPDATE businesses SET state=? WHERE id=?").run(
+    JSON.stringify({
+      mode: "live",
+      name: "Форма",
+      website: data.plan.website,
+    }),
+    data.businessId,
+  );
+  const reportJobId = randomUUID();
+  data.sqlite
+    .prepare(
+      "INSERT INTO jobs(id,business_id,kind,status,available_at,attempts,payload,error) VALUES(?,?,'report_sync','succeeded',0,1,'{}',NULL)",
+    )
+    .run(reportJobId, data.businessId);
+  data.sqlite
+    .prepare(
+      `INSERT INTO report_snapshots
+       (id,business_id,job_id,scope,source,login,date_from,date_to,currency,include_vat,received_at,request_id,raw_hash,raw_tsv,rows_json,totals_json,previous_id,comparison_json)
+       VALUES(?,?,?,'campaign','yandex','test-login','2026-11-05','2026-11-05','RUB',1,'2026-11-05T08:55:00.000Z',NULL,'analytics-missing','header',?,'{}',NULL,'{}')`,
+    )
+    .run(
+      randomUUID(),
+      data.businessId,
+      reportJobId,
+      JSON.stringify([{ CampaignId: "77", Date: "2026-11-05", spent: 0 }]),
+    );
+  const client = {
+    campaignBudgetById: async () => ({
+      Campaigns: [
+        searchCampaign(data.plan, {
+          Status: "ACCEPTED",
+          StatusPayment: "ALLOWED",
+        }),
+      ],
+    }),
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 88, CampaignId: 77 }],
+    }),
+    adsByIds: async () => ({
+      Ads: [
+        {
+          Id: 99,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "OFF",
+        },
+      ],
+    }),
+    keywordsByIds: async () => ({
+      Keywords: [
+        {
+          Id: 111,
+          CampaignId: 77,
+          AdGroupId: 88,
+          Status: "ACCEPTED",
+          State: "SUSPENDED",
+        },
+      ],
+    }),
+  };
+  const result = await inspectPostgresDirectControl(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    Date.parse("2026-11-05T09:00:00.000Z"),
+  );
+  assert.equal(result.status, "blocked");
+  assert.ok(result.blockers.includes("analytics_not_configured"));
+  assert.equal(result.externalWrites, 0);
   data.sqlite.close();
 });

@@ -297,6 +297,14 @@ export async function inspectPostgresDirectControl(
     bundle.network || remote.Type === "UNIFIED_CAMPAIGN"
       ? "UNIFIED_AD_GROUP"
       : "TEXT_AD_GROUP";
+  const stateCounterId = String(bundle.business.state.counterId || "");
+  const stateGoalId = String(bundle.business.state.goalId || "");
+  const planCounterId = String(bundle.plan.counterId || "");
+  const planGoalId = String(bundle.plan.goalId || "");
+  if (!/^\d+$/.test(stateCounterId) || !/^\d+$/.test(stateGoalId))
+    blockers.push("analytics_not_configured");
+  else if (stateCounterId !== planCounterId || stateGoalId !== planGoalId)
+    blockers.push("analytics_changed");
   if (
     !campaignTypeMatchesPlan(remote.Type, bundle.network) ||
     remote.Currency !== "RUB"

@@ -54,6 +54,8 @@ function fixture() {
     regionIds: [54],
     budget: 30_000,
     targetCpa: 450,
+    counterId: "123",
+    goalId: "456",
     periodStart: "2026-11-05",
     periodEnd: "2026-11-18",
     ads: [
@@ -76,6 +78,8 @@ function fixture() {
       name: "Форма",
       website: plan.website,
       budget: plan.budget,
+      counterId: plan.counterId,
+      goalId: plan.goalId,
     }),
   );
   sqlite
@@ -153,6 +157,8 @@ function networkFixture() {
     audience: "Женщины, которые ищут маникюр рядом",
     regionIds: [54],
     budget: 12_000,
+    counterId: "123",
+    goalId: "456",
     periodStart: "2026-11-05",
     periodEnd: "2026-11-18",
     creativeAssetId: randomUUID(),
@@ -193,6 +199,8 @@ function networkFixture() {
       name: "Форма",
       website: data.plan.website,
       budget: 30_000,
+      counterId: data.plan.counterId,
+      goalId: data.plan.goalId,
     }),
     data.businessId,
   );
@@ -419,6 +427,34 @@ test("PostgreSQL launch requires every owner confirmation before a write", async
       .get().count,
     0,
   );
+  data.sqlite.close();
+});
+
+test("PostgreSQL launch fails closed without configured analytics", async () => {
+  const data = fixture();
+  data.sqlite.prepare("UPDATE businesses SET state=? WHERE id=?").run(
+    JSON.stringify({
+      mode: "live",
+      name: "Форма",
+      website: data.plan.website,
+      budget: data.plan.budget,
+    }),
+    data.businessId,
+  );
+  const client = directClient(data);
+  const result = await resumePostgresVerifiedCampaign(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    randomUUID(),
+    client,
+    data.connectionId,
+    confirmations(data),
+  );
+  assert.equal(result.status, "failed_no_write");
+  assert.equal(result.writeAttempted, false);
+  assert.equal(client.writes, 0);
   data.sqlite.close();
 });
 

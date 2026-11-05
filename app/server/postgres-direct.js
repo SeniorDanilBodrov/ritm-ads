@@ -1065,6 +1065,16 @@ export async function continuePostgresDirectExecution(
   const previousReconciliation = current.reconciliation_json
     ? JSON.parse(current.reconciliation_json)
     : null;
+  const previousRepairAttempted =
+    previousReconciliation?.keywordRepair?.attempted === true &&
+    Number(previousReconciliation.keywordRepair.version || 0) >=
+      keywordRepairVersion;
+  const acceptReducedCoverage =
+    missingPhrases.length > 0 &&
+    remoteKeywords.length > 0 &&
+    previousRepairAttempted;
+  const shouldRepairKeywords =
+    missingPhrases.length > 0 && !acceptReducedCoverage;
   if (
     !campaign ||
     !heldCampaign(campaign) ||
@@ -1083,9 +1093,8 @@ export async function continuePostgresDirectExecution(
     ) ||
     remoteByPhrase.size !== remoteKeywords.length ||
     (missingPhrases.length > 0 &&
-      previousReconciliation?.keywordRepair?.attempted === true &&
-      Number(previousReconciliation.keywordRepair.version || 0) >=
-        keywordRepairVersion)
+      previousRepairAttempted &&
+      remoteKeywords.length === 0)
   )
     throw new AppError(
       409,
@@ -1113,28 +1122,41 @@ export async function continuePostgresDirectExecution(
       )
       .run(
         JSON.stringify({
-          status: missingPhrases.length
+          status: shouldRepairKeywords
             ? "keyword_repair_sending"
-            : "keywords_read_back",
+            : acceptReducedCoverage
+              ? "keyword_coverage_reduced"
+              : "keywords_read_back",
           keywordRepair: {
-            attempted: missingPhrases.length > 0,
+            attempted:
+              shouldRepairKeywords ||
+              previousReconciliation?.keywordRepair?.attempted === true,
             version: keywordRepairVersion,
-            attemptedAt: missingPhrases.length ? startedAt : null,
+            attemptedAt: shouldRepairKeywords
+              ? startedAt
+              : previousReconciliation?.keywordRepair?.attemptedAt || null,
             missingCount: missingPhrases.length,
+            acceptedReducedCoverage: acceptReducedCoverage,
           },
         }),
         startedAt,
         change.id,
       );
     await addEvent(tx, business.id, {
-      kind: missingPhrases.length
+      kind: shouldRepairKeywords
         ? "direct_keywords_repair_started"
+        : acceptReducedCoverage
+          ? "direct_keywords_reduced_coverage"
         : "direct_keywords_reconciled",
-      title: missingPhrases.length
+      title: shouldRepairKeywords
         ? "Продолжаем создание с недостающих фраз"
+        : acceptReducedCoverage
+          ? "Продолжаем с подтверждёнными фразами"
         : "Ключевые фразы найдены",
-      reason: missingPhrases.length
+      reason: shouldRepairKeywords
         ? `Полное чтение группы подтвердило отсутствие ${missingPhrases.length} фраз. Повторяются только они.`
+        : acceptReducedCoverage
+          ? `Яндекс сохранил ${remoteKeywords.length} из ${plannedPhrases.length} фраз. Этого достаточно для создания объявления; охват будет ниже запланированного.`
         : "Все фразы найдены чтением API; повторного добавления не будет.",
       rule: "direct/execution@2",
       jobId: change.id,
@@ -1142,7 +1164,7 @@ export async function continuePostgresDirectExecution(
   });
 
   try {
-    if (missingPhrases.length) {
+    if (shouldRepairKeywords) {
       let writeError = null;
       try {
         await client.createKeywords(
@@ -1180,9 +1202,9 @@ export async function continuePostgresDirectExecution(
         );
     }
 
-    const keywordIds = plannedPhrases.map(
-      (phrase) => remoteByPhrase.get(phrase).Id,
-    );
+    const keywordIds = plannedPhrases
+      .map((phrase) => remoteByPhrase.get(phrase)?.Id)
+      .filter((id) => id != null);
     await checkpointExecution(db, business.id, change.id, {
       phase: "acknowledged",
       key: "keywords",
@@ -1225,7 +1247,9 @@ export async function continuePostgresDirectExecution(
           "UPDATE campaign_ad_lifecycle SET status='paused',reason=?,updated_at=? WHERE business_id=? AND change_id=?",
         )
         .run(
-          "Все фразы и объявления созданы и подтверждены чтением Директа. Показы не идут.",
+          acceptReducedCoverage
+            ? `Объявления и ${keywordIds.length} из ${plannedPhrases.length} фраз подтверждены чтением Директа. Показы не идут.`
+            : "Все фразы и объявления созданы и подтверждены чтением Директа. Показы не идут.",
           at,
           business.id,
           change.id,
@@ -1233,8 +1257,9 @@ export async function continuePostgresDirectExecution(
       await addEvent(tx, business.id, {
         kind: "direct_execution_verified",
         title: "Создание объявлений завершено",
-        reason:
-          "Недостающие объекты добавлены, затем вся кампания сверена чтением API.",
+        reason: acceptReducedCoverage
+          ? `Кампания сверена по API. Яндекс оставил ${keywordIds.length} из ${plannedPhrases.length} фраз; объявление создано с уменьшенным охватом.`
+          : "Недостающие объекты добавлены, затем вся кампания сверена чтением API.",
         rule: "direct/execution@2",
         jobId: change.id,
       });

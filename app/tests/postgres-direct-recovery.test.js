@@ -215,3 +215,94 @@ test("PostgreSQL recovery adds only missing normalized phrases and then creates 
     ["campaign", "suspend", "adgroup", "keywords", "ads"],
   );
 });
+
+test("PostgreSQL recovery continues with confirmed phrases after one repair attempt", async () => {
+  const data = fixture();
+  const previous = data.sqlite
+    .prepare("SELECT reconciliation_json FROM direct_executions WHERE change_id=?")
+    .get(data.changeId);
+  const reconciliation = JSON.parse(previous.reconciliation_json);
+  reconciliation.keywordRepair.version = 2;
+  reconciliation.keywordRepair.attemptedAt = "2026-11-05T11:00:00.000Z";
+  data.sqlite
+    .prepare("UPDATE direct_executions SET reconciliation_json=? WHERE change_id=?")
+    .run(JSON.stringify(reconciliation), data.changeId);
+
+  const remoteKeywords = [
+    {
+      Id: 301,
+      AdGroupId: 202,
+      Keyword: "купить компьютер Екатеринбург",
+    },
+    {
+      Id: 302,
+      AdGroupId: 202,
+      Keyword: "ПК ноутбук комплектующие",
+    },
+  ];
+  const remoteAds = [];
+  const writes = [];
+  const campaign = {
+    Id: 101,
+    Name: data.plan.campaignName,
+    State: "OFF",
+    Status: "DRAFT",
+    Type: "UNIFIED_CAMPAIGN",
+  };
+  const client = {
+    campaignsByIds: async () => ({ Campaigns: [campaign] }),
+    adGroupsByIds: async () => ({
+      AdGroups: [{ Id: 202, CampaignId: 101, Status: "ACCEPTED" }],
+    }),
+    keywordsByAdGroupId: async () => ({ Keywords: [...remoteKeywords] }),
+    adsByAdGroupId: async () => ({ Ads: [...remoteAds] }),
+    createKeywords: async () => {
+      writes.push("keywords");
+      throw new Error("keywords must not be replayed");
+    },
+    createAds: async (items) => {
+      writes.push("ads");
+      items.forEach((item, index) =>
+        remoteAds.push({
+          Id: 401 + index,
+          AdGroupId: item.AdGroupId,
+          State: "OFF",
+          Status: "DRAFT",
+          Type: "RESPONSIVE_AD",
+          ResponsiveAd: item.ResponsiveAd,
+        }),
+      );
+      return { AddResults: items.map((_, index) => ({ Id: 401 + index })) };
+    },
+    keywordsByIds: async (ids) => ({
+      Keywords: remoteKeywords.filter((item) => ids.includes(item.Id)),
+    }),
+    adsByIds: async (ids) => ({
+      Ads: remoteAds.filter((item) => ids.includes(item.Id)),
+    }),
+  };
+
+  const result = await continuePostgresDirectExecution(
+    data.db,
+    data.userId,
+    data.businessId,
+    data.changeId,
+    client,
+    { enabled: true, now: Date.parse("2026-11-05T12:00:00.000Z") },
+  );
+
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(writes, ["ads"]);
+  const stored = data.sqlite
+    .prepare(
+      "SELECT status,calls_json,reconciliation_json FROM direct_executions WHERE change_id=?",
+    )
+    .get(data.changeId);
+  assert.equal(stored.status, "succeeded");
+  assert.deepEqual(
+    JSON.parse(stored.calls_json).find((item) => item.key === "keywords").ids,
+    [301, 302],
+  );
+  assert.equal(JSON.parse(stored.reconciliation_json).matched, true);
+  data.sqlite.close();
+});

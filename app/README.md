@@ -90,27 +90,27 @@ npm start
 Скопируйте `.env.example` и храните значения секретов только в менеджере
 окружения.
 
-| Переменная                                 | Назначение                                       |
-| ------------------------------------------ | ------------------------------------------------ |
-| `APP_ORIGIN`                               | Точный origin интерфейса без завершающего `/`    |
-| `DATABASE_URL`                             | Pooled PostgreSQL для запросов приложения        |
-| `POSTGRES_ASYNC_PILOT`                     | Включает PostgreSQL-приложение                   |
-| `REQUIRE_POSTGRES`                         | Не даёт production незаметно перейти на SQLite   |
-| `TOKEN_ENCRYPTION_KEY`                     | Постоянные 32 байта в base64 для токенов         |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth                                     |
-| `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | OAuth Яндекса                                    |
-| `LIVE_ADS_ENABLED`                         | Общий gate внешних рекламных действий            |
-| `DIRECT_WRITE_PILOT_ENABLED`               | Создание выключенных объектов                    |
-| `DIRECT_IMAGE_UPLOAD_PILOT_ENABLED`        | Загрузка согласованного изображения              |
-| `DIRECT_MODERATION_PILOT_ENABLED`          | Отправка на модерацию                            |
-| `DIRECT_RESUME_PILOT_ENABLED`              | Подтверждённый запуск показов                    |
-| `AUTOPILOT_ENABLED`                        | Budget Guard и действия optimizer                |
-| `AUTOPILOT_WORKER_TOKEN`                   | Bearer внешнего schedule-trigger                 |
-| `LIVE_PILOT_BUSINESS_ID`                   | Единственный бизнес с правом запуска/автопилота  |
-| `DIRECT_AB_VARIANT_PILOT_ENABLED`          | Создание варианта Б                              |
-| `DIRECT_AB_DECISION_PILOT_ENABLED`         | Применение финального A/B-решения                |
-| `CREATIVE_IMAGES_ENABLED`                  | Доступность генерации изображений                |
-| `KIE_IMAGE_MODEL`                          | Модель Kie.ai; ключ вводит владелец в интерфейсе |
+| Переменная                                 | Назначение                                                            |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `APP_ORIGIN`                               | Точный origin интерфейса без завершающего `/`                         |
+| `DATABASE_URL`                             | Pooled PostgreSQL для запросов приложения                             |
+| `POSTGRES_ASYNC_PILOT`                     | Включает PostgreSQL-приложение                                        |
+| `REQUIRE_POSTGRES`                         | Не даёт production незаметно перейти на SQLite                        |
+| `TOKEN_ENCRYPTION_KEY`                     | Постоянные 32 байта в base64 для токенов                              |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth                                                          |
+| `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | OAuth Яндекса                                                         |
+| `LIVE_ADS_ENABLED`                         | Общий gate внешних рекламных действий                                 |
+| `DIRECT_WRITE_PILOT_ENABLED`               | Создание выключенных объектов                                         |
+| `DIRECT_IMAGE_UPLOAD_PILOT_ENABLED`        | Загрузка согласованного изображения                                   |
+| `DIRECT_MODERATION_PILOT_ENABLED`          | Отправка на модерацию                                                 |
+| `DIRECT_RESUME_PILOT_ENABLED`              | Подтверждённый запуск показов                                         |
+| `AUTOPILOT_ENABLED`                        | Budget Guard и действия optimizer                                     |
+| `AUTOPILOT_WORKER_TOKEN`                   | Bearer внешнего schedule-trigger                                      |
+| `LIVE_PILOT_BUSINESS_ID`                   | UUID закрытого пилота или `*` для подтверждённых владельцами кампаний |
+| `DIRECT_AB_VARIANT_PILOT_ENABLED`          | Создание варианта Б                                                   |
+| `DIRECT_AB_DECISION_PILOT_ENABLED`         | Применение финального A/B-решения                                     |
+| `CREATIVE_IMAGES_ENABLED`                  | Доступность генерации изображений                                     |
+| `KIE_IMAGE_MODEL`                          | Модель Kie.ai; ключ вводит владелец в интерфейсе                      |
 
 Полный список и безопасные значения по умолчанию находятся в `.env.example`.
 

@@ -34,6 +34,12 @@ export function canRunAutopilot(config = {}) {
 export function canRunLivePilotForBusiness(config = {}, businessId) {
   if (!canWritePaidAdvertising(config)) return false;
   if (config.production !== true) return true;
+  if (
+    config.livePilotBusinessId === "*" &&
+    typeof businessId === "string" &&
+    businessId.length > 0
+  )
+    return true;
   return (
     typeof config.livePilotBusinessId === "string" &&
     config.livePilotBusinessId.length > 0 &&

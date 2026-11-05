@@ -868,6 +868,43 @@ test("PostgreSQL optimizer ignores a business outside the production pilot", asy
   data.sqlite.close();
 });
 
+test("PostgreSQL product mode processes an owner-confirmed active business", async () => {
+  const data = fixture();
+  const campaign = installCampaign(data, { campaignId: 77 });
+  const snapshotId = storeSnapshot(data, 77);
+  await queuePostgresOptimizerAction(
+    data.db,
+    data.businessId,
+    campaign.changeId,
+    review({ spent: 180_000, clicks: 150, goals: 0, snapshotId }),
+    data.state.targetCpa,
+  );
+  let suspended = false;
+  const result = await runPostgresOptimizerCycle(data.db, {
+    key: KEY,
+    config: { ...CONFIG, livePilotBusinessId: "*" },
+    now: NOW,
+    directFactory: () => ({
+      campaignsByIds: async () => ({
+        Campaigns: [
+          {
+            Id: 77,
+            State: suspended ? "SUSPENDED" : "ON",
+            Status: "ACCEPTED",
+          },
+        ],
+      }),
+      suspendCampaigns: async () => {
+        suspended = true;
+        return { SuspendResults: [{ Id: 77 }] };
+      },
+    }),
+  });
+  assert.equal(result.status, "applied");
+  assert.equal(suspended, true);
+  data.sqlite.close();
+});
+
 test("PostgreSQL autopilot tick publishes a bounded worker heartbeat", async () => {
   const data = fixture();
   const config = {

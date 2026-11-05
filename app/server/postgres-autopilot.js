@@ -168,7 +168,9 @@ async function activeCampaigns(db) {
 
 async function moderationPilotCampaigns(db, config = {}) {
   const pilotBusinessId = String(config?.livePilotBusinessId || "");
-  if (!/^[0-9a-f-]{36}$/i.test(pilotBusinessId)) return [];
+  const allConfirmedBusinesses = pilotBusinessId === "*";
+  if (!allConfirmedBusinesses && !/^[0-9a-f-]{36}$/i.test(pilotBusinessId))
+    return [];
   return db
     .prepare(
       `SELECT cl.business_id,cl.change_id,b.user_id,b.state,
@@ -178,10 +180,10 @@ async function moderationPilotCampaigns(db, config = {}) {
        JOIN direct_changes dc ON dc.id=cl.change_id AND dc.business_id=cl.business_id
        JOIN direct_executions de ON de.change_id=cl.change_id AND de.business_id=cl.business_id
        JOIN connections c ON c.business_id=cl.business_id AND c.provider='yandex'
-       WHERE cl.business_id=? AND cl.status='moderation'
+       WHERE ${allConfirmedBusinesses ? "" : "cl.business_id=? AND "}cl.status='moderation'
          AND de.status='succeeded' AND de.suspend_verified=1`,
     )
-    .all(pilotBusinessId);
+    .all(...(allConfirmedBusinesses ? [] : [pilotBusinessId]));
 }
 
 async function reportableCampaigns(db, config = {}) {
@@ -209,7 +211,8 @@ export async function pollPostgresPilotModeration(
   } = {},
 ) {
   const pilotBusinessId = String(config?.livePilotBusinessId || "");
-  if (!/^[0-9a-f-]{36}$/i.test(pilotBusinessId))
+  const allConfirmedBusinesses = pilotBusinessId === "*";
+  if (!allConfirmedBusinesses && !/^[0-9a-f-]{36}$/i.test(pilotBusinessId))
     return { status: "disabled", checked: 0, failed: 0 };
   const rows = await db
     .prepare(
@@ -220,11 +223,11 @@ export async function pollPostgresPilotModeration(
        JOIN direct_changes dc ON dc.id=cl.change_id AND dc.business_id=cl.business_id
        JOIN direct_executions de ON de.change_id=cl.change_id AND de.business_id=cl.business_id
        JOIN connections c ON c.business_id=cl.business_id AND c.provider='yandex'
-       WHERE cl.business_id=? AND cl.status='moderation'
+       WHERE ${allConfirmedBusinesses ? "" : "cl.business_id=? AND "}cl.status='moderation'
          AND de.status='succeeded' AND de.suspend_verified=1
        ORDER BY cl.updated_at,cl.change_id LIMIT 5`,
     )
-    .all(pilotBusinessId);
+    .all(...(allConfirmedBusinesses ? [] : [pilotBusinessId]));
   if (!rows.length) return { status: "idle", checked: 0, failed: 0 };
   let checked = 0;
   let failed = 0;
@@ -1565,7 +1568,8 @@ export async function runPostgresOptimizerCycle(
   if (config.production === true && !config.livePilotBusinessId)
     return { status: "disabled" };
   const action = await db.transaction(async (tx) => {
-    const productionScope = config.production === true;
+    const productionScope =
+      config.production === true && config.livePilotBusinessId !== "*";
     const row = await tx
       .prepare(
         `SELECT * FROM optimizer_actions WHERE status='proposed'

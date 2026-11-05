@@ -89,3 +89,17 @@ test("production live writes are restricted to the single pilot business", () =>
     false,
   );
 });
+
+test("production owner-confirmed mode allows each isolated business", () => {
+  const config = {
+    ...base,
+    liveAdsEnabled: true,
+    autopilotEnabled: true,
+    livePilotBusinessId: "*",
+  };
+  assert.equal(canRunLivePilotForBusiness(config, "business-a"), true);
+  assert.equal(canRunLivePilotForBusiness(config, "business-b"), true);
+  assert.equal(canRunLivePilotForBusiness(config, ""), false);
+  assert.equal(canRunAutopilotForBusiness(config, "business-a"), true);
+  assert.equal(canRunAutopilotForBusiness(config, "business-b"), true);
+});

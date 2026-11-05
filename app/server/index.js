@@ -143,12 +143,13 @@ if (config.autopilotEnabled && !config.liveAdsEnabled)
 if (
   production &&
   (config.directResumePilot || config.autopilotEnabled) &&
+  config.livePilotBusinessId !== "*" &&
   !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     config.livePilotBusinessId,
   )
 )
   throw new Error(
-    "DIRECT_RESUME_PILOT_ENABLED/AUTOPILOT_ENABLED в production требуют LIVE_PILOT_BUSINESS_ID с ID единственного пилотного бизнеса.",
+    "DIRECT_RESUME_PILOT_ENABLED/AUTOPILOT_ENABLED в production требуют LIVE_PILOT_BUSINESS_ID с UUID одного бизнеса или '*' для подтверждённых владельцами кампаний.",
   );
 const databaseTarget =
   process.env.DATABASE_URL || process.env.DATABASE_PATH || "./data/ritm.sqlite";

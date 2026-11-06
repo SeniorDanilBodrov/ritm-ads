@@ -11180,9 +11180,16 @@ function BusinessModal({
     [editingFact, setEditingFact] = useState<EditableBusinessFact | null>(null),
     [factDraft, setFactDraft] = useState(""),
     [factError, setFactError] = useState(""),
-    [messages, setMessages] = useState([
+    [messages, setMessages] = useState<
+      Array<{
+        role: "assistant" | "user";
+        text: string;
+        provider?: "ollama" | "fallback" | "static";
+      }>
+    >([
       {
         role: "assistant",
+        provider: "static",
         text: initial
           ? `Я Рита. Сейчас я знаю ваш бизнес как «${initial.name}». Расскажите обычными словами, что нужно изменить — я обновлю профиль и рекламный план.`
           : `Здравствуйте${ownerName ? `, ${ownerName}` : ""}! Я Рита. Расскажите о бизнесе своими словами: чем занимаетесь, где работаете и какой бюджет готовы выделить. Я уточню только то, чего не хватит, а затем соберу первый план.`,
@@ -11301,12 +11308,16 @@ function BusinessModal({
         },
         "POST",
         undefined,
-        12_000,
+        60_000,
       );
       set((current) => ({ ...current, ...result.profile }));
       setMessages((items) => [
         ...items,
-        { role: "assistant", text: result.reply },
+        {
+          role: "assistant",
+          text: result.reply,
+          provider: result.provider,
+        },
       ]);
     } catch {
       const budget = budgetFromBusinessMessage(message);
@@ -11380,7 +11391,15 @@ function BusinessModal({
                   </span>
                 )}
                 <div>
-                  <small>{item.role === "assistant" ? "Рита" : "Вы"}</small>
+                  <small>
+                    {item.role === "assistant"
+                      ? item.provider === "ollama"
+                        ? "Рита · Qwen"
+                        : item.provider === "fallback"
+                          ? "Рита · резервный режим"
+                          : "Рита"
+                      : "Вы"}
+                  </small>
                   <p>{item.text}</p>
                 </div>
               </div>

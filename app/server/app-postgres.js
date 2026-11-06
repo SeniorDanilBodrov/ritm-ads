@@ -53,6 +53,14 @@ import {
   remotePlanJob,
 } from "./remote-ai.js";
 import {
+  claimRemoteOnboarding,
+  completeRemoteOnboarding,
+  failRemoteOnboarding,
+  isRemoteOnboardingJob,
+  queueRemoteOnboarding,
+  waitForRemoteOnboarding,
+} from "./remote-onboarding.js";
+import {
   approvePostgresCreativeImage,
   enqueuePostgresCreativeImage,
   postgresCreativeImageFile,
@@ -451,7 +459,11 @@ export function createPostgresApp({
   });
   app.post("/api/internal/ai-worker/claim", async (req, res) => {
     remoteWorker(req);
-    const job = await claimRemotePlan(db);
+    const capabilities = String(req.get("x-ritm-worker-capabilities") || "");
+    const onboardingJob = capabilities.split(",").includes("onboarding-v1")
+      ? claimRemoteOnboarding()
+      : null;
+    const job = onboardingJob || (await claimRemotePlan(db));
     if (!job) return res.status(204).end();
     res.json({
       ...job,
@@ -465,7 +477,9 @@ export function createPostgresApp({
       .strict()
       .parse(req.body);
     res.json(
-      await completeRemotePlan(db, req.params.id, body.attempt, body.result),
+      isRemoteOnboardingJob(req.params.id)
+        ? completeRemoteOnboarding(req.params.id, body.attempt, body.result)
+        : await completeRemotePlan(db, req.params.id, body.attempt, body.result),
     );
   });
   app.post("/api/internal/ai-worker/:id/fail", async (req, res) => {
@@ -474,7 +488,11 @@ export function createPostgresApp({
       .object({ attempt: z.number().int().positive() })
       .strict()
       .parse(req.body);
-    res.json(await failRemotePlan(db, req.params.id, body.attempt));
+    res.json(
+      isRemoteOnboardingJob(req.params.id)
+        ? failRemoteOnboarding(req.params.id, body.attempt)
+        : await failRemotePlan(db, req.params.id, body.attempt),
+    );
   });
   app.post("/api/demo", async (req, res) => {
     if (!config.demo) throw new AppError(404, "Демо отключено.");
@@ -2412,6 +2430,11 @@ export function createPostgresApp({
       })
       .strict()
       .parse(req.body.profile || {});
+    if (remoteAiEnabled(config)) {
+      const jobId = queueRemoteOnboarding(req.user.id, message, profile);
+      const result = await waitForRemoteOnboarding(jobId);
+      if (result) return res.json(result);
+    }
     res.json(await onboardingAssistant({ message, profile, config }));
   });
   app.post("/api/businesses/with-plan", authenticated, async (req, res) => {

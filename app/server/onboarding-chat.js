@@ -36,6 +36,7 @@ const responseSchema = z
   .object({
     reply: z.string().trim().min(10).max(600),
     profile: profileSchema,
+    needsClarification: z.boolean().optional().default(false),
   })
   .strict();
 
@@ -106,6 +107,18 @@ function nextQuestion(profile) {
   return questions[nextMissingField(profile)] || null;
 }
 
+function replyAddressesField(reply, field) {
+  const patterns = {
+    name: /назван|бизнес|бренд/iu,
+    category: /сфер|занима|тип\s+бизнес/iu,
+    city: /город|где\s+(?:вы|работа|принима)/iu,
+    service: /услуг|направлен|продвиг|рекламир/iu,
+    benefit: /отлич|выбира|преимущ|почему\s+клиент/iu,
+    budget: /бюджет|рубл|₽/iu,
+  };
+  return patterns[field]?.test(reply) || false;
+}
+
 function budgetFromMessage(source) {
   const match =
     source.match(
@@ -161,6 +174,14 @@ function cleanDirectAnswer(source, field) {
     };
     return normalized[city.toLocaleLowerCase("ru-RU")] || city;
   }
+  if (
+    field === "category" &&
+    !/[\s-]/u.test(value) &&
+    !/(?:магаз|студи|салон|сервис|ремонт|услуг|кафе|кофейн|пекар|ресторан|школ|центр|мастерск|агентств|фитнес|йог|маникюр|авто|техник|цвет|одежд|обув|строит|медицин|образова|достав|производ|торгов)/iu.test(
+      value,
+    )
+  )
+    return null;
   return value;
 }
 
@@ -268,10 +289,11 @@ export async function onboardingAssistant({
       try {
         const response = await fetcher(new URL("/api/chat", candidate), {
           method: "POST",
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(45_000),
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             model: config.aiModel || "qwen3.5:4b",
+            keep_alive: "30m",
             stream: false,
             think: false,
             format: z.toJSONSchema(responseSchema),
@@ -280,7 +302,7 @@ export async function onboardingAssistant({
               {
                 role: "system",
                 content:
-                  "Тебя зовут Рита. Ты внимательный нейросетевой помощник владельца малого бизнеса. Веди короткий диалог по-русски и говори о себе в женском роде. knownProfile содержит уже подтвержденные данные. requiredMissingField — поле, о котором ты спросила на предыдущем ходе: если новое сообщение отвечает на этот вопрос, обязательно запиши ответ именно в это поле. Извлекай только явно сказанные в новом сообщении факты в profile; если пользователь исправляет значение, верни новое значение, которое должно заменить knownProfile. Не повторяй неизмененные поля и не выдумывай цены, адрес, скидки или преимущества. Если факт не назван, полностью пропусти поле: никогда не пиши 'неизвестно', 'не указано' или другой плейсхолдер. service — конкретная услуга или направление для рекламы, а category — тип бизнеса; не смешивай их. Для полного профиля нужны: название, категория, город, услуга, преимущество и бюджет в рублях. Не спрашивай про ставки, CPA, ключевые фразы, ID или рекламный кабинет. Если после объединения с knownProfile хотя бы одного обязательного факта не хватает, задай ровно один вопрос только о недостающем. Если все обязательные факты уже есть, ничего не спрашивай: кратко подтверди, что поняла бизнес и готова собрать рекламный план.",
+                  "Тебя зовут Рита. Ты внимательный нейросетевой помощник владельца малого бизнеса. Веди живой, короткий диалог по-русски и говори о себе в женском роде. Не звучишь как анкета: естественно реагируй на сказанное, отвечай на уместные вопросы пользователя и затем уточняй только один факт за раз. knownProfile содержит уже подтверждённые данные. Поле name всегда означает название бизнеса или бренда, а не имя пользователя. Не предполагай, что бизнес только планируют открыть: если это не сказано, спрашивай нейтрально, где он работает. requiredMissingField — поле, о котором ты спросила на предыдущем ходе: если новое сообщение понятно отвечает на этот вопрос, запиши ответ именно в это поле. Исправляй очевидные опечатки, регистр и словоформы в сохраняемом значении, не меняя смысл. Если ответ похож на случайный набор букв, двусмысленен, противоречит knownProfile без явной просьбы изменить его или ты не уверена, ничего из него не сохраняй, установи needsClarification=true и спокойно переспроси другими словами. Никогда не угадывай сферу, город, услугу или преимущество. Если всё понятно, needsClarification=false. Извлекай только явно сказанные в новом сообщении факты в profile; если пользователь явно исправляет значение, верни новое значение, которое заменит knownProfile. Не повторяй неизменённые поля и не выдумывай цены, адрес, скидки или преимущества. Если факт не назван, полностью пропусти поле: никогда не пиши 'неизвестно', 'не указано' или другой плейсхолдер. service — конкретная услуга или направление для рекламы, а category — тип бизнеса; не смешивай их. Для полного профиля нужны: название, категория, город, услуга, преимущество и бюджет в рублях. Не спрашивай про ставки, CPA, ключевые фразы, ID или рекламный кабинет. Если после объединения с knownProfile хотя бы одного обязательного факта не хватает, задай ровно один вопрос только о недостающем. Если все обязательные факты уже есть, ничего не спрашивай: кратко и по-человечески подтверди, что поняла бизнес и готова собрать рекламный план.",
               },
               {
                 role: "user",
@@ -299,18 +321,29 @@ export async function onboardingAssistant({
           JSON.parse(raw.message?.content || ""),
         );
         const merged = {
-          ...deterministicProfile,
-          ...Object.fromEntries(
-            Object.entries(result.profile).filter(([, value]) =>
-              isMeaningful(value),
-            ),
-          ),
+          ...(result.needsClarification ? profile : deterministicProfile),
+          ...(result.needsClarification
+            ? {}
+            : Object.fromEntries(
+                Object.entries(result.profile).filter(([, value]) =>
+                  isMeaningful(value),
+                ),
+              )),
         };
+        const missingField = nextMissingField(merged);
         const question = nextQuestion(merged);
+        const naturalReply = result.reply.trim();
         return {
           reply:
-            question ||
-            "Спасибо, я, Рита, поняла ваш бизнес и готова собрать рекламный план.",
+            result.needsClarification
+              ? naturalReply
+              : !question
+                ? naturalReply.includes("?")
+                  ? "Спасибо, я, Рита, поняла ваш бизнес и готова собрать рекламный план."
+                  : naturalReply
+              : replyAddressesField(naturalReply, missingField)
+                ? naturalReply
+                : question,
           profile: merged,
           complete: !question,
           provider: "ollama",

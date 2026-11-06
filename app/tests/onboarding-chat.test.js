@@ -164,6 +164,16 @@ test("fallback advances through short answers instead of repeating a question", 
   assert.equal(budget.complete, true);
 });
 
+test("fallback does not save a one-word unclear business category", async () => {
+  const result = await onboardingAssistant({
+    message: "вольаты",
+    profile: { name: "Прокомп" },
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.category, undefined);
+  assert.equal(result.reply, "К какой сфере относится ваш бизнес?");
+});
+
 test("local Ollama response cannot lose a direct answer to the pending question", async () => {
   const result = await onboardingAssistant({
     message: "Frank",
@@ -189,6 +199,64 @@ test("local Ollama response cannot lose a direct answer to the pending question"
   assert.equal(result.provider, "ollama");
   assert.equal(result.profile.name, "Frank");
   assert.equal(result.reply, "К какой сфере относится ваш бизнес?");
+});
+
+test("Qwen asks again instead of saving an unclear answer", async () => {
+  const result = await onboardingAssistant({
+    message: "вольаты",
+    profile: { name: "Прокомп" },
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply:
+                "Не уверена, что правильно поняла. Чем занимается ваш бизнес?",
+              profile: {},
+              needsClarification: true,
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.provider, "ollama");
+  assert.equal(result.profile.category, undefined);
+  assert.equal(result.complete, false);
+  assert.match(result.reply, /не уверена|правильно поняла/iu);
+});
+
+test("Qwen keeps a natural clarification and fixes an obvious typo", async () => {
+  const result = await onboardingAssistant({
+    message: "магазин кампютерной техники",
+    profile: { name: "Прокомп" },
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply:
+                "Поняла: магазин компьютерной техники. В каком городе вы работаете?",
+              profile: { category: "Магазин компьютерной техники" },
+              needsClarification: false,
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.profile.category, "Магазин компьютерной техники");
+  assert.match(result.reply, /город/iu);
 });
 
 test("fallback completes a clearly stated first profile when the local model is unavailable", async () => {

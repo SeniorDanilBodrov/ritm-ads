@@ -125,6 +125,7 @@ export async function claimRemotePlan(db, now = Date.now()) {
     const state = JSON.parse(row.state);
     const payload = JSON.parse(job.payload);
     return {
+      kind: REMOTE_AI_JOB_KIND,
       id: job.id,
       attempt,
       inputHash: payload.inputHash,

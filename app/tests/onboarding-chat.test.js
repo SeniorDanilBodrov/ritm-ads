@@ -134,6 +134,69 @@ test("fallback accepts a short business name as the answer to Rita's question", 
   assert.equal(cyrillic.reply, "К какой сфере относится ваш бизнес?");
 });
 
+test("a greeting is never saved as the business name", async () => {
+  const result = await onboardingAssistant({
+    message: "привет",
+    profile: {},
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+      aiModel: "qwen3.5:4b",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply: "Здравствуйте! Как называется ваш бизнес?",
+              profile: {},
+              needsClarification: false,
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.profile.name, undefined);
+  assert.equal(result.reply, "Здравствуйте! Как называется ваш бизнес?");
+  assert.equal(result.complete, false);
+});
+
+test("Rita normalizes bracketed gender forms in a model reply", async () => {
+  const result = await onboardingAssistant({
+    message: "привет",
+    profile: {},
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply: "Привет! Я рад(а) знакомству. Как называется ваш бизнес?",
+              profile: {},
+              needsClarification: false,
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.reply, "Привет! Я рада знакомству. Как называется ваш бизнес?");
+});
+
+test("fallback also keeps greetings out of the profile", async () => {
+  const result = await onboardingAssistant({
+    message: "Добрый день",
+    profile: {},
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.name, undefined);
+  assert.equal(result.reply, "Как называется ваш бизнес?");
+});
+
 test("fallback advances through short answers instead of repeating a question", async () => {
   const category = await onboardingAssistant({
     message: "Ремонт телефонов",

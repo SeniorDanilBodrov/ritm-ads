@@ -64,6 +64,19 @@ OLLAMA_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3.5:4b
 ```
 
+На чистой Windows-машине файл и автозапуск создаются одной командой после
+установки Ollama и `npm ci`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\install-ollama-worker.ps1 `
+  -RemoteServerUrl "https://ritm-ads.onrender.com"
+```
+
+Скрипт скрыто запросит `REMOTE_AI_WORKER_TOKEN`, скачает модель и зарегистрирует
+задачу `Ritm Ollama Worker` для текущего пользователя. Для другой production-
+копии достаточно передать её HTTPS-адрес; код менять не нужно.
+
 Запуск:
 
 ```powershell

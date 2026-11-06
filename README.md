@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://ritm-ads.onrender.com">Открыть production</a> ·
+  <a href="#ollama-установка-worker-на-windows">Ollama</a> ·
   <a href="#kieai-генерация-изображений">Kie.ai</a> ·
   <a href="app/docs/ACCEPTANCE.md">Сценарий приёмки</a> ·
   <a href="app/docs/RENDER_DEPLOY.md">Развёртывание</a> ·
@@ -104,6 +105,75 @@ flowchart LR
 цены, скидки, гарантии, лицензии и рейтинги. Некорректный JSON отбрасывается.
 При сбое используется ограниченный план по правилам, внешних записей при этом
 нет.
+
+## Ollama: установка worker на Windows
+
+Проверяющему не нужно менять исходный код. Нужны Windows 10 или новее, Git,
+Node.js 24 и значение `REMOTE_AI_WORKER_TOKEN` из Environment сервиса Render.
+Токен на ноутбуке и в Render должен совпадать.
+
+### 1. Скачать проект и зависимости
+
+```powershell
+git clone https://github.com/SeniorDanilBodrov/ritm-ads.git
+Set-Location .\ritm-ads\app
+node --version
+npm ci
+```
+
+`node --version` должен показать версию 24 или новее.
+
+### 2. Скачать Ollama и модель
+
+В обычном PowerShell выполните официальную команду установки:
+
+```powershell
+irm https://ollama.com/install.ps1 | iex
+ollama --version
+ollama pull qwen3.5:4b
+```
+
+Если команда `ollama` не появилась в текущем окне после установки, закройте
+PowerShell, откройте его снова и вернитесь в папку `ritm-ads\app`. Модель
+скачивается один раз и остаётся на компьютере.
+
+### 3. Подключить worker к Render
+
+В Render откройте Environment сервиса и скопируйте значение
+`REMOTE_AI_WORKER_TOKEN`. Затем выполните:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\install-ollama-worker.ps1 `
+  -RemoteServerUrl "https://ritm-ads.onrender.com"
+```
+
+Скрипт запросит токен скрытым вводом. После ввода он:
+
+- создаст локальный `.env.worker` без добавления секрета в Git;
+- проверит и при необходимости скачает `qwen3.5:4b`;
+- зарегистрирует задачу Windows `Ritm Ollama Worker`;
+- запустит worker сразу и после каждого входа пользователя в Windows.
+
+Для собственной копии Render меняется только аргумент `-RemoteServerUrl`.
+Править файлы приложения не нужно.
+
+### 4. Проверить установку
+
+```powershell
+ollama list
+Invoke-RestMethod http://127.0.0.1:11434/api/tags
+Get-ScheduledTask -TaskName "Ritm Ollama Worker" |
+  Select-Object TaskName, State
+```
+
+В списке моделей должна быть `qwen3.5:4b`, а состояние задачи должно стать
+`Running`. После перезагрузки достаточно войти в Windows: Ollama запускается в
+фоне, а задача планировщика поднимает worker. Если ноутбук выключен, Ритм
+показывает проверенный базовый план и сохраняет задание для последующей обработки
+локальной моделью.
+
+Официальная страница установки: [Ollama for Windows](https://ollama.com/download/windows).
 
 ## План остаётся понятным
 

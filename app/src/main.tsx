@@ -11310,7 +11310,17 @@ function BusinessModal({
         undefined,
         60_000,
       );
-      set((current) => ({ ...current, ...result.profile }));
+      set((current) => ({
+        ...current,
+        name: result.profile.name || "",
+        category: result.profile.category || "",
+        city: result.profile.city || "",
+        website: result.profile.website || "",
+        service: result.profile.service || "",
+        benefit: result.profile.benefit || "",
+        price: result.profile.price || 0,
+        budget: result.profile.budget || 0,
+      }));
       setMessages((items) => [
         ...items,
         {

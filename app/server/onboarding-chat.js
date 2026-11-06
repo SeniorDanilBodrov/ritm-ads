@@ -153,6 +153,19 @@ function directBudgetFromMessage(source) {
     : null;
 }
 
+function isConversationalReply(value) {
+  return /^(?:привет(?:ствую)?|здравствуй(?:те)?|доброе\s+(?:утро|день|вечер)|добрый\s+(?:день|вечер)|как\s+дела|спасибо|благодарю|да|нет|ок(?:ей)?|хорошо|понятно|не\s+знаю|неизвестно|не\s+указано|нет\s+данных|пока\s+нет|хочу\s+рекламу|нужна\s+реклама|помоги(?:те)?)$/iu.test(
+    String(value || "").trim(),
+  );
+}
+
+function sanitizeKnownProfile(profile) {
+  if (!isConversationalReply(profile.name)) return profile;
+  const clean = { ...profile };
+  delete clean.name;
+  return clean;
+}
+
 function cleanDirectAnswer(source, field) {
   const value = source
     .trim()
@@ -160,12 +173,7 @@ function cleanDirectAnswer(source, field) {
     .replace(/[.!]+$/gu, "")
     .trim();
   if (value.length < 2 || value.length > 240 || /[?\n\r]/u.test(value)) return null;
-  if (
-    /^(?:привет(?:ствую)?|здравствуй(?:те)?|доброе\s+(?:утро|день|вечер)|добрый\s+(?:день|вечер)|как\s+дела|спасибо|благодарю|да|нет|ок(?:ей)?|хорошо|понятно|не\s+знаю|неизвестно|не\s+указано|нет\s+данных|пока\s+нет|хочу\s+рекламу|нужна\s+реклама|помоги(?:те)?)$/iu.test(
-      value,
-    )
-  )
-    return null;
+  if (isConversationalReply(value)) return null;
   if (field === "city") {
     const city = value.replace(/^в\s+/iu, "").trim();
     const normalized = {
@@ -193,8 +201,8 @@ function cleanDirectAnswer(source, field) {
   return value;
 }
 
-function answerForMissingField(source, profile) {
-  const field = nextMissingField(profile);
+function answerForMissingField(source, profile, expectedField) {
+  const field = expectedField || nextMissingField(profile);
   if (!field) return {};
   if (field === "budget") {
     const budget = directBudgetFromMessage(source);
@@ -213,7 +221,7 @@ function answerForMissingField(source, profile) {
   return { [field]: value };
 }
 
-function fallbackProfile(message, profile) {
+function fallbackProfile(message, profile, expectedField) {
   const source = message.trim();
   const parsed = {};
   const budget = budgetFromMessage(source);
@@ -258,13 +266,13 @@ function fallbackProfile(message, profile) {
   if (website) parsed.website = website;
   return {
     ...profile,
-    ...answerForMissingField(source, { ...profile, ...parsed }),
+    ...answerForMissingField(source, { ...profile, ...parsed }, expectedField),
     ...parsed,
   };
 }
 
-function fallbackReply(message, profile) {
-  const merged = fallbackProfile(message, profile);
+function fallbackReply(message, profile, expectedField) {
+  const merged = fallbackProfile(message, profile, expectedField);
   const question = nextQuestion(merged);
   const budgetChanged =
     profile.budget !== undefined &&
@@ -288,9 +296,14 @@ export async function onboardingAssistant({
   config,
   fetcher = fetch,
 }) {
+  const expectedField = isConversationalReply(profile.name)
+    ? nextMissingField(profile)
+    : null;
+  profile = sanitizeKnownProfile(profile);
   const base = config.aiOllamaUrl || "http://127.0.0.1:11434";
-  if (config.aiProvider !== "ollama" || !localUrl(base)) return fallbackReply(message, profile);
-  const deterministicProfile = fallbackProfile(message, profile);
+  if (config.aiProvider !== "ollama" || !localUrl(base))
+    return fallbackReply(message, profile, expectedField);
+  const deterministicProfile = fallbackProfile(message, profile, expectedField);
   try {
     let lastError = new Error("local model unavailable");
     for (const candidate of localCandidates(base)) {
@@ -316,7 +329,8 @@ export async function onboardingAssistant({
                 role: "user",
                 content: JSON.stringify({
                   knownProfile: profile,
-                  requiredMissingField: nextMissingField(profile) || null,
+                  requiredMissingField:
+                    expectedField || nextMissingField(profile) || null,
                   message,
                 }),
               },
@@ -362,6 +376,6 @@ export async function onboardingAssistant({
     }
     throw lastError;
   } catch {
-    return fallbackReply(message, profile);
+    return fallbackReply(message, profile, expectedField);
   }
 }

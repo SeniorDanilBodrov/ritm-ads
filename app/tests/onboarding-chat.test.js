@@ -197,6 +197,17 @@ test("fallback also keeps greetings out of the profile", async () => {
   assert.equal(result.reply, "Как называется ваш бизнес?");
 });
 
+test("a previously saved greeting is removed from the verified profile", async () => {
+  const result = await onboardingAssistant({
+    message: "магазин компьютерной техники",
+    profile: { name: "привет" },
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.name, undefined);
+  assert.equal(result.profile.category, "магазин компьютерной техники");
+  assert.equal(result.reply, "Как называется ваш бизнес?");
+});
+
 test("fallback advances through short answers instead of repeating a question", async () => {
   const category = await onboardingAssistant({
     message: "Ремонт телефонов",

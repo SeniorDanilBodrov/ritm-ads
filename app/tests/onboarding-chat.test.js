@@ -382,3 +382,163 @@ test("fallback changes a saved budget from a natural correction", async () => {
   assert.equal(result.profile.city, "Екатеринбург");
   assert.equal(result.reply, "Бюджет обновила: 40 000 ₽ в месяц.");
 });
+
+test("fallback asks for the value of a requested city change", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "Привет, хочу изменить город.",
+    profile,
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.city, "Екатеринбург");
+  assert.equal(result.reply, "На какой город изменить профиль?");
+  assert.equal(result.complete, false);
+});
+
+test("fallback uses the previous Rita question for a short city answer", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "Москва",
+    profile,
+    history: [
+      { role: "user", text: "Хочу изменить город" },
+      { role: "assistant", text: "На какой город изменить профиль?" },
+    ],
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.city, "Москва");
+  assert.equal(result.reply, "Город обновила: Москва.");
+  assert.equal(result.complete, true);
+});
+
+test("a standalone number updates an existing budget", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "50 000",
+    profile,
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.budget, 50_000);
+  assert.equal(result.reply, "Бюджет обновила: 50 000 ₽ в месяц.");
+});
+
+test("a numeric budget does not become the city requested in the previous turn", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "50 000",
+    profile,
+    history: [
+      { role: "assistant", text: "На какой город изменить профиль?" },
+    ],
+    config: { aiProvider: "rules" },
+  });
+  assert.equal(result.profile.city, "Екатеринбург");
+  assert.equal(result.profile.budget, 50_000);
+  assert.match(result.reply, /Бюджет обновила: 50 000 ₽/u);
+  assert.match(result.reply, /На какой город изменить профиль/u);
+});
+
+test("Qwen receives the recent conversation with the current profile", async () => {
+  let requestBody;
+  await onboardingAssistant({
+    message: "Москва",
+    profile: {
+      name: "Форма",
+      category: "Студия маникюра",
+      city: "Екатеринбург",
+      service: "Маникюр с покрытием",
+      benefit: "Бережный уход",
+      budget: 30_000,
+    },
+    history: [
+      { role: "user", text: "Хочу изменить город" },
+      { role: "assistant", text: "На какой город изменить профиль?" },
+    ],
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+    },
+    fetcher: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply: "Город обновила: Москва.",
+              profile: { city: "Москва" },
+              needsClarification: false,
+            }),
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  });
+  const prompt = JSON.parse(requestBody.messages.at(-1).content);
+  assert.equal(prompt.requiredMissingField, "city");
+  assert.equal(prompt.recentConversation.length, 2);
+  assert.equal(prompt.recentConversation[1].text, "На какой город изменить профиль?");
+});
+
+test("Qwen cannot complete an edit before the new value is supplied", async () => {
+  const profile = {
+    name: "Форма",
+    category: "Студия маникюра",
+    city: "Екатеринбург",
+    service: "Маникюр с покрытием",
+    benefit: "Бережный уход",
+    budget: 30_000,
+  };
+  const result = await onboardingAssistant({
+    message: "Хочу изменить город",
+    profile,
+    config: {
+      aiProvider: "ollama",
+      aiOllamaUrl: "http://127.0.0.1:11434",
+    },
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reply: "Конечно. На какой город изменить профиль?",
+              profile: { city: "Хочу изменить город" },
+              needsClarification: false,
+            }),
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(result.profile.city, "Екатеринбург");
+  assert.equal(result.complete, false);
+  assert.match(result.reply, /какой город/iu);
+});

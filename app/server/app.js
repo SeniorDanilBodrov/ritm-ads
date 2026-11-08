@@ -419,6 +419,17 @@ export function createApp({
   );
   app.post("/api/assistant/onboarding", authenticated, async (req, res) => {
     const message = z.string().trim().min(2).max(2000).parse(req.body.message);
+    const history = z
+      .array(
+        z
+          .object({
+            role: z.enum(["user", "assistant"]),
+            text: z.string().trim().min(1).max(600),
+          })
+          .strict(),
+      )
+      .max(8)
+      .parse(req.body.history || []);
     const profile = z
       .object({
         name: z.string().max(160).optional(),
@@ -432,7 +443,7 @@ export function createApp({
       })
       .strict()
       .parse(req.body.profile || {});
-    res.json(await onboardingAssistant({ message, profile, config }));
+    res.json(await onboardingAssistant({ message, profile, history, config }));
   });
   app.post("/api/businesses", authenticated, (req, res) => {
     const input = withStartingTargetCpa(businessSchema.parse(req.body)),

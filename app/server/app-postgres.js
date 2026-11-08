@@ -2417,6 +2417,17 @@ export function createPostgresApp({
   );
   app.post("/api/assistant/onboarding", authenticated, async (req, res) => {
     const message = z.string().trim().min(2).max(2000).parse(req.body.message);
+    const history = z
+      .array(
+        z
+          .object({
+            role: z.enum(["user", "assistant"]),
+            text: z.string().trim().min(1).max(600),
+          })
+          .strict(),
+      )
+      .max(8)
+      .parse(req.body.history || []);
     const profile = z
       .object({
         name: z.string().max(160).optional(),
@@ -2431,11 +2442,16 @@ export function createPostgresApp({
       .strict()
       .parse(req.body.profile || {});
     if (remoteAiEnabled(config)) {
-      const jobId = queueRemoteOnboarding(req.user.id, message, profile);
+      const jobId = queueRemoteOnboarding(
+        req.user.id,
+        message,
+        profile,
+        history,
+      );
       const result = await waitForRemoteOnboarding(jobId);
       if (result) return res.json(result);
     }
-    res.json(await onboardingAssistant({ message, profile, config }));
+    res.json(await onboardingAssistant({ message, profile, history, config }));
   });
   app.post("/api/businesses/with-plan", authenticated, async (req, res) => {
     const input = withStartingTargetCpa(businessSchema.parse(req.body));

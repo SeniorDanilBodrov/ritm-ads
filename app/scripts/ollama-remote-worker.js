@@ -7,6 +7,7 @@ const server = String(process.env.REMOTE_AI_SERVER_URL || "").replace(/\/$/, "")
 const token = process.env.REMOTE_AI_WORKER_TOKEN || "";
 const model = process.env.OLLAMA_MODEL || "qwen3.5:4b";
 const ollamaUrl = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+const MODEL_KEEP_ALIVE_MS = 20 * 60_000;
 
 if (!/^https:\/\//i.test(server) && !/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(server))
   throw new Error("REMOTE_AI_SERVER_URL должен использовать HTTPS или локальный HTTP.");
@@ -33,6 +34,22 @@ async function request(path, body = {}) {
   return data;
 }
 
+async function warmOllama() {
+  const response = await fetch(new URL("/api/generate", ollamaUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      prompt: "",
+      stream: false,
+      keep_alive: "30m",
+    }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (!response.ok) throw new Error("Ollama warm-up failed");
+  await response.json();
+}
+
 async function cycle() {
   const job = await request("/api/internal/ai-worker/claim");
   if (!job) return false;
@@ -43,6 +60,7 @@ async function cycle() {
         ? await onboardingAssistant({
             message: job.message,
             profile: job.profile,
+            history: job.history,
             config: {
               aiProvider: "ollama",
               aiOllamaUrl: ollamaUrl,
@@ -82,12 +100,18 @@ async function cycle() {
 }
 
 let delay = 5_000;
+let nextWarmAt = 0;
 do {
   try {
+    if (Date.now() >= nextWarmAt) {
+      await warmOllama();
+      nextWarmAt = Date.now() + MODEL_KEEP_ALIVE_MS;
+      process.stdout.write("Qwen загружена и готова отвечать Рите.\n");
+    }
     const worked = await cycle();
     delay = worked ? 250 : 1_000;
   } catch {
-    process.stderr.write("Render временно недоступен; повторяем без потери задания.\n");
+    process.stderr.write("Render или Ollama временно недоступны; повторяем без потери задания.\n");
     delay = Math.min(120_000, Math.max(15_000, delay * 2));
   }
   if (!once) await new Promise((resolve) => setTimeout(resolve, delay));

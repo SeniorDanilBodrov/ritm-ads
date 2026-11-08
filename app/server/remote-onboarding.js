@@ -28,7 +28,7 @@ const resultSchema = z
 // request to the authenticated local worker. A timeout always falls back to
 // the deterministic dialogue and never blocks creation of a business.
 const jobs = new Map();
-const MAX_JOB_AGE_MS = 60_000;
+const MAX_JOB_AGE_MS = 90_000;
 
 function discardExpired(now = Date.now()) {
   for (const [id, job] of jobs) {
@@ -38,7 +38,13 @@ function discardExpired(now = Date.now()) {
   }
 }
 
-export function queueRemoteOnboarding(userId, message, profile, now = Date.now()) {
+export function queueRemoteOnboarding(
+  userId,
+  message,
+  profile,
+  history = [],
+  now = Date.now(),
+) {
   discardExpired(now);
   const id = `chat_${randomUUID()}`;
   let resolve;
@@ -50,6 +56,7 @@ export function queueRemoteOnboarding(userId, message, profile, now = Date.now()
     userId,
     message,
     profile,
+    history,
     status: "pending",
     attempt: 0,
     createdAt: now,
@@ -71,10 +78,11 @@ export function claimRemoteOnboarding(now = Date.now()) {
     attempt: job.attempt,
     message: job.message,
     profile: job.profile,
+    history: job.history,
   };
 }
 
-export async function waitForRemoteOnboarding(id, timeoutMs = 50_000) {
+export async function waitForRemoteOnboarding(id, timeoutMs = 80_000) {
   const job = jobs.get(id);
   if (!job) return null;
   let timer;

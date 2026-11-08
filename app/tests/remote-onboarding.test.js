@@ -9,11 +9,15 @@ import {
 } from "../server/remote-onboarding.js";
 
 test("remote onboarding bridges an active Rita request to Qwen", async () => {
-  const id = queueRemoteOnboarding("user-1", "Прокомп", {});
+  const history = [
+    { role: "assistant", text: "Как называется ваш бизнес?" },
+  ];
+  const id = queueRemoteOnboarding("user-1", "Прокомп", {}, history);
   const job = claimRemoteOnboarding();
   assert.equal(job.id, id);
   assert.equal(job.kind, "remote_ai_onboarding");
   assert.equal(job.message, "Прокомп");
+  assert.deepEqual(job.history, history);
 
   const completed = completeRemoteOnboarding(id, job.attempt, {
     reply: "Поняла. К какой сфере относится ваш бизнес?",

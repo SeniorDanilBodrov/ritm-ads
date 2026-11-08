@@ -11295,6 +11295,7 @@ function BusinessModal({
         "/assistant/onboarding",
         {
           message,
+          history: messages.slice(-8).map(({ role, text }) => ({ role, text })),
           profile: {
             name: form.name || undefined,
             category: form.category || undefined,
@@ -11308,7 +11309,7 @@ function BusinessModal({
         },
         "POST",
         undefined,
-        60_000,
+        90_000,
       );
       set((current) => ({
         ...current,
@@ -11430,8 +11431,8 @@ function BusinessModal({
                   </p>
                   {responseSlow && (
                     <span className="rita-wait-note" role="status">
-                      Ответ занимает чуть дольше обычного — ещё несколько
-                      секунд.
+                      Qwen отвечает на вашем компьютере. Первый ответ после
+                      простоя может занять до минуты.
                     </span>
                   )}
                 </div>

@@ -95,16 +95,30 @@ function nextMissingField(profile) {
   );
 }
 
+const questions = {
+  name: "Как называется ваш бизнес?",
+  category: "К какой сфере относится ваш бизнес?",
+  city: "В каком городе вы работаете?",
+  service: "Какую услугу или направление вы хотите продвигать?",
+  benefit: "Чем ваш бизнес отличается и почему клиенту стоит выбрать вас?",
+  budget: "Какой месячный бюджет в рублях вы готовы выделить на рекламу?",
+};
+
+const editQuestions = {
+  name: "Как теперь называется ваш бизнес?",
+  category: "На какую сферу изменить профиль бизнеса?",
+  city: "На какой город изменить профиль?",
+  service: "Какую услугу или направление теперь продвигать?",
+  benefit: "Какое преимущество указать вместо текущего?",
+  budget: "Какой новый месячный бюджет установить?",
+};
+
+function questionForField(field, editing = false) {
+  return (editing ? editQuestions : questions)[field] || null;
+}
+
 function nextQuestion(profile) {
-  const questions = {
-    name: "Как называется ваш бизнес?",
-    category: "К какой сфере относится ваш бизнес?",
-    city: "В каком городе вы работаете?",
-    service: "Какую услугу или направление вы хотите продвигать?",
-    benefit: "Чем ваш бизнес отличается и почему клиенту стоит выбрать вас?",
-    budget: "Какой месячный бюджет в рублях вы готовы выделить на рекламу?",
-  };
-  return questions[nextMissingField(profile)] || null;
+  return questionForField(nextMissingField(profile));
 }
 
 function replyAddressesField(reply, field) {
@@ -153,6 +167,40 @@ function directBudgetFromMessage(source) {
     : null;
 }
 
+function editFieldFromMessage(source) {
+  if (!/(?:измен|помен|обнов|исправ|замен|смен)/iu.test(source)) return null;
+  if (/(?:бюджет|лимит)/iu.test(source)) return "budget";
+  if (/(?:город|локац|географ)/iu.test(source)) return "city";
+  if (/(?:назван|имя\s+бизнес|бренд)/iu.test(source)) return "name";
+  if (/(?:сфер|категор|тип\s+бизнес)/iu.test(source)) return "category";
+  if (/(?:услуг|направлен|что\s+продвига)/iu.test(source)) return "service";
+  if (/(?:преимущ|почему\s+выбира|выгод)/iu.test(source)) return "benefit";
+  return null;
+}
+
+function pendingFieldFromHistory(history) {
+  const reply = [...history]
+    .reverse()
+    .find((item) => item.role === "assistant")?.text;
+  if (!reply) return null;
+  if (/(?:какой|какую|какое)\s+нов|на\s+какой\s+город|как\s+теперь\s+называ/iu.test(reply)) {
+    if (/город/iu.test(reply)) return "city";
+    if (/бюджет/iu.test(reply)) return "budget";
+    if (/услуг|направлен/iu.test(reply)) return "service";
+    if (/преимущ/iu.test(reply)) return "benefit";
+    if (/сфер/iu.test(reply)) return "category";
+    if (/называ/iu.test(reply)) return "name";
+  }
+  return null;
+}
+
+function editValueFromMessage(source, field) {
+  if (field === "budget")
+    return budgetFromMessage(source) ?? directBudgetFromMessage(source);
+  const match = source.match(/(?:\s+на|:|—)\s*([^.!?]{2,240})[.!?]*$/iu);
+  return match ? cleanDirectAnswer(match[1], field) : null;
+}
+
 function isConversationalReply(value) {
   return /^(?:привет(?:ствую)?|здравствуй(?:те)?|доброе\s+(?:утро|день|вечер)|добрый\s+(?:день|вечер)|как\s+дела|спасибо|благодарю|да|нет|ок(?:ей)?|хорошо|понятно|не\s+знаю|неизвестно|не\s+указано|нет\s+данных|пока\s+нет|хочу\s+рекламу|нужна\s+реклама|помоги(?:те)?)$/iu.test(
     String(value || "").trim(),
@@ -176,6 +224,8 @@ function cleanDirectAnswer(source, field) {
   if (isConversationalReply(value)) return null;
   if (field === "city") {
     const city = value.replace(/^в\s+/iu, "").trim();
+    if (/\d/u.test(city) || /(?:измен|помен|обнов|исправ|замен|смен)/iu.test(city))
+      return null;
     const normalized = {
       москве: "Москва",
       петербурге: "Санкт-Петербург",
@@ -226,6 +276,9 @@ function fallbackProfile(message, profile, expectedField) {
   const parsed = {};
   const budget = budgetFromMessage(source);
   if (budget !== null) parsed.budget = budget;
+  const directBudget = directBudgetFromMessage(source);
+  if (directBudget !== null && profile.budget !== undefined)
+    parsed.budget = directBudget;
   const city = source.match(/(?:^|\s)в\s+([А-ЯЁ][А-ЯЁа-яё-]{2,})/u)?.[1];
   const normalizedCities = {
     москве: "Москва",
@@ -271,19 +324,49 @@ function fallbackProfile(message, profile, expectedField) {
   };
 }
 
-function fallbackReply(message, profile, expectedField) {
-  const merged = fallbackProfile(message, profile, expectedField);
-  const question = nextQuestion(merged);
+function fallbackReply(message, profile, expectedField, editField) {
+  const editValue = editField
+    ? editValueFromMessage(message, editField)
+    : null;
+  if (editField && editValue === null) {
+    return {
+      reply: questionForField(editField, true),
+      profile,
+      complete: false,
+      provider: "fallback",
+    };
+  }
+  const merged = {
+    ...fallbackProfile(message, profile, expectedField),
+    ...(editField && editValue !== null ? { [editField]: editValue } : {}),
+  };
+  const expectedChanged =
+    expectedField && merged[expectedField] !== profile[expectedField];
+  const question =
+    nextQuestion(merged) ||
+    (expectedField && !expectedChanged
+      ? questionForField(expectedField, true)
+      : null);
   const budgetChanged =
     profile.budget !== undefined &&
     merged.budget !== undefined &&
     merged.budget !== profile.budget;
+  const updatedField = editField || (expectedChanged ? expectedField : null);
+  const updatedLabels = {
+    name: "Название",
+    category: "Сферу",
+    city: "Город",
+    service: "Услугу",
+    benefit: "Преимущество",
+  };
   return {
     reply:
-      question ||
-      (budgetChanged
-        ? `Бюджет обновила: ${merged.budget.toLocaleString("ru-RU")} ₽ в месяц.`
-        : "Спасибо, я поняла ваш бизнес и могу собрать рекламный план."),
+      budgetChanged
+        ? `Бюджет обновила: ${merged.budget.toLocaleString("ru-RU")} ₽ в месяц.${question ? ` ${question}` : ""}`
+        : question ||
+          (updatedField && updatedField !== "budget"
+            ? `${updatedLabels[updatedField]} обновила: ${merged[updatedField]}.`
+            : "Спасибо, я поняла ваш бизнес и могу собрать рекламный план."),
     profile: merged,
     complete: !question,
     provider: "fallback",
@@ -293,24 +376,37 @@ function fallbackReply(message, profile, expectedField) {
 export async function onboardingAssistant({
   message,
   profile = {},
+  history = [],
   config,
   fetcher = fetch,
 }) {
-  const expectedField = isConversationalReply(profile.name)
-    ? nextMissingField(profile)
-    : null;
+  const editField = editFieldFromMessage(message);
+  const historyField = pendingFieldFromHistory(history);
+  const expectedField =
+    editField ||
+    historyField ||
+    (isConversationalReply(profile.name) ? nextMissingField(profile) : null);
   profile = sanitizeKnownProfile(profile);
   const base = config.aiOllamaUrl || "http://127.0.0.1:11434";
   if (config.aiProvider !== "ollama" || !localUrl(base))
-    return fallbackReply(message, profile, expectedField);
-  const deterministicProfile = fallbackProfile(message, profile, expectedField);
+    return fallbackReply(message, profile, expectedField, editField);
+  const editValue = editField
+    ? editValueFromMessage(message, editField)
+    : null;
+  const unresolvedEdit = Boolean(editField && editValue === null);
+  const deterministicProfile = unresolvedEdit
+    ? profile
+    : {
+        ...fallbackProfile(message, profile, expectedField),
+        ...(editField && editValue !== null ? { [editField]: editValue } : {}),
+      };
   try {
     let lastError = new Error("local model unavailable");
     for (const candidate of localCandidates(base)) {
       try {
         const response = await fetcher(new URL("/api/chat", candidate), {
           method: "POST",
-          signal: AbortSignal.timeout(45_000),
+          signal: AbortSignal.timeout(70_000),
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             model: config.aiModel || "qwen3.5:4b",
@@ -318,7 +414,7 @@ export async function onboardingAssistant({
             stream: false,
             think: false,
             format: z.toJSONSchema(responseSchema),
-            options: { temperature: 0.2, num_predict: 700, num_ctx: 8192 },
+            options: { temperature: 0.2, num_predict: 320, num_ctx: 4096 },
             messages: [
               {
                 role: "system",
@@ -326,9 +422,15 @@ export async function onboardingAssistant({
                   "Тебя зовут Рита. Ты внимательный нейросетевой помощник владельца малого бизнеса. Веди живой, короткий диалог по-русски, всегда обращайся к пользователю на «вы» и говори о себе только в женском роде. Никогда не используй формы со скобками вроде «рад(а)» или «понял(а)»: пиши «рада» и «поняла». Не звучишь как анкета: естественно реагируй на сказанное, отвечай на уместные вопросы пользователя и затем уточняй только один факт за раз. knownProfile содержит уже подтверждённые данные. Поле name всегда означает название бизнеса или бренда, а не имя пользователя. Не предполагай, что бизнес только планируют открыть: если это не сказано, спрашивай нейтрально, где он работает. requiredMissingField — поле, о котором ты спросила на предыдущем ходе: если новое сообщение понятно отвечает на этот вопрос, запиши ответ именно в это поле. Исправляй очевидные опечатки, регистр и словоформы в сохраняемом значении, не меняя смысл. Если ответ похож на случайный набор букв, двусмысленен, противоречит knownProfile без явной просьбы изменить его или ты не уверена, ничего из него не сохраняй, установи needsClarification=true и спокойно переспроси другими словами. Никогда не угадывай сферу, город, услугу или преимущество. Если всё понятно, needsClarification=false. Извлекай только явно сказанные в новом сообщении факты в profile; если пользователь явно исправляет значение, верни новое значение, которое заменит knownProfile. Не повторяй неизменённые поля и не выдумывай цены, адрес, скидки или преимущества. Если факт не назван, полностью пропусти поле: никогда не пиши 'неизвестно', 'не указано' или другой плейсхолдер. service — конкретная услуга или направление для рекламы, а category — тип бизнеса; не смешивай их. Для полного профиля нужны: название, категория, город, услуга, преимущество и бюджет в рублях. Не спрашивай про ставки, CPA, ключевые фразы, ID или рекламный кабинет. Если после объединения с knownProfile хотя бы одного обязательного факта не хватает, задай ровно один вопрос только о недостающем. Если все обязательные факты уже есть, ничего не спрашивай: кратко и по-человечески подтверди, что поняла бизнес и готова собрать рекламный план.",
               },
               {
+                role: "system",
+                content:
+                  "recentConversation содержит последние реплики диалога в хронологическом порядке. Используй их, чтобы понимать короткий ответ на предыдущий вопрос. Если пользователь просит изменить поле, но не называет новое значение, не меняй profile: установи needsClarification=true и спроси только новое значение. Число от 1000 до 1000000 отдельной репликой означает месячный бюджет, а не город или название. Явная команда изменения имеет приоритет над обычным сбором недостающих фактов.",
+              },
+              {
                 role: "user",
                 content: JSON.stringify({
                   knownProfile: profile,
+                  recentConversation: history,
                   requiredMissingField:
                     expectedField || nextMissingField(profile) || null,
                   message,
@@ -342,9 +444,10 @@ export async function onboardingAssistant({
         const result = responseSchema.parse(
           JSON.parse(raw.message?.content || ""),
         );
+        const mustClarify = result.needsClarification || unresolvedEdit;
         const merged = {
-          ...(result.needsClarification ? profile : deterministicProfile),
-          ...(result.needsClarification
+          ...(mustClarify ? profile : deterministicProfile),
+          ...(mustClarify
             ? {}
             : Object.fromEntries(
                 Object.entries(result.profile).filter(([, value]) =>
@@ -357,7 +460,7 @@ export async function onboardingAssistant({
         const naturalReply = normalizeRitaReply(result.reply.trim());
         return {
           reply:
-            result.needsClarification
+            mustClarify
               ? naturalReply
               : !question
                 ? naturalReply.includes("?")
@@ -367,7 +470,7 @@ export async function onboardingAssistant({
                 ? naturalReply
                 : question,
           profile: merged,
-          complete: !question,
+          complete: !question && !mustClarify,
           provider: "ollama",
         };
       } catch (error) {
@@ -376,6 +479,6 @@ export async function onboardingAssistant({
     }
     throw lastError;
   } catch {
-    return fallbackReply(message, profile, expectedField);
+    return fallbackReply(message, profile, expectedField, editField);
   }
 }

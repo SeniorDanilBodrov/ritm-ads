@@ -20,9 +20,9 @@ export const audienceExperimentSchema = z
     ]),
     control: segmentSchema,
     variant: segmentSchema,
-    minDays: z.number().int().min(7).max(30).default(7),
-    minClicksPerVariant: z.number().int().min(100).max(100000).default(100),
-    minGoalsPerVariant: z.number().int().min(3).max(10000).default(5),
+    minDays: z.number().int().min(0).max(30).default(0),
+    minClicksPerVariant: z.number().int().min(0).max(100000).default(0),
+    minGoalsPerVariant: z.number().int().min(0).max(10000).default(0),
     probabilityThreshold: z.number().min(0.9).max(0.999).default(0.95),
     minimumRelativeLift: z.number().min(0.05).max(1).default(0.15),
   })
@@ -98,24 +98,19 @@ function analyse(row, observation) {
     controlShare = totalClicks ? control.clicks / totalClicks : null,
     allocationBalanced = controlShare !== null && controlShare >= 0.4 && controlShare <= 0.6,
     durationDays = daysInclusive(observation.period_from, observation.period_to),
-    durationMet = durationDays >= criteria.minDays,
-    sampleMet =
-      control.clicks >= criteria.minClicksPerVariant &&
-      variant.clicks >= criteria.minClicksPerVariant &&
-      control.goals >= criteria.minGoalsPerVariant &&
-      variant.goals >= criteria.minGoalsPerVariant,
-    final = observation.period_to >= criteria.periodEnd,
+    durationMet = true,
+    sampleMet = control.clicks > 0 && variant.clicks > 0,
     a = betaSummary(control.goals, control.clicks),
     b = betaSummary(variant.goals, variant.clicks),
     z = (b.mean - a.mean) / Math.sqrt(a.variance + b.variance),
     probabilityVariantBetter = 0.5 * (1 + erf(z / Math.sqrt(2))),
     relativeLift = a.mean ? (b.mean - a.mean) / a.mean : null;
   let status = "collecting",
-    conclusion = "Период теста ещё не завершён; ранний выбор победителя запрещён.";
-  if (final) {
-    if (!durationMet || !sampleMet || !allocationBalanced) {
+    conclusion = "Анализ начнётся, когда оба сегмента получат хотя бы один переход.";
+  if (sampleMet) {
+    if (!allocationBalanced) {
       status = "inconclusive";
-      conclusion = "Тест завершён без вывода: срок, выборка или распределение трафика не соответствуют протоколу.";
+      conclusion = "Предварительный анализ: трафик между сегментами распределён неравномерно.";
     } else if (
       probabilityVariantBetter >= criteria.probabilityThreshold &&
       relativeLift >= criteria.minimumRelativeLift
@@ -131,7 +126,7 @@ function analyse(row, observation) {
       conclusion = "Контрольный сегмент превосходит вариант с заданной вероятностью и практически значимым эффектом.";
     } else {
       status = "inconclusive";
-      conclusion = "Убедительного и практически значимого различия сегментов не обнаружено.";
+      conclusion = "Анализ обновлён: преимущество одного из сегментов пока не подтверждено.";
     }
   }
   return {
@@ -234,7 +229,7 @@ export function createAudienceExperiment(
       probabilityThreshold: input.probabilityThreshold,
       minimumRelativeLift: input.minimumRelativeLift,
       trafficShareTolerance: 0.1,
-      noEarlyWinner: true,
+      noEarlyWinner: false,
       fixedMessageFingerprint: messageFingerprint,
     };
     const id = randomUUID(),

@@ -14,8 +14,13 @@ export const abPlanSchema = z
         text: z.string().trim().min(2).max(81),
       })
       .strict(),
-    minDays: z.number().int().min(7).max(30),
-    minImpressionsPerVariant: z.number().int().min(500).max(100000),
+    minDays: z.number().int().min(0).max(30).default(0),
+    minImpressionsPerVariant: z
+      .number()
+      .int()
+      .min(0)
+      .max(100000)
+      .default(0),
   })
   .strict();
 
@@ -69,9 +74,7 @@ function observation(db, row, plan) {
       : null,
     allocationBalanced =
       controlShare !== null && controlShare >= 0.4 && controlShare <= 0.6,
-    sampleMet = [control, variant].every(
-      (item) => item.impressions >= plan.minImpressionsPerVariant,
-    ),
+    sampleMet = [control, variant].every((item) => item.impressions > 0),
     days = Math.max(
       0,
       Math.floor(
@@ -79,16 +82,14 @@ function observation(db, row, plan) {
           Date.parse(plan.periodStart + "T00:00:00Z")) /
           86400000,
       ) + 1,
-    ),
-    durationMet = days >= plan.minDays,
-    final = snapshot.date_to >= plan.periodEnd;
+    );
   let status = "collecting",
-    verdict = "Период ещё не завершён; победитель не определяется.";
-  if (final) {
-    if (!durationMet || !sampleMet || !allocationBalanced) {
+    verdict = "Анализ начнётся, когда оба объявления получат показы.";
+  if (sampleMet) {
+    if (!allocationBalanced) {
       status = "inconclusive";
       verdict =
-        "Эксперимент завершён без вывода: условия выборки не выполнены.";
+        "Предварительный анализ: показы между объявлениями распределены неравномерно.";
     } else if (control.interval[1] < variant.interval[0]) {
       status = "variant_wins";
       verdict =
@@ -99,7 +100,7 @@ function observation(db, row, plan) {
         "Вариант А имеет более высокий CTR с непересекающимся 95% интервалом.";
     } else {
       status = "inconclusive";
-      verdict = "Убедительного различия CTR не обнаружено.";
+      verdict = "Анализ обновлён: убедительного различия CTR пока нет.";
     }
   }
   return {
@@ -135,12 +136,6 @@ function view(db, row, action = null) {
       blockers.push(
         "Распределение показов между вариантами не близко к 50/50.",
       );
-    if (!evidence.sampleMet)
-      blockers.push("Минимальная выборка показов ещё не набрана.");
-    if (evidence.days < plan.minDays)
-      blockers.push("Минимальный срок эксперимента ещё не пройден.");
-    if (evidence.dateTo < plan.periodEnd)
-      blockers.push("Заранее заданный период эксперимента ещё не завершён.");
   }
   return {
     id: row.id,

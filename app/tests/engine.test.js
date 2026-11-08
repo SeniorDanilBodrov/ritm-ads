@@ -81,7 +81,7 @@ test("rollback restores limits and rejects later changes", () => {
   b.campaigns[0].spent += 100;
   assert.throws(() => rollback(b, entry, []), /новые данные/);
 });
-test("no early significance peeking; inconclusive is not a winner", () => {
+test("experiment analyses each update without day or click thresholds", () => {
   const e = {
     elapsedDays: 20,
     maxDays: 21,
@@ -92,22 +92,19 @@ test("no early significance peeking; inconclusive is not a winner", () => {
       { clicks: 1000, leads: 200 },
     ],
   };
-  assert.equal(experimentVerdict(e), null);
-  e.elapsedDays = 21;
   assert.equal(experimentVerdict(e).winner, 1);
   e.variants = [
     { clicks: 1000, leads: 100 },
     { clicks: 1000, leads: 105 },
   ];
-  assert.equal(experimentVerdict(e).status, "inconclusive");
+  assert.equal(experimentVerdict(e), null);
   e.variants[0].clicks = 50;
-  assert.equal(experimentVerdict(e).status, "inconclusive");
+  assert.equal(experimentVerdict(e), null);
 });
 test("seed experiment can finish and applies its verdict", () => {
   const s = seedDemo();
   for (let i = 0; i < 17; i++) tickDemo(s);
   const e = s.experiments[0];
-  assert.equal(e.elapsedDays, 21);
   assert.equal(e.status, "completed");
   assert.equal(e.winner, 1);
   assert.ok(s.campaigns[2].selectedVariant);

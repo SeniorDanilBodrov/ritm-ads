@@ -8338,8 +8338,8 @@ function Experiments({
               {e.verdict}
             </div>
             <div className="small muted">
-              Меняем: {e.factor.toLowerCase()} · Минимум {e.minClicks} переходов
-              на вариант
+              Меняем: {e.factor.toLowerCase()}. Результаты пересчитываются после
+              каждого тестового дня.
               <br />
               Экспериментальные выборки синтетические, не добавляются к общей
               статистике.
@@ -8398,8 +8398,6 @@ function LiveExperiments({
   const [hypothesis, setHypothesis] = useState("");
   const [title, setTitle] = useState("");
   const [copy, setCopy] = useState("");
-  const [minDays, setMinDays] = useState(14);
-  const [minImpressions, setMinImpressions] = useState(1000);
   const [formError, setFormError] = useState("");
   const [confirmedPlanId, setConfirmedPlanId] = useState("");
   const [confirmedDecisionId, setConfirmedDecisionId] = useState("");
@@ -8577,8 +8575,8 @@ function LiveExperiments({
                   {plan.conclusion}
                 </div>
                 <p className="small muted">
-                  Победитель не выбирается до конца периода. Минимум 100 кликов
-                  и 5 обращений на каждый сегмент.
+                  Анализ начинается с первого перехода в каждом сегменте и
+                  обновляется с каждым отчётом.
                 </p>
               </article>
             ))}
@@ -8605,9 +8603,9 @@ function LiveExperiments({
                     name: "Рядом с бизнесом",
                     value: "Радиус 3 км",
                   },
-                  minDays: 7,
-                  minClicksPerVariant: 100,
-                  minGoalsPerVariant: 5,
+                  minDays: 0,
+                  minClicksPerVariant: 0,
+                  minGoalsPerVariant: 0,
                   probabilityThreshold: 0.95,
                   minimumRelativeLift: 0.15,
                 })
@@ -8643,14 +8641,10 @@ function LiveExperiments({
               if (
                 hypothesis.trim().length < 12 ||
                 title.trim().length < 2 ||
-                copy.trim().length < 2 ||
-                minDays < 7 ||
-                minDays > 30 ||
-                minImpressions < 500 ||
-                minImpressions > 100000
+                copy.trim().length < 2
               ) {
                 setFormError(
-                  "Заполните гипотезу и оба текста, затем проверьте срок и минимальное число показов.",
+                  "Заполните гипотезу и оба текста.",
                 );
                 return;
               }
@@ -8658,8 +8652,8 @@ function LiveExperiments({
               createAbPlan(selected.id, {
                 hypothesis,
                 variant: { title, text: copy },
-                minDays,
-                minImpressionsPerVariant: minImpressions,
+                minDays: 0,
+                minImpressionsPerVariant: 0,
               });
             }}
           >
@@ -8736,35 +8730,11 @@ function LiveExperiments({
                   }
                 />
               </label>
-              <label>
-                Минимум дней
-                <input
-                  type="number"
-                  min={7}
-                  max={30}
-                  step={1}
-                  value={minDays}
-                  onChange={(e) => setMinDays(Number(e.target.value))}
-                  required
-                />
-              </label>
-              <label>
-                Минимум показов на вариант
-                <input
-                  type="number"
-                  min={500}
-                  max={100000}
-                  step={1}
-                  value={minImpressions}
-                  onChange={(e) => setMinImpressions(Number(e.target.value))}
-                  required
-                />
-              </label>
             </div>
             <p className="small muted">
-              Основная метрика — доля переходов (CTR). Порог показов сам по себе
-              не доказывает победу; итог можно оценивать только после срока
-              теста и проверки равномерности трафика.
+              Основная метрика — CTR. Ритм пересчитывает её с первого отчёта,
+              но применяет результат только при равномерном трафике и
+              непересекающихся 95%-х интервалах.
             </p>
             {formError && <p role="alert">{formError}</p>}
             <button type="submit" disabled={busy}>
@@ -8811,10 +8781,8 @@ function LiveExperiments({
               </div>
             </div>
             <div className="small muted ab-plan-terms">
-              Период {date(plan.periodStart)} — {date(plan.periodEnd)} · минимум{" "}
-              {plan.minDays} дней и{" "}
-              {plan.minImpressionsPerVariant.toLocaleString("ru-RU")} показов на
-              вариант · метрика CTR
+              Период {date(plan.periodStart)} — {date(plan.periodEnd)} · анализ с
+              первого отчёта · метрика CTR
             </div>
             <div className="experiment-verdict">
               <Clock3 size={17} />

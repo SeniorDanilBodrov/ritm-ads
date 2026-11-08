@@ -149,10 +149,10 @@ test("A/B report is bound to the saved pair and stores ad-level rows", async () 
       ["401", "402"],
     );
     let plan = directAbPlans(db, "u", "b")[0];
-    assert.equal(plan.outcome, "collecting");
+    assert.equal(plan.outcome, "inconclusive");
     assert.equal(plan.evidence.allocationBalanced, true);
-    assert.equal(plan.evidence.sampleMet, false);
-    assert.match(plan.verdict, /Период ещё не завершён/);
+    assert.equal(plan.evidence.sampleMet, true);
+    assert.match(plan.verdict, /пока нет/);
     db.prepare(
       "UPDATE report_snapshots SET date_to='2026-10-31',rows_json=? WHERE id=?",
     ).run(

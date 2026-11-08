@@ -169,8 +169,8 @@ export function seedDemo(name = "Студия «Форма»") {
     factor: "Заголовок",
     metric: "Конверсия в обращение",
     status: "running",
-    minClicks: 100,
-    minDays: 7,
+    minClicks: 0,
+    minDays: 0,
     elapsedDays: 4,
     maxDays: 21,
     variants: [
@@ -289,15 +289,7 @@ export function wilson(success, count) {
   return [middle - radius, middle + radius];
 }
 export function experimentVerdict(e) {
-  if (
-    e.elapsedDays < e.minDays ||
-    e.variants.some((v) => v.clicks < e.minClicks)
-  )
-    return e.elapsedDays >= e.maxDays
-      ? { status: "inconclusive", text: "Недостаточно данных за 21 день" }
-      : null;
-  // One pre-registered final analysis at day 21. No repeated significance peeking.
-  if (e.elapsedDays < e.maxDays) return null;
+  if (e.variants.some((variant) => variant.clicks === 0)) return null;
   const [a, b] = e.variants.map((v) => wilson(v.leads, v.clicks));
   if (a[1] < b[0])
     return {
@@ -311,10 +303,7 @@ export function experimentVerdict(e) {
       winner: 0,
       text: "Вариант А приносит больше обращений",
     };
-  return {
-    status: "inconclusive",
-    text: "Убедительных различий не обнаружено",
-  };
+  return null;
 }
 export function optimize(state) {
   const changes = [];
@@ -352,8 +341,8 @@ export function optimize(state) {
         factor: "Заголовок",
         metric: "Конверсия в обращение",
         status: "running",
-        minClicks: 100,
-        minDays: 7,
+        minClicks: 0,
+        minDays: 0,
         maxDays: 21,
         elapsedDays: 0,
         variants: [
@@ -366,7 +355,7 @@ export function optimize(state) {
       changes.push({
         kind: "experiment",
         title: "Начали проверку новой идеи",
-        reason: `Стоимость обращения близка к цели. Для «${c.name}» сравним два заголовка в течение 21 дня.`,
+        reason: `Стоимость обращения близка к цели. Для «${c.name}» сравним два заголовка и будем обновлять вывод с каждым тестовым днём.`,
         rule: RULE_VERSION,
       });
     }

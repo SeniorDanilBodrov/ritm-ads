@@ -108,8 +108,8 @@ function experimentState(source) {
       factor: "Заголовок",
       metric: "Конверсия в обращение",
       status: "running",
-      minClicks: 100,
-      minDays: 7,
+      minClicks: 0,
+      minDays: 0,
       maxDays: 21,
       elapsedDays: 20,
       variants: [

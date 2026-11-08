@@ -286,18 +286,15 @@ async function latestAbEvidence(db, row, plan) {
     : null;
   const allocationBalanced =
     controlShare !== null && controlShare >= 0.4 && controlShare <= 0.6;
-  const sampleMet = [control, variant].every(
-    (item) => item.impressions >= plan.minImpressionsPerVariant,
-  );
+  const sampleMet = [control, variant].every((item) => item.impressions > 0);
   const days = inclusiveDays(plan.periodStart, snapshot.date_to);
-  const final = snapshot.date_to >= plan.periodEnd;
   let status = "collecting";
-  let verdict = "Период ещё не завершён; ранний выбор победителя запрещён.";
-  if (final) {
-    if (days < plan.minDays || !sampleMet || !allocationBalanced) {
+  let verdict = "Анализ начнётся, когда оба объявления получат показы.";
+  if (sampleMet) {
+    if (!allocationBalanced) {
       status = "inconclusive";
       verdict =
-        "Эксперимент завершён без вывода: срок, выборка или распределение трафика не соответствуют протоколу.";
+        "Предварительный анализ: показы между объявлениями распределены неравномерно.";
     } else if (control.interval[1] < variant.interval[0]) {
       status = "variant_wins";
       verdict =
@@ -308,7 +305,7 @@ async function latestAbEvidence(db, row, plan) {
         "Вариант А имеет более высокий CTR с непересекающимся 95% интервалом.";
     } else {
       status = "inconclusive";
-      verdict = "Убедительного различия CTR не обнаружено.";
+      verdict = "Анализ обновлён: убедительного различия CTR пока нет.";
     }
   }
   return {
@@ -350,12 +347,6 @@ async function directAbView(db, row) {
       blockers.push(
         "Распределение показов между вариантами не близко к 50/50.",
       );
-    if (!evidence.sampleMet)
-      blockers.push("Минимальная выборка показов ещё не набрана.");
-    if (evidence.days < plan.minDays)
-      blockers.push("Минимальный срок эксперимента ещё не пройден.");
-    if (evidence.dateTo < plan.periodEnd)
-      blockers.push("Заранее заданный период теста ещё не завершён.");
   }
   return {
     id: row.id,
@@ -547,7 +538,7 @@ export async function createPostgresDirectAbPlan(
         ...(control.adImageHash ? { adImageHash: control.adImageHash } : {}),
       },
       allocation: "50/50 target; verified from impressions",
-      noEarlyWinner: true,
+      noEarlyWinner: false,
     };
     const id = randomUUID();
     const at = new Date(now).toISOString();
@@ -1468,25 +1459,21 @@ function audienceAnalysis(row, observation) {
     observation.period_from,
     observation.period_to,
   );
-  const durationMet = durationDays >= criteria.minDays;
-  const sampleMet =
-    control.clicks >= criteria.minClicksPerVariant &&
-    variant.clicks >= criteria.minClicksPerVariant &&
-    control.goals >= criteria.minGoalsPerVariant &&
-    variant.goals >= criteria.minGoalsPerVariant;
-  const final = observation.period_to >= criteria.periodEnd;
+  const durationMet = true;
+  const sampleMet = control.clicks > 0 && variant.clicks > 0;
   const a = betaSummary(control.goals, control.clicks);
   const b = betaSummary(variant.goals, variant.clicks);
   const z = (b.mean - a.mean) / Math.sqrt(a.variance + b.variance);
   const probabilityVariantBetter = 0.5 * (1 + erf(z / Math.sqrt(2)));
   const relativeLift = a.mean ? (b.mean - a.mean) / a.mean : null;
   let status = "collecting";
-  let conclusion = "Период теста ещё не завершён; ранний выбор запрещён.";
-  if (final) {
-    if (!durationMet || !sampleMet || !allocationBalanced) {
+  let conclusion =
+    "Анализ начнётся, когда оба сегмента получат хотя бы один переход.";
+  if (sampleMet) {
+    if (!allocationBalanced) {
       status = "inconclusive";
       conclusion =
-        "Тест завершён без вывода: срок, выборка или распределение трафика не соответствуют протоколу.";
+        "Предварительный анализ: трафик между сегментами распределён неравномерно.";
     } else if (
       probabilityVariantBetter >= criteria.probabilityThreshold &&
       relativeLift >= criteria.minimumRelativeLift
@@ -1504,7 +1491,8 @@ function audienceAnalysis(row, observation) {
         "Контрольный сегмент превосходит вариант с заданной вероятностью и практически значимым эффектом.";
     } else {
       status = "inconclusive";
-      conclusion = "Практически значимого различия сегментов не обнаружено.";
+      conclusion =
+        "Анализ обновлён: преимущество одного из сегментов пока не подтверждено.";
     }
   }
   return {
@@ -1634,7 +1622,7 @@ export async function createPostgresAudienceExperiment(
       probabilityThreshold: input.probabilityThreshold,
       minimumRelativeLift: input.minimumRelativeLift,
       trafficShareTolerance: 0.1,
-      noEarlyWinner: true,
+      noEarlyWinner: false,
       fixedMessageFingerprint: digest(
         context.change.plan.ads.map(({ title, text, href }) => ({
           title,

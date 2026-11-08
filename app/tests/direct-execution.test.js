@@ -1092,9 +1092,9 @@ test("A/B plan rejects late registration and an unchanged variant", async () => 
       () =>
         createDirectAbPlan(db, userId, businessId, change.id, randomUUID(), {
           ...input,
-          minImpressionsPerVariant: 10,
+          minImpressionsPerVariant: -1,
         }),
-      /too_small|500/,
+      /too_small|greater than or equal to 0/i,
     );
     assert.equal(directAbPlans(db, userId, businessId).length, 0);
   } finally {

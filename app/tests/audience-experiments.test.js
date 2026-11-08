@@ -83,9 +83,9 @@ const input = {
   dimension: "geo_radius",
   control: { name: "Широкий радиус", value: "10 км" },
   variant: { name: "Рядом со студией", value: "3 км" },
-  minDays: 7,
-  minClicksPerVariant: 100,
-  minGoalsPerVariant: 5,
+  minDays: 0,
+  minClicksPerVariant: 0,
+  minGoalsPerVariant: 0,
   probabilityThreshold: 0.95,
   minimumRelativeLift: 0.15,
 };
@@ -114,12 +114,12 @@ test("audience experiment fixes one dimension and is idempotent", () => {
   assert.equal(second.id, first.id);
   assert.equal(first.dimension, "geo_radius");
   assert.equal(first.allocation, "50/50");
-  assert.equal(first.criteria.noEarlyWinner, true);
+  assert.equal(first.criteria.noEarlyWinner, false);
   assert.equal(audienceExperiments(db, userId, businessId).length, 1);
   db.close();
 });
 
-test("audience experiment never selects an early winner", () => {
+test("audience experiment analyses a winner before the campaign period ends", () => {
   const { db, userId, businessId, changeId } = fixture();
   const experiment = createAudienceExperiment(
     db,
@@ -127,7 +127,12 @@ test("audience experiment never selects an early winner", () => {
     businessId,
     changeId,
     randomUUID(),
-    input,
+    {
+      ...input,
+      minDays: 7,
+      minClicksPerVariant: 100,
+      minGoalsPerVariant: 5,
+    },
     { now },
   );
   const observed = recordAudienceObservation(db, businessId, experiment.id, {
@@ -138,8 +143,8 @@ test("audience experiment never selects an early winner", () => {
     variant: { clicks: 500, goals: 80 },
     source: { directReportId: "direct-1", metricaSnapshotId: "metrica-1" },
   });
-  assert.equal(observed.status, "collecting");
-  assert.match(observed.conclusion, /ранний выбор/i);
+  assert.equal(observed.status, "variant_wins");
+  assert.match(observed.conclusion, /Сегмент Б/i);
   db.close();
 });
 
